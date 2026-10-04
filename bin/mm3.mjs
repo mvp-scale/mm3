@@ -7444,7 +7444,9 @@ var package_default = {
     "gen:evidence-index": "tsx scripts/evidence-index.ts",
     prepare: "git config core.hooksPath .github/hooks 2>/dev/null || true",
     "dev:install": 'npm run build && tgz="$(pwd)/$(npm pack --silent | tail -1)" && cd "${INIT_CWD:-.}" && npx --yes --package "$tgz" mm3 init',
-    "check:node-floor": "tsc -p tsconfig.node-floor.json"
+    "check:node-floor": "tsc -p tsconfig.node-floor.json",
+    "guidance:accept": "npm run build && tsx scripts/guidance-snapshot.ts && MM3_ACCEPT_GUIDANCE=1 vitest run --project cli test/e2e/cli/stop-recovery.test.ts",
+    "check:agentic": "tsx scripts/check-agentic.ts"
   },
   devDependencies: {
     "@types-floor/node": "npm:@types/node@22.19.18",
