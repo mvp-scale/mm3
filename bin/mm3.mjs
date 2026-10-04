@@ -7446,7 +7446,9 @@ var package_default = {
     "dev:install": 'npm run build && tgz="$(pwd)/$(npm pack --silent | tail -1)" && cd "${INIT_CWD:-.}" && npx --yes --package "$tgz" mm3 init',
     "check:node-floor": "tsc -p tsconfig.node-floor.json",
     "guidance:accept": "npm run build && tsx scripts/guidance-snapshot.ts && MM3_ACCEPT_GUIDANCE=1 vitest run --project cli test/e2e/cli/stop-recovery.test.ts",
-    "check:agentic": "tsx scripts/check-agentic.ts"
+    "check:agentic": "tsx scripts/check-agentic.ts",
+    "agentic:context": "tsx scripts/agentic/context.ts",
+    "agentic:run": "tsx scripts/agentic/run.ts"
   },
   devDependencies: {
     "@types-floor/node": "npm:@types/node@22.19.18",
@@ -10520,6 +10522,9 @@ async function handleMessage(msg, deps) {
     const params = msg.params ?? {};
     if (params.name !== TOOL_NAME) return err(id, -32602, `Unknown tool: ${String(params.name)}`);
     const rawArgs = params.arguments?.args;
+    if (rawArgs !== void 0 && !Array.isArray(rawArgs)) {
+      return ok(id, { content: [{ type: "text", text: `\u2716 args: must be an array of strings, got ${typeof rawArgs} \u2192 args: ["class","-"] and the request YAML as the separate field stdin` }], isError: true });
+    }
     const args2 = Array.isArray(rawArgs) ? rawArgs.map(String) : [];
     const stdin = typeof params.arguments?.stdin === "string" ? params.arguments.stdin : void 0;
     const project = typeof params.arguments?.project === "string" ? params.arguments.project : void 0;

@@ -54,6 +54,15 @@ describe('stop and recover [C-259]', () => {
     stops['ignored-field-mcp'] = `${m.texts[0]!.split('\n').filter((l) => l.startsWith('✖ arguments')).join('\n')}\n`;
   });
 
+  it('[C-259] args sent as one string over MCP (the YAML folded into it): the stop names the array form, and the corrected call goes through', async () => {
+    const { root } = tempProject(FILES);
+    const m = await overMcp(root, [{ args: '["class","-"],"stdin":"mak:"' as unknown as string[] }, { args: ['class', '-'], stdin: GOOD }]);
+    expect(m.errors[0]).toBe(true);
+    expect(m.texts[0]).toMatch(/✖ args: must be an array of strings, got string → args: \["class","-"\]/u);
+    expect(m.errors[1]).toBe(false);
+    stops['args-not-array-mcp'] = `${m.texts[0]}\n`;
+  });
+
   it('[C-259] the exact stop texts match the committed snapshot', () => {
     const accept = process.env.MM3_ACCEPT_GUIDANCE === '1';
     const now = Object.fromEntries(Object.entries(stops).sort(([a], [b]) => a.localeCompare(b)));

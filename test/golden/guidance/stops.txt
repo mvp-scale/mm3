@@ -1,3 +1,5 @@
+=== args-not-array-mcp
+✖ args: must be an array of strings, got string → args: ["class","-"] and the request YAML as the separate field stdin
 === dash-missing
 ✖ args: missing arguments → mm3 class <request-file | -> [--dry-run]
 === empty-stdin
