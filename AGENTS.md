@@ -39,6 +39,7 @@
 8. **Match the surrounding code.** Give each module a short header comment saying why it exists. Keep runtime dependencies minimal.
 9. **Public repo.** Local notes go in `lab/`, which is gitignored and blocked by the pre-commit hook. Never commit machine paths, keys, or internal tracker IDs.
 10. **Trace new claims.** A new test for a claim in `docs/contract.md` carries its `[C-###]` tag (title or a comment above the assertion); `npm run check:trace` checks this, but it is not wired into the pre-commit hook (it scans the whole `test/` tree, which `check-clean.sh` intentionally keeps fast) — run it by hand before a PR that touches the contract.
+11. **Close out every PR.** The PR template's Scope, Done when and Evidence are filled in, and the PR adds its one-line "What's new" entry to `CHANGELOG.md` under Unreleased (value first, with the PR number). A merged branch is deleted (GitHub does it); the record stays in the PR. Before any other branch is deleted: its tip is an ancestor of `origin/nightly` (`git merge-base --is-ancestor`), or its PR is Closed and `refs/pull/<n>/head` equals the tip; the tip, PR, state and date are written to `lab/closeout.md` first; remote deletes wait for the owner. A branch with no PR and no such proof stays.
 
 ## Layout
 

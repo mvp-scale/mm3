@@ -10482,6 +10482,7 @@ var GUIDANCE_BODY = BODY;
 var SUPPORTED_VERSIONS = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"];
 var DEFAULT_VERSION = "2025-06-18";
 var TOOL_NAME = "mm3";
+var TOOL_FIELDS = ["args", "stdin", "project"];
 function toolDefinition() {
   return {
     name: TOOL_NAME,
@@ -10522,7 +10523,10 @@ async function handleMessage(msg, deps) {
     const project = typeof params.arguments?.project === "string" ? params.arguments.project : void 0;
     try {
       const { exit, text } = await deps.runOne(args2, stdin, project);
-      return ok(id, { content: [{ type: "text", text }], isError: exit !== 0 });
+      const ignored = Object.keys(params.arguments ?? {}).filter((k) => !TOOL_FIELDS.includes(k));
+      const hint = exit !== 0 && ignored.length > 0 ? `
+\u2716 arguments: ignored ${ignored.map((k) => `"${k}"`).join(", ")} \u2192 the tool takes only args, stdin and project: the request YAML goes in "stdin" (args: ["class","-"])` : "";
+      return ok(id, { content: [{ type: "text", text: `${text}${hint}` }], isError: exit !== 0 });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       return ok(id, { content: [{ type: "text", text: `\u2716 mm3: ${message}` }], isError: true });
@@ -10770,6 +10774,11 @@ function planAgents(root) {
     edits.push({ file: rel, verb: "append to", written: importLine, content: `${endWithNewline(text)}${importLine}
 `, done: `appended ${importLine} to ${rel}` });
   }
+  if (CLAUDE_FILES.every(({ rel }) => read(root, rel) === void 0)) {
+    const { rel, importLine } = CLAUDE_FILES[0];
+    edits.push({ file: rel, verb: "create", written: importLine, content: `${importLine}
+`, done: `created ${rel} (imports ${AGENTS_FILE})` });
+  }
   return { edits };
 }
 
@@ -10778,10 +10787,8 @@ var read2 = (file) => existsSync11(file) ? readFileSync12(file, "utf8") : void 0
 function agentsState(root) {
   const agents = read2(path8.join(root, AGENTS_FILE));
   if (agents === void 0 || typeof findBlock(agents) === "string") return "no-block";
-  for (const { rel } of CLAUDE_FILES) {
-    const text = read2(path8.join(root, rel));
-    if (text !== void 0 && !importsAgents(text)) return "claude-md-no-import";
-  }
+  const texts = CLAUDE_FILES.map(({ rel }) => read2(path8.join(root, rel)));
+  if (texts.every((t) => t === void 0) || texts.some((t) => t !== void 0 && !importsAgents(t))) return "claude-md-no-import";
   return "ok";
 }
 var AGENTS_FIX = {
@@ -17390,6 +17397,7 @@ function delegateCard() {
     [
       "- paste this card into the prompt of every helper you hand MM3 work to",
       "- use only the `mm3` MCP tool, never the shell (there is no mm3 command on PATH), one request at a time; never read .mm3/log.jsonl",
+      '- write each request by editing the output of `mm3 template <verb>`, not from scratch; quote any question that holds ": " or " #"; a verb that stops with \u2716 says the fix, apply it and resend',
       "- report each MM3 run id with its gate, and say what you did NOT run; the lead checks the ids against the ledger before relying on the report",
       "- start with one small request, then the batch; a helper that stops early or says it finished is checked, not trusted",
       ...GUIDANCE_BODY

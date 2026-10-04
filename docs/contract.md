@@ -1691,7 +1691,7 @@ The key's source (`env`, `keychain` or `file`) is carried alongside it. [C-097]
 **The one-time `agents:` note:**
 
 - It appears when a project's `AGENTS.md` has no mm3 block (`no-block`). [C-234]
-- It also appears when `CLAUDE.md` or `.claude/CLAUDE.md` exists without a line importing AGENTS.md (`claude-md-no-import`). [C-234]
+- It also appears when `CLAUDE.md` or `.claude/CLAUDE.md` exists without a line importing AGENTS.md, or when neither exists (`claude-md-no-import`): Claude Code reads CLAUDE.md, never AGENTS.md. [C-234]
 - The project gets ONE extra note on the first real run of `class`, `scan`, `drill`, `loop` or `replay`, just before the budget note. [C-234]
 - For `no-block` it says `agents: no MM3 guidance in AGENTS.md → mm3 init --agents adds it (shows the lines first)`. [C-234]
 - For `claude-md-no-import` it says `agents: Claude reads CLAUDE.md, not AGENTS.md → add the line @AGENTS.md to CLAUDE.md (or run mm3 init --agents)`. [C-234]
@@ -1724,6 +1724,7 @@ The key's source (`env`, `keychain` or `file`) is carried alongside it. [C-097]
 - The plugin bundles a stdio MCP server, `mm3 mcp`. It is hand-rolled, with no SDK dependency. [C-103]
 - It has one tool, `mm3`, taking `{ args: string[], stdin?: string, project?: string }`. [C-103]
 - It runs exactly what `mm3 <args…>` would run, in-process. It treats `stdin` as what real stdin would have supplied. [C-103]
+- A failing call that carried a field the tool does not take (an agent's own name for the YAML, such as `request`) ends with `✖ arguments: ignored "request" → …the request YAML goes in "stdin"`; a passing call is untouched. [C-103]
 - It returns the same text output the CLI would print. It returns the exit code as `isError`, which is true when the exit code isn't 0. [C-103]
 - There is no second contract. [C-103]
 

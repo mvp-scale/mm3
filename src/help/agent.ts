@@ -306,6 +306,7 @@ function delegateCard(): string {
     [
       '- paste this card into the prompt of every helper you hand MM3 work to',
       '- use only the `mm3` MCP tool, never the shell (there is no mm3 command on PATH), one request at a time; never read .mm3/log.jsonl',
+      '- write each request by editing the output of `mm3 template <verb>`, not from scratch; quote any question that holds ": " or " #"; a verb that stops with ✖ says the fix, apply it and resend',
       '- report each MM3 run id with its gate, and say what you did NOT run; the lead checks the ids against the ledger before relying on the report',
       '- start with one small request, then the batch; a helper that stops early or says it finished is checked, not trusted',
       ...GUIDANCE_BODY,

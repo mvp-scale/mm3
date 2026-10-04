@@ -39,14 +39,15 @@ function project(files: Record<string, string> = {}): { root: string; ctx: InitC
 const read = (root: string, rel: string): string => readFileSync(path.join(root, rel), 'utf8');
 
 describe('mm3 init --agents [C-233]', () => {
-  it('fresh project: --yes creates AGENTS.md holding just the marked block, and says exactly what it wrote', async () => {
+  it('fresh project: --yes creates AGENTS.md holding just the marked block, plus a CLAUDE.md that imports it, and says exactly what it wrote', async () => {
     const { root, ctx } = project();
     const r = await runInit(FLAGS, ctx);
     expect(read(root, 'AGENTS.md')).toBe(`${BLOCK}\n`);
     expect(r.text).toContain(BLOCK); // the preview shows the exact lines
     expect(r.text).toMatch(/will create AGENTS\.md/u);
     expect(r.text).toContain('✔ agents: created AGENTS.md');
-    expect(existsSync(path.join(root, 'CLAUDE.md'))).toBe(false); // none existed, none is created
+    expect(read(root, 'CLAUDE.md')).toBe('@AGENTS.md\n'); // Claude Code reads CLAUDE.md, never AGENTS.md: with none, the block would reach no agent
+    expect(r.text).toContain('✔ agents: created CLAUDE.md (imports AGENTS.md)');
   });
 
   it('an existing AGENTS.md with other content keeps it all and gets the block appended', async () => {

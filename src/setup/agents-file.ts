@@ -81,5 +81,11 @@ export function planAgents(root: string): AgentsPlan {
     if (text === undefined || importsAgents(text)) continue;
     edits.push({ file: rel, verb: 'append to', written: importLine, content: `${endWithNewline(text)}${importLine}\n`, done: `appended ${importLine} to ${rel}` });
   }
+  // Claude Code reads CLAUDE.md, never AGENTS.md: with no CLAUDE.md at all the block would reach no agent (seen in a
+  // headless run where the lead and its helpers ignored it), so the import gets a file of its own.
+  if (CLAUDE_FILES.every(({ rel }) => read(root, rel) === undefined)) {
+    const { rel, importLine } = CLAUDE_FILES[0];
+    edits.push({ file: rel, verb: 'create', written: importLine, content: `${importLine}\n`, done: `created ${rel} (imports ${AGENTS_FILE})` });
+  }
   return { edits };
 }
