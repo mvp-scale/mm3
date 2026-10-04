@@ -41,6 +41,8 @@ const DEFAULT_VERSION = '2025-06-18';
 
 export const TOOL_NAME = 'mm3';
 
+const TOOL_FIELDS = ['args', 'stdin', 'project'];
+
 /** The one tool this server exposes: same args/stdin as the CLI, same text + exit code back. */
 export function toolDefinition(): { name: string; description: string; inputSchema: Record<string, unknown> } {
   return {
@@ -94,7 +96,11 @@ export async function handleMessage(msg: JsonRpcRequest, deps: { runOne: RunOne;
     const project = typeof params.arguments?.project === 'string' ? params.arguments.project : undefined;
     try {
       const { exit, text } = await deps.runOne(args, stdin, project);
-      return ok(id, { content: [{ type: 'text', text }], isError: exit !== 0 });
+      // Agents sometimes put the request YAML under a field of their own ("request"); it is dropped, so the run's own
+      // stop ("request: empty") would blame the wrong thing. A failing call says what was ignored and where the YAML goes.
+      const ignored = Object.keys(params.arguments ?? {}).filter((k) => !TOOL_FIELDS.includes(k));
+      const hint = exit !== 0 && ignored.length > 0 ? `\n✖ arguments: ignored ${ignored.map((k) => `"${k}"`).join(', ')} → the tool takes only args, stdin and project: the request YAML goes in "stdin" (args: ["class","-"])` : '';
+      return ok(id, { content: [{ type: 'text', text: `${text}${hint}` }], isError: exit !== 0 });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       return ok(id, { content: [{ type: 'text', text: `✖ mm3: ${message}` }], isError: true });

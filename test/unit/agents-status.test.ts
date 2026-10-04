@@ -29,12 +29,12 @@ const run = (paths: ReturnType<typeof tempProject>['paths'], dryRun = false) =>
   runClass(CLASS_YAML, { paths, provider: stubProvider(), env: {}, dryRun });
 
 describe('agentsState', () => {
-  it('ok: AGENTS.md has the block and no CLAUDE.md exists, or every CLAUDE.md imports it', () => {
-    expect(agentsState(tempProject(ok()).root)).toBe('ok');
+  it('ok: a CLAUDE.md exists and every CLAUDE.md imports AGENTS.md', () => {
     expect(agentsState(tempProject(ok({ 'CLAUDE.md': '@AGENTS.md\n' })).root)).toBe('ok');
     expect(agentsState(tempProject(ok({ '.claude/CLAUDE.md': 'x\n@../AGENTS.md\n' })).root)).toBe('ok');
   });
-  it('claude-md-no-import: the block is there but a CLAUDE.md (root or .claude/) does not import AGENTS.md', () => {
+  it('claude-md-no-import: the block is there but no CLAUDE.md exists, or one (root or .claude/) does not import AGENTS.md [C-234]', () => {
+    expect(agentsState(tempProject(ok()).root)).toBe('claude-md-no-import'); // Claude Code never opens AGENTS.md by itself
     expect(agentsState(tempProject(ok({ 'CLAUDE.md': '# c\n' })).root)).toBe('claude-md-no-import');
     expect(agentsState(tempProject(ok({ '.claude/CLAUDE.md': '# c\n' })).root)).toBe('claude-md-no-import');
   });
@@ -71,7 +71,7 @@ describe('the one-time agents: note on a real run [C-234]', () => {
   });
 
   it('ok shows nothing and writes no marker', async () => {
-    const { paths } = tempProject(ok());
+    const { paths } = tempProject(ok({ 'CLAUDE.md': '@AGENTS.md\n' }));
     const r = await run(paths);
     expect(r.text).not.toContain('agents:');
     expect(existsSync(path.join(paths.dir, MARKER))).toBe(false);
@@ -111,7 +111,7 @@ describe('doctor agents: line [C-234]', () => {
     expect(n.text).toContain('agents: Claude reads CLAUDE.md, not AGENTS.md → add the line @AGENTS.md to CLAUDE.md (or run mm3 init --agents)');
   });
   it('says ok when set up, and nothing at all with no project; never writes the marker', () => {
-    const { paths } = tempProject(ok());
+    const { paths } = tempProject(ok({ 'CLAUDE.md': '@AGENTS.md\n' }));
     expect(runDoctor({}, paths, 'v22.13.0').text).toMatch(/\n\s+agents: ok\b/u);
     expect(runDoctor({}, undefined, 'v22.13.0').text).not.toContain('agents:');
     const bare = tempProject(SRC).paths;

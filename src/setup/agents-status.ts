@@ -1,6 +1,6 @@
 /**
- * Is this project's agent guidance wired up? `ok` (AGENTS.md has the mm3 block, and every CLAUDE.md that
- * exists imports AGENTS.md), `claude-md-no-import` (the block is there but Claude Code, which reads CLAUDE.md
+ * Is this project's agent guidance wired up? `ok` (AGENTS.md has the mm3 block, a CLAUDE.md exists, and every
+ * CLAUDE.md imports AGENTS.md), `claude-md-no-import` (the block is there but Claude Code, which reads CLAUDE.md
  * and not AGENTS.md, will never see it) or `no-block`. Two readers share this one answer: the one-time `agents:`
  * note every verb's response carries on a project's first real run (verbs/respond.ts's commonNotes), and the
  * `agents:` line `mm3 doctor` always prints. The note is recorded by a marker file in `.mm3/` so it appears once
@@ -19,10 +19,9 @@ const read = (file: string): string | undefined => (existsSync(file) ? readFileS
 export function agentsState(root: string): AgentsState {
   const agents = read(path.join(root, AGENTS_FILE));
   if (agents === undefined || typeof findBlock(agents) === 'string') return 'no-block';
-  for (const { rel } of CLAUDE_FILES) {
-    const text = read(path.join(root, rel));
-    if (text !== undefined && !importsAgents(text)) return 'claude-md-no-import';
-  }
+  const texts = CLAUDE_FILES.map(({ rel }) => read(path.join(root, rel)));
+  // no CLAUDE.md at all is as dark as one without the import: Claude Code never opens AGENTS.md by itself
+  if (texts.every((t) => t === undefined) || texts.some((t) => t !== undefined && !importsAgents(t))) return 'claude-md-no-import';
   return 'ok';
 }
 

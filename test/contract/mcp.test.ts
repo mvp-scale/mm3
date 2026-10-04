@@ -151,6 +151,22 @@ describe('mcp protocol: tools/call [C-103]', () => {
     expect(result.content[0]?.text).toBe(direct.text);
   });
 
+  it('[C-103] a failing call that carried an unknown field (the YAML under "request") says it was ignored and that the YAML goes in "stdin"', async () => {
+    const ctx = fakeCtx();
+    const resp = await handleMessage(
+      { jsonrpc: '2.0', id: 12, method: 'tools/call', params: { name: 'mm3', arguments: { args: ['class', '-'], request: 'mak:\n  goal: x\n' } } },
+      { runOne: runOneFor(ctx), serverVersion: '0.0.0-test' },
+    );
+    const result = resp?.result as { content: Array<{ text: string }>; isError: boolean };
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('✖ arguments: ignored "request" → the tool takes only args, stdin and project');
+    const ok = await handleMessage(
+      { jsonrpc: '2.0', id: 13, method: 'tools/call', params: { name: 'mm3', arguments: { args: ['doctor'], note: 'extra' } } },
+      { runOne: runOneFor(ctx), serverVersion: '0.0.0-test' },
+    );
+    expect((ok?.result as { content: Array<{ text: string }> }).content[0]?.text).not.toContain('ignored'); // a passing call is untouched
+  });
+
   it('a request YAML on stdin (args: ["class", "-"]) with no project stops the same way the CLI would', async () => {
     const ctx = fakeCtx();
     const resp = await handleMessage(

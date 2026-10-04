@@ -84,6 +84,7 @@ describe('mm3 agent delegate [C-256]', () => {
     expect(card).toMatch(/only the `mm3` MCP tool/u);
     expect(card).toMatch(/never read .mm3\/log\.jsonl/u);
     expect(card).toMatch(/what you did NOT run/u);
+    expect(card).toMatch(/editing the output of `mm3 template <verb>`, not from scratch/u); // helpers' first hand-written requests often failed validation
   });
 
   it('[C-256] the overview points a lead at it', () => {
