@@ -11911,7 +11911,7 @@ function versionsLine(running, plugin) {
   const sameBase = plugin.version !== void 0 && base(plugin.version) === base(running);
   const sameCommit = nightlySha === void 0 || plugin.sha.startsWith(nightlySha.slice(0, 7)) || nightlySha.startsWith(plugin.sha.slice(0, 7));
   if (sameBase && sameCommit) return plugin.version === running ? `\u2714 the plugin and this copy are both ${running}` : `\u2714 the plugin and this copy are the same build (${running})`;
-  return `\u26A0 the plugin is ${plugin.version ?? "an unknown version"} (${plugin.sha.slice(0, 7)}) and this copy is ${running} \u2192 update the older one: /plugin update in Claude Code, or npm install -g @mvpscale/mm3@latest`;
+  return `\u26A0 the plugin is ${plugin.version ?? "an unknown version"} (${plugin.sha.slice(0, 7)}) and this copy is ${running} \u2192 update the older one: /plugin update in Claude Code, or npm install -g @mvpscale/mm3@${running.includes("-nightly.") ? "nightly" : "latest"}`;
 }
 function cliLine(env, platform, version) {
   const resolved = findOnPath("mm3", env, platform);

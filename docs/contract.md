@@ -1625,7 +1625,7 @@ The key's source (`env`, `keychain` or `file`) is carried alongside it. [C-097]
 
 **The `versions:` line:**
 
-- When Claude Code has the plugin installed, `doctor` compares this copy of MM3 with the plugin's own version, read from Claude's install record. It prints `versions: ✔ the plugin and this copy are both 0.1.2`, or `versions: ⚠ the plugin is 0.1.1 (f337f61) and this copy is 0.1.2 → update the older one: /plugin update in Claude Code, or npm install -g @mvpscale/mm3@latest`. The base versions must match; a nightly build (`x.y.z-nightly.<date>.g<sha>`) must also be at the plugin's commit. With no plugin installed there is no line. [C-254]
+- When Claude Code has the plugin installed, `doctor` compares this copy of MM3 with the plugin's own version, read from Claude's install record. It prints `versions: ✔ the plugin and this copy are both 0.1.2`, or `versions: ⚠ the plugin is 0.1.1 (f337f61) and this copy is 0.1.2 → update the older one: /plugin update in Claude Code, or npm install -g @mvpscale/mm3@latest`. The base versions must match; a nightly build (`x.y.z-nightly.<date>.g<sha>`) must also be at the plugin's commit, and its warning names `@nightly` in the npm command, not `@latest`, which is the older release. With no plugin installed there is no line. [C-254]
 
 **The `plugin:` nudge:**
 

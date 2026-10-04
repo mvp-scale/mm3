@@ -147,7 +147,7 @@ function versionsLine(running: string, plugin: { version?: string; sha: string }
   const sameBase = plugin.version !== undefined && base(plugin.version) === base(running);
   const sameCommit = nightlySha === undefined || plugin.sha.startsWith(nightlySha.slice(0, 7)) || nightlySha.startsWith(plugin.sha.slice(0, 7));
   if (sameBase && sameCommit) return plugin.version === running ? `✔ the plugin and this copy are both ${running}` : `✔ the plugin and this copy are the same build (${running})`;
-  return `⚠ the plugin is ${plugin.version ?? 'an unknown version'} (${plugin.sha.slice(0, 7)}) and this copy is ${running} → update the older one: /plugin update in Claude Code, or npm install -g @mvpscale/mm3@latest`;
+  return `⚠ the plugin is ${plugin.version ?? 'an unknown version'} (${plugin.sha.slice(0, 7)}) and this copy is ${running} → update the older one: /plugin update in Claude Code, or npm install -g @mvpscale/mm3@${running.includes('-nightly.') ? 'nightly' : 'latest'}`; // a nightly copy is kept on the nightly tag: `latest` is the older release
 }
 
 /** The `cli:` value: where `mm3` resolves on PATH (a pure, always-safe filesystem walk — never gated on
