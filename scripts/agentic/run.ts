@@ -4,7 +4,7 @@
 // three attempts for every agent that tried, the cited run id real in the ledger. The first-attempt rate is reported
 // against its 80% target but does not gate.
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { attemptsByAgent, runClaude, type ClaudeRun } from './claude.ts';
@@ -104,6 +104,9 @@ export function runFull(scenarios: FullScenario[], version: string, log: (s: str
         env: { ...isolated, PATH: `${bin}:${process.env.PATH}` }, budgetUsd: 1.5 })
         : runClaude({ prompt: s.prompt, model: s.model, cwd: project, tools: [...base, 'Agent'], allowedTools: [...base, 'Agent', 'mcp__plugin_mm3_mm3__mm3'], pluginDir: plugin, env: isolated, budgetUsd: 1.5 });
       const row = grade(s, run, project, route);
+      // every transcript is kept (gitignored lab/archive) so a failed row can be read, not guessed at
+      mkdirSync('lab/archive/agentic', { recursive: true });
+      writeFileSync(`lab/archive/agentic/${version}-${s.id}-${route}.json`, JSON.stringify({ row, answer: run.answer, plugins: run.plugins, mcp: run.mcp, calls: run.calls }, null, 1));
       rows.push(row);
       if (process.env.AGENTIC_DEBUG) {
         for (const c of run.calls) log(`      ${c.parent ? 'helper' : 'lead'} ${c.tool} ${JSON.stringify(c.input).slice(0, 110)} → ${c.result.replace(/\s+/gu, ' ').slice(0, 110)}`);

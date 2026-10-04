@@ -7448,7 +7448,8 @@ var package_default = {
     "guidance:accept": "npm run build && tsx scripts/guidance-snapshot.ts && MM3_ACCEPT_GUIDANCE=1 vitest run --project cli test/e2e/cli/stop-recovery.test.ts",
     "check:agentic": "tsx scripts/check-agentic.ts",
     "agentic:context": "tsx scripts/agentic/context.ts",
-    "agentic:run": "tsx scripts/agentic/run.ts"
+    "agentic:run": "tsx scripts/agentic/run.ts",
+    ceremony: "tsx scripts/ceremony.ts"
   },
   devDependencies: {
     "@types-floor/node": "npm:@types/node@22.19.18",
