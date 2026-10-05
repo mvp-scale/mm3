@@ -228,7 +228,7 @@
   "preconditions": [
     "The provider is the sample (fake) one: no TypeSafe key, no spend. Verdicts are canned; nothing here grades whether a verdict is right.",
     "The project is a fresh copy of the pinned Juice Shop checkout with no .mm3/ in it.",
-    "The agent gets only the task prompt below: no hints, no expected outcome. Only Read/Glob/Grep (plus Write and a shell on the CLI route, the Agent tool for delegation) exist.",
+    "The agent gets only the task prompt below: no hints, no expected outcome. Only Read/Glob/Grep, Write and Edit (plus a shell on the CLI route, the Agent tool for delegation) exist.",
     "Counted as a verb request: class, scan, drill, loop, view or replay. Calls to agent, template, help, probe or doctor are discovery, not attempts."
   ],
   "purpose": "Can an agent get a useful answer out of MM3 on its own? A developer tells an agent to use MM3 to check some code. We watch whether the agent succeeds without a person stepping in, using only what MM3 itself gives it: its instructions, its help and its error messages. The project the agents look at (OWASP Juice Shop) is sample material; it is not what is being tested. Two kinds of job: the first three check that agents can use MM3 at all; the last four check the features that are new since the last release.",

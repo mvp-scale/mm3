@@ -177,8 +177,8 @@ export function runFull(scenarios: FullScenario[], version: string, rules: Rules
     // a paid run gets only the mm3 command in the shell: nothing that could print a stored key
     const shell = opts.paid ? ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)'] : ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)', 'Bash(command -v *)', 'Bash(which *)', 'Bash(cat *)', 'Bash(echo *)', 'Bash(printf *)', 'Bash(ls *)', 'Bash(pwd)', 'Bash(grep *)', 'Bash(find *)'];
     const run = route === 'cli'
-      ? runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Bash'], allowedTools: [...base, 'Write', ...shell], env: { ...env, PATH: `${bin}:${process.env.PATH}` }, budgetUsd: 2 })
-      : runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Agent'], allowedTools: [...base, 'Agent', 'mcp__plugin_mm3_mm3__mm3'], pluginDir: plugin, env, budgetUsd: 2 });
+      ? runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Edit', 'Bash'], allowedTools: [...base, 'Write', 'Edit', ...shell], env: { ...env, PATH: `${bin}:${process.env.PATH}` }, budgetUsd: 2 })
+      : runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Edit', 'Agent'], allowedTools: [...base, 'Write', 'Edit', 'Agent', 'mcp__plugin_mm3_mm3__mm3'], // the file tools a Claude Code user has: some jobs change a setting in the project's own files pluginDir: plugin, env, budgetUsd: 2 });
     const row = grade(s, run, project, route, model, trial);
     const logFile = path.join(project, '.mm3', 'log.jsonl');
     if (opts.paid) {
