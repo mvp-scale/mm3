@@ -182,7 +182,7 @@ export function runFull(scenarios: FullScenario[], version: string, rules: Rules
     if (opts.paid) setCap(project, opts.paid.approvedUsd - spent);
     // free: the sample provider and no key. paid: the owner's own key and settings, never read or printed here; MM3's budget holds the cap.
     const env: Record<string, string> = opts.paid ? { MM3_ACTOR: 'agentic', ...setupEnv } : { MM3_PROVIDER: 'fake', TYPESAFE_API_KEY: '', AI_GATEWAY_API_KEY: '', XDG_CONFIG_HOME: path.join(project, '.no-config'), MM3_ACTOR: 'agentic', ...setupEnv };
-    const strict = opts.paid !== undefined || s.shell === 'mm3-only'; // the pre-approved list is then the real boundary
+    const strict = opts.paid !== undefined; // paid runs deny anything not pre-approved, so the approved list is the real boundary (a strict free run also blocks harmless piping, which real agents do)
     const base = ['Read', 'Glob', 'Grep'];
     // a paid run gets only the mm3 command in the shell: nothing that could print a stored key
     const shell = opts.paid || s.shell === 'mm3-only' ? ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)', 'Bash(which *)', 'Bash(head *)', 'Bash(tail *)', 'Bash(echo *)'] : ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)', 'Bash(command -v *)', 'Bash(which *)', 'Bash(cat *)', 'Bash(echo *)', 'Bash(printf *)', 'Bash(ls *)', 'Bash(pwd)', 'Bash(grep *)', 'Bash(find *)'];
