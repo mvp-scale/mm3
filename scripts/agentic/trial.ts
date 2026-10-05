@@ -43,6 +43,9 @@ export function parseTrialArgs(argv: string[]): TrialArgs {
   return { job, model, trials, route: route as TrialArgs['route'], paid: usd === undefined ? undefined : { approvedUsd: usd } };
 }
 
+/** True when `mm3 doctor`'s own output says a key resolves and the provider is not the sample one. Reads doctor's words, never a key. */
+export const keyFound = (doctorText: string): boolean => /^\s*key: yes/mu.test(doctorText) && !/^\s*provider: fake/mu.test(doctorText);
+
 const sh = (cmd: string, args: string[], cwd?: string): string => {
   const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')}: ${(r.stderr || r.stdout).slice(0, 300)}`);
@@ -90,6 +93,13 @@ if (process.argv[1]?.endsWith('trial.ts')) {
     mode: a.paid ? 'paid' : 'free', ...(a.paid ? { paid: a.paid } : {}), trialsOverride: a.trials, formal: false,
     formalReason: 'a development trial of one job on a local build: it never counts toward the release gate',
   };
+  if (a.paid) {
+    // before anything is recorded or run: does a key resolve the way a paid trial will need it? (the environment minus the sample-provider switches)
+    const env = { ...process.env } as NodeJS.ProcessEnv;
+    delete env.MM3_PROVIDER;
+    const doctor = spawnSync('node', [path.resolve('dist/cli.js'), 'doctor'], { cwd: process.cwd(), env, encoding: 'utf8' });
+    if (!keyFound(`${doctor.stdout}${doctor.stderr}`)) throw new Error('✖ trial: --paid found no TypeSafe key → put TYPESAFE_API_KEY in the shell you run this from, or run `mm3 init` to store one (nothing was recorded and nothing was spent; the key is never read or printed here)');
+  }
   append(started);
   console.log(`AGENTIC FEATURE TRIAL ${started.id} · ${(job as { title?: string }).title ?? job.id} · ${a.model} × ${a.trials} · ${a.paid ? `PAID: up to $${a.paid.approvedUsd} of real TypeSafe spend, approved on the command line` : 'free path (sample provider, no key, no spend)'}`);
   console.log(`  build: ${label} (the working tree)\n  success, stated before the run: ${(job as { success?: string }).success ?? job.goal}`);

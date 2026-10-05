@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { definitionOf, lastFormal, nextId, recordGaps, type FinishedRecord, type StartedRecord } from '../../scripts/agentic/ledger.ts';
 import { setCap, shimMm3, spentUsd } from '../../scripts/agentic/run.ts';
 import { spawnSync } from 'node:child_process';
-import { parseTrialArgs } from '../../scripts/agentic/trial.ts';
+import { keyFound, parseTrialArgs } from '../../scripts/agentic/trial.ts';
 import { tellRun } from '../../scripts/agentic/release-report.ts';
 
 describe('trial arguments [C-267]', () => {
@@ -28,6 +28,14 @@ describe('trial arguments [C-267]', () => {
     expect(() => parseTrialArgs(['x', '--model', 'opus'])).toThrow(/is not a model → sonnet or haiku/u);
     expect(() => parseTrialArgs(['x', '--trials', '0'])).toThrow(/whole number from 1 to 10/u);
     expect(() => parseTrialArgs(['x', '--route', 'web'])).toThrow(/is not a route → cli or mcp/u);
+  });
+});
+
+describe('a paid trial checks for a key first [C-267]', () => {
+  it('[C-267] it reads what doctor says, never a key: a resolved key and a live provider pass; no key, or the sample provider, do not', () => {
+    expect(keyFound('doctor:\n  provider: typesafe\n  key: yes · from env TYPESAFE_API_KEY\n')).toBe(true);
+    expect(keyFound('doctor:\n  provider: fake\n  key: no  → run "mm3 init" to add one\n')).toBe(false);
+    expect(keyFound('doctor:\n  provider: fake\n  key: yes · from keychain\n')).toBe(false); // a key, but the sample provider is switched on
   });
 });
 
