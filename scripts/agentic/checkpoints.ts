@@ -3,6 +3,7 @@
 // no TypeSafe key: the sample provider answers with canned verdicts, so nothing here judges whether a verdict is RIGHT,
 // only whether an agent could get a well-formed verdict recorded. Verdict correctness is a separate, keyed, capped live suite.
 import { attemptsByAgent, type ClaudeCall } from './claude.ts';
+import { recoveryOf } from './trace.ts';
 
 export interface Evidence {
   calls: ClaudeCall[];
@@ -18,6 +19,8 @@ export interface Checkpoint {
   label: string; // two or three words: its legend entry
   text: string; // what is true when it passes
   means: string; // what a failure points at, so a red row says where to look
+  fix: string; // the targeted fix to try when it fails, so a red row says what to do
+  severity?: 'exception'; // absent: a miss blocks the release. 'exception': recorded and reported, accepted for now, never blocks
   check: (e: Evidence) => boolean;
 }
 
@@ -29,8 +32,22 @@ const groups = (e: Evidence): ReturnType<typeof attemptsByAgent> => attemptsByAg
 const expectedAgents = (e: Evidence): number => Math.max(e.helpers, 1);
 
 export const CHECKPOINTS: Record<string, Checkpoint> = {
+  'stays-on-mm3': {
+    id: 'stays-on-mm3',
+    severity: 'exception',
+    short: 's',
+    label: 'stays on MM3',
+    fix: 'End every MM3 stop with the one command to run next, so the agent does not leave MM3 to explore or give up.',
+    text: 'After every MM3 stop, the agent\'s very next call is MM3 again (never a file read, a shell command or a hand-off)',
+    means: 'an agent that hit a stop left MM3 instead of fixing the request (the stop did not point it back)',
+    check: (e) => {
+      const r = recoveryOf(e.calls);
+      return r.onTrack === r.stops;
+    },
+  },
   engaged: {
     id: 'engaged',
+    fix: "Make the guidance that tells an agent to use MM3 harder to miss: the skill description and the MCP instructions' first line.",
     short: 'e',
     label: 'engaged',
     text: 'The agent calls MM3 at all',
@@ -39,6 +56,7 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
   },
   'verdict-in-promise': {
     id: 'verdict-in-promise',
+    fix: "End every request-shape stop with the one command to run next (`mm3 template <verb>`), and put 'start from the template' in the main guidance.",
     short: 'v',
     label: 'verdict in promise',
     text: 'Every agent that works gets a verdict within the promised number of verb requests',
@@ -47,6 +65,7 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
   },
   'first-fix-works': {
     id: 'first-fix-works',
+    fix: "Make the stop name the exact edit and end with `mm3 template <verb>`, instead of pointing at a card to read.",
     short: 'f',
     label: 'first fix works',
     text: 'After one stop that names the fix, the next request is accepted (verdict on the 2nd request at the latest)',
@@ -55,6 +74,7 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
   },
   'last-request-accepted': {
     id: 'last-request-accepted',
+    fix: "Make the last line of every stop the one command to run next, so an agent never has to decide where to go.",
     short: 'l',
     label: 'last request ok',
     text: "Each agent's last verb request was accepted (no unrecovered stop)",
@@ -63,6 +83,7 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
   },
   'helpers-spawned': {
     id: 'helpers-spawned',
+    fix: "Strengthen the delegating line in the guidance so a lead hands out the work.",
     short: 'h',
     label: 'helpers',
     text: 'The lead hands the work to the expected number of helpers',
@@ -71,6 +92,7 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
   },
   'delegate-card-in-prompts': {
     id: 'delegate-card-in-prompts',
+    fix: "Make `mm3 agent delegate` the first step of delegating: move its line up in the guidance and name it in the skill.",
     short: 'd',
     label: 'card in prompts',
     text: "Every helper's prompt carries the `mm3 agent delegate` card",
@@ -79,6 +101,7 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
   },
   'helpers-cite-ids': {
     id: 'helpers-cite-ids',
+    fix: "Put the report rule at the top of the delegate card so helpers cite run ids.",
     short: 'x',
     label: 'helpers cite ids',
     text: "Each helper's report cites an MM3 run id",
@@ -90,6 +113,7 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
   },
   'answer-cites-run-id': {
     id: 'answer-cites-run-id',
+    fix: "Move 'cite the run id' earlier in the guidance, and say what a citation looks like (MM3-####).",
     short: 'c',
     label: 'cites run id',
     text: 'The final answer states the MM3 run id',
@@ -98,6 +122,7 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
   },
   'run-id-in-ledger': {
     id: 'run-id-in-ledger',
+    fix: "Same fix as citing: the agent must quote the id MM3 printed, not remember or invent one.",
     short: 'r',
     label: 'id in ledger',
     text: 'Every run id the final answer cites is in the ledger',

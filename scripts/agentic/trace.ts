@@ -45,6 +45,36 @@ export const addEconomics = (a: Economics, b: Economics): Economics =>
 
 export const emptyEconomics = (): Economics => economics([]);
 
+/** After a stop (an MM3 call that came back with an error), did the agent stay on MM3, and did its next MM3 request fix it? */
+export interface Recovery {
+  stops: number; // MM3 calls that came back with an error
+  onTrack: number; // stops whose very next call (same agent) was another MM3 call
+  fixedNext: number; // stops whose next MM3 verb request got a verdict
+}
+
+const isStop = (c: ClaudeCall): boolean => kindOf(c) === 'mm3' && /^(✖|Exit code [1-9])/u.test(c.result.trimStart());
+const isVerdict = (c: ClaudeCall): boolean => kindOf(c) === 'mm3' && /\bgate: (pass|fail|unsure)/u.test(c.result);
+const isVerbRequest = (c: ClaudeCall): boolean => (Array.isArray(c.input.args) ? ['class', 'scan', 'drill', 'loop', 'view', 'replay'].includes(String(c.input.args[0])) : /\bmm3\s+(class|scan|drill|loop|view|replay)\b/u.test(String(c.input.command ?? '')));
+
+export function recoveryOf(calls: ClaudeCall[]): Recovery {
+  const r: Recovery = { stops: 0, onTrack: 0, fixedNext: 0 };
+  const agents = [...new Set(calls.map((c) => c.parent ?? 'lead'))];
+  for (const a of agents) {
+    const mine = calls.filter((c) => (c.parent ?? 'lead') === a);
+    mine.forEach((c, i) => {
+      if (!isStop(c)) return;
+      r.stops += 1;
+      const next = mine[i + 1];
+      if (next && kindOf(next) === 'mm3') r.onTrack += 1; // a stop that ends the agent's work is a stop it did not stay on
+      const nextVerb = mine.slice(i + 1).find(isVerbRequest);
+      if (nextVerb && isVerdict(nextVerb)) r.fixedNext += 1;
+    });
+  }
+  return r;
+}
+
+export const addRecovery = (a: Recovery, b: Recovery): Recovery => ({ stops: a.stops + b.stops, onTrack: a.onTrack + b.onTrack, fixedNext: a.fixedNext + b.fixedNext });
+
 /** One line per kind that was used. */
 export const economicsLine = (e: Economics): string =>
   KINDS.filter((k) => e[k].calls > 0).map((k) => `${k} ${e[k].calls} calls, ≈${e[k].argsTokens} tokens written, ≈${e[k].resultTokens} came back`).join(' · ') || 'no calls';

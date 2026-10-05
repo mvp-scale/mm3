@@ -74,7 +74,8 @@
         "verdict-in-promise",
         "last-request-accepted",
         "answer-cites-run-id",
-        "run-id-in-ledger"
+        "run-id-in-ledger",
+        "stays-on-mm3"
       ],
       "title": "Ask a plain question",
       "story": "A developer asks their agent: \"Is routes/login.ts safe to ship? Use MM3 to check it.\" The agent has MM3 and no other help.",
@@ -98,7 +99,8 @@
         "verdict-in-promise",
         "helpers-cite-ids",
         "answer-cites-run-id",
-        "run-id-in-ledger"
+        "run-id-in-ledger",
+        "stays-on-mm3"
       ],
       "title": "Hand the work to helper agents",
       "story": "A developer asks the lead agent to review three files, one helper agent per file, using MM3.",
@@ -118,7 +120,8 @@
         "engaged",
         "first-fix-works",
         "answer-cites-run-id",
-        "run-id-in-ledger"
+        "run-id-in-ledger",
+        "stays-on-mm3"
       ],
       "title": "Recover from one mistake",
       "story": "The agent is handed an MM3 request with one deliberate mistake: the decisions section is missing.",

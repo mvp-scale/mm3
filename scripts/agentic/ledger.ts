@@ -7,10 +7,11 @@
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { CHECKPOINTS } from './checkpoints.ts';
-import { addEconomics, emptyEconomics, KINDS, type Economics } from './trace.ts';
+import type { Decision } from './decision.ts';
+import { addEconomics, emptyEconomics, KINDS, type Economics, type Recovery } from './trace.ts';
 
 export const LEDGER = 'test/agentic/ledger.jsonl';
-export const SCHEMA = 1;
+export const SCHEMA = 2; // 2 adds the decision and, per trial, recovery after stops
 
 export interface SpecScenario {
   id: string;
@@ -88,8 +89,9 @@ export interface FinishedRecord {
   reason?: string; // aborted: why
   level1?: Array<{ name: string; ok: boolean; detail: string }>;
   level2?: Array<{ id: string; level: string; pass: boolean }>;
-  level3?: Array<{ id: string; route: string; model: string; resolvedModel?: string | null; trial: number; pass: boolean; failed: string[]; attempts: number[]; firstRequestAccepted: boolean; mm3Calls: number; usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; turns: number }; economics?: Economics; transcript: string; transcriptSha256?: string }>;
+  level3?: Array<{ id: string; route: string; model: string; resolvedModel?: string | null; trial: number; pass: boolean; failed: string[]; attempts: number[]; firstRequestAccepted: boolean; mm3Calls: number; usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; turns: number }; economics?: Economics; recovery?: Recovery; transcript: string; transcriptSha256?: string }>;
   firstRequestAcceptedRate?: number;
+  decision?: Pick<Decision, 'verdict' | 'formal' | 'blockers' | 'exceptions' | 'improvements'>; // what the release report concluded, with every improvement it saw
   usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; turns: number; claudeRuns: number; mm3Calls: number }; // what the run asked of the model
   notionalCostUsd?: number; // legacy: the first two lines recorded a dollar figure; a subscription has no per-call price, so new lines record usage instead
 }
@@ -158,12 +160,14 @@ export function recordGaps(started: StartedRecord, finished?: FinishedRecord): s
   need(finished.level3?.length, 'the level 3 results');
   need(finished.usage, 'the run\'s token totals');
   need(finished.firstRequestAcceptedRate !== undefined, 'the first-request rate');
+  if ((started.schema ?? 0) >= 2) need(finished.decision, 'the decision and its improvements');
   for (const r of finished.level3 ?? []) {
     const who = `${r.id}/${r.route}/${r.model}/${r.trial}`;
     need(r.usage, `${who}: tokens`);
     need(r.economics, `${who}: tokens by kind of call`);
     need(r.resolvedModel, `${who}: the model it actually used`);
     need(r.transcriptSha256, `${who}: the transcript digest`);
+    if (started.definition.scenarios.some((sc) => sc.checkpoints.some((c) => c.id === 'stays-on-mm3'))) need(r.recovery, `${who}: recovery after stops`);
   }
   return gaps;
 }

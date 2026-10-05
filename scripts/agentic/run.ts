@@ -10,8 +10,8 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import os from 'node:os';
 import path from 'node:path';
 import { addUsage, attemptsByAgent, noUsage, runClaude, type ClaudeRun, type Usage } from './claude.ts';
-import { economics, type Economics } from './trace.ts';
-import { evaluate, metrics } from './checkpoints.ts';
+import { economics, recoveryOf, type Economics, type Recovery } from './trace.ts';
+import { CHECKPOINTS, evaluate, metrics } from './checkpoints.ts';
 
 export interface FullScenario {
   id: string;
@@ -38,6 +38,7 @@ export interface FullRow {
   problems: string[];
   usage: Usage;
   economics: Economics; // where the tokens went, by kind of call
+  recovery: Recovery; // after each stop: did the agent stay on MM3, and did its next MM3 request fix it
   transcript?: string; // file name under lab/archive/agentic
   transcriptSha256?: string; // digest of that file, so the record can say which transcript it means
 }
@@ -97,7 +98,7 @@ export function grade(s: FullScenario, run: ClaudeRun, project: string, route: '
   const problems = checks.filter((c) => !c.pass).map((c) => `${c.id}: ${c.means}`);
   if (!run.ok) problems.unshift(`the run did not finish${run.error ? ` (${run.error})` : ''}`);
   const attempts = attemptsByAgent(run.calls).map((g) => g.outcomes.indexOf(true) + 1);
-  return { id: s.id, route, model, resolvedModel: run.model, trial, pass: run.ok && checks.every((c) => c.pass), checks, attempts, firstRequestAccepted: m.firstRequestAccepted, mm3Calls: m.mm3Calls, problems, usage: run.usage, economics: economics(run.calls) };
+  return { id: s.id, route, model, resolvedModel: run.model, trial, pass: run.ok && checks.every((c) => c.pass || CHECKPOINTS[c.id]?.severity === 'exception'), checks, attempts, firstRequestAccepted: m.firstRequestAccepted, mm3Calls: m.mm3Calls, problems, usage: run.usage, economics: economics(run.calls), recovery: recoveryOf(run.calls) };
 }
 
 /** Gate rows (the gate model, several trials) and floor rows (the other model, once). */

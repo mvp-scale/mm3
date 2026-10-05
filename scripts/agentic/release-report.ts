@@ -8,7 +8,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import type { ClaudeCall, TurnUsage } from './claude.ts';
 import { chainProblem, readLedger, recordGaps, type FinishedRecord, type LedgerRecord, type StartedRecord } from './ledger.ts';
 import { CHECKPOINTS } from './checkpoints.ts';
-import { approxTokens, economicsLine, kindOf } from './trace.ts';
+import { decide } from './decision.ts';
+import { addRecovery, approxTokens, economicsLine, kindOf, recoveryOf, type Recovery } from './trace.ts';
 
 type Row = NonNullable<FinishedRecord['level3']>[number];
 export interface Transcript {
@@ -103,6 +104,11 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
   const l3 = end?.level3 ?? [];
   const gate = l3.filter((r) => r.model === rules.gateModel);
   const floor = l3.filter((r) => r.model !== rules.gateModel);
+  const recOf = (rows: Row[]): Recovery | undefined => {
+    const parts = rows.map((r) => r.recovery ?? (load(r.transcript) ? recoveryOf(load(r.transcript)!.calls) : undefined));
+    return parts.length && parts.every((p) => p) ? (parts as Recovery[]).reduce(addRecovery, { stops: 0, onTrack: 0, fixedNext: 0 }) : undefined;
+  };
+  const decision = decide(started, end, { chainOk: !chainProblem(), gaps, ...(recOf(gate) ? { gateRecovery: recOf(gate)! } : {}) });
   const sum = (rows: Row[]): string => `${rows.filter((r) => r.pass).length}/${rows.length}`;
   const h = (sc: StartedRecord['definition']['scenarios'][number]) => ({ title: sc.title ?? names?.scenarios[sc.id]?.title ?? sc.id, story: sc.story ?? names?.scenarios[sc.id]?.story, success: sc.success ?? names?.scenarios[sc.id]?.success, matters: sc.matters ?? names?.scenarios[sc.id]?.matters });
   const purpose = started.definition.purpose ?? names?.purpose;
@@ -111,6 +117,7 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
   const out: string[] = [
     `AGENTIC RELEASE REPORT · ${started.id} · MM3 ${started.version}`,
     `RESULT  ${status}${started.formal ? '' : ' · a REHEARSAL: recorded, but it does not count toward the release gate'}`,
+    `DECISION  ${decision.headline}  (reasoning at the end)`,
     '',
     'WHAT THIS TESTS',
     ...(purpose ? wrap('  ', purpose, 100) : ['  (this run was recorded before the question was written down)']),
@@ -127,7 +134,6 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
     out.push('', `  ${i + 1}. ${t.title}`, ...(t.story ? wrap('     ', t.story, 100) : []), ...(t.success ? wrap('     Success: ', t.success, 100) : []));
     out.push(`     Result: ${gateName} ${sum(g)} ${g.every((r) => r.pass) ? '✔' : '✖'} (tries ${tries(g)} · ${g.map((r) => r.route).join('/')})   ${rules.floorModel ?? 'smaller'}* ${sum(f)} (tries ${tries(f)})`);
     for (const m of wrong(g)) out.push(...wrap('       ✖ ', `${gateName}: ${m}`, 100));
-    for (const m of wrong(f)) out.push(...wrap('       ✖ ', `${rules.floorModel ?? 'smaller model'}*: ${m}`, 100));
     if (t.matters) out.push(...wrap('     Why it matters: ', t.matters, 100));
   });
   const rate = Math.round((end.firstRequestAcceptedRate ?? 0) * 100);
@@ -135,6 +141,10 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
   out.push(...wrap('  - ', gate.every((r) => r.pass) ? `${gateName}, the model that decides, completed every job on every route. Agents can get MM3 ${started.version.split('-')[0]} to work.` : `${gateName}, the model that decides, missed at least one job (marked ✖ above). That blocks the release until it is understood.`, 100));
   out.push(...wrap('  - ', `The agent's first request to MM3 was accepted ${rate}% of the time (target 80%). ${rate < 80 ? 'Agents usually needed a retry, so the instructions and error messages still cost them effort.' : 'The instructions work.'}`, 100));
   if (floor.length) out.push(...wrap('  - ', `${rules.floorModel ?? 'The smaller model'} passed ${sum(floor)}. It is a floor, not a gate: it shows how forgiving MM3 is to a weaker agent.`, 100));
+  const rg = recOf(gate);
+  const rf = recOf(floor);
+  const recText = (x: Recovery | undefined): string => (x ? (x.stops === 0 ? 'hit no stops' : `after ${x.stops} stop(s) stayed on MM3 ${x.onTrack} time(s) and got a verdict on the next MM3 request ${x.fixedNext} time(s)`) : 'recovery not measurable for this run');
+  out.push(...wrap('  - ', `Recovery, the test of a good error message: ${gateName} ${recText(rg)}.${rf ? ` ${rules.floorModel ?? 'The smaller model'}* ${recText(rf)}.` : ''} The goal is every stop followed by MM3 and fixed on the next request.`, 100));
   out.push(...wrap('  - ', started.formal ? 'This is a formal run: the release gate reads it.' : 'This is a rehearsal: it ran from a checkout that is not the published build\'s own commit, with one trial per job. A formal run on the published commit is still needed.', 100));
   out.push(...wrap('  - ', 'It does not say the 0.1.2 features work or that MM3\'s verdicts are right (see "Not covered here").', 100));
 
@@ -143,7 +153,7 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
   out.push(`  free checks ${l1.filter((r) => r.ok).length}/${l1.length}: ${l1.map((r) => `${r.ok ? '✔' : '✖'} ${r.name.split(',')[0]!.replace('unit', 'tests').replace('CLI end to end', 'e2e')} ${/\d[\d,]*(\/\d+)?/u.exec(r.detail)?.[0] ?? ''}`.trim()).join(' · ')}`);
   out.push(`  context test (next step from text alone, not gated): ${(['none', 'some', 'detailed'] as const).map((lv) => `${lv === 'some' ? 'with instructions' : lv === 'detailed' ? 'with cards too' : 'no guidance'} ${l2.filter((r) => r.level === lv && r.pass).length}/${l2.filter((r) => r.level === lv).length}`).join(' · ')}`);
   for (const sc of started.definition.scenarios) {
-    out.push('', `  ${h(sc).title} (${sc.id})`, `  ${sc.checkpoints.map((c) => `${CHECKPOINTS[c.id]?.short ?? '?'} ${CHECKPOINTS[c.id]?.label ?? c.id}`).join(' · ')}`);
+    out.push('', `  ${h(sc).title} (${sc.id})`, `  ${sc.checkpoints.map((c) => `${CHECKPOINTS[c.id]?.short ?? '?'} ${CHECKPOINTS[c.id]?.label ?? c.id}${CHECKPOINTS[c.id]?.severity === 'exception' ? ' (exception-level)' : ''}`).join(' · ')}`);
     out.push(`  ${'route'.padEnd(5)} ${'model'.padEnd(7)} ${sc.checkpoints.map((c) => CHECKPOINTS[c.id]?.short ?? '?').join(' ')}   ${'tries'.padEnd(9)} ${'tokens in/out'.padEnd(13)} calls  context path`);
     for (const r of l3.filter((x) => x.id === sc.id)) {
       const mark = sc.checkpoints.map((c) => (r.failed.includes(c.id) ? '✖' : '✔')).join(' ');
@@ -160,6 +170,16 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
   out.push(...wrap('  record: ', `${recordText} · chain ${chainProblem() ? 'BROKEN' : 'intact'} · version ${started.version} built from ${started.versionCommit ?? '?'}, ran from ${started.head.slice(0, 7)} · guidance ${started.fingerprint.slice(0, 8)} · definition ${started.definition.hash.slice(0, 8)} stated ${started.ts.slice(0, 16)}Z, before the run`, 110));
   const bad = l3.find((r) => !r.pass && r.model === rules.gateModel) ?? l3.find((r) => !r.pass);
   out.push(`  one trial, call by call: npm run agentic:release-report -- ${started.id} --row ${(bad ?? l3[0])?.id}/${(bad ?? l3[0])?.route}/${(bad ?? l3[0])?.model}/${(bad ?? l3[0])?.trial}${bad ? '  (a missed one)' : ''}`);
+  out.push('', 'DECISION', ...wrap('  ', decision.headline, 100));
+  if (decision.blockers.length) out.push('  Because:', ...decision.blockers.flatMap((b) => wrap('   - ', b, 100)));
+  if (decision.exceptions.length) {
+    out.push('  Accepted for now, as exceptions:');
+    for (const x of decision.exceptions) out.push(...wrap('   - ', `${x.id}: ${x.saw}`, 100), ...wrap('       fix: ', x.fix, 100));
+  }
+  if (!decision.blockers.length && !decision.exceptions.length) out.push('  Nothing blocks it and nothing is accepted as an exception.');
+  out.push('', 'SELF-IMPROVEMENT   (recorded in the ledger whether or not it is accepted; npm run agentic:patterns shows what repeats)');
+  if (!decision.improvements.length) out.push('  none seen in this run');
+  decision.improvements.forEach((x, i) => out.push(...wrap(`  ${i + 1}. `, `${x.id} · ${x.models.join(', ')}: ${x.saw}`, 100), ...wrap('     try: ', x.fix, 100)));
   return out;
 }
 

@@ -40,6 +40,12 @@ describe('agentic release report [C-263]', () => {
     expect(t).toContain('WHAT THIS MEANS FOR THE RELEASE');
     expect(t).toContain('missed at least one job');
     expect(t).toContain('THE DATA');
+    expect(t).toMatch(/\nDECISION  DO NOT SHIP/u); // the verdict is on the top, too
+    expect(t).toMatch(/\nDECISION\n\s+DO NOT SHIP/u); // and it ends the report with its reasons
+    expect(t).toContain('Because:');
+    expect(t).toContain('sonnet missed "cites run id"');
+    expect(t).toMatch(/SELF-IMPROVEMENT\s+\(recorded in the ledger whether or not it is accepted/u);
+    expect(t.lastIndexOf('SELF-IMPROVEMENT')).toBeGreaterThan(t.indexOf('THE DATA')); // decision and improvements come last
     expect(t).toContain('one trial, call by call: npm run agentic:release-report -- CER-0007 --row S1/mcp/sonnet/1');
     expect(t.indexOf('WHAT THIS TESTS')).toBeLessThan(t.indexOf('THE DATA')); // the point comes before the numbers
   });
