@@ -151,7 +151,9 @@ export function compareRuns(a: { started: StartedRecord; finished?: FinishedReco
     const notes = b.started.definition.scenarios.flatMap((s) => {
       const o = was.get(s.id);
       if (!o) return [`new scenario ${s.id}`];
-      return [...(o.prompt !== s.prompt ? ['prompt'] : []), ...(o.model !== s.model ? ['model'] : []), ...(JSON.stringify(o.routes) !== JSON.stringify(s.routes) ? ['routes'] : []), ...(o.promise !== s.promise ? ['promise'] : []), ...(JSON.stringify(o.checkpoints) !== JSON.stringify(s.checkpoints) ? ['checkpoints'] : [])].map((w) => `${s.id}: ${w} changed`);
+      // a field the older record never stored cannot be compared: say so instead of calling it changed
+      const diff = (k: 'prompt' | 'model' | 'routes' | 'promise' | 'checkpoints'): string[] => (o[k] === undefined ? [`${s.id}: ${k} was not recorded in the older run`] : JSON.stringify(o[k]) !== JSON.stringify(s[k]) ? [`${s.id}: ${k} changed`] : []);
+      return (['prompt', 'model', 'routes', 'promise', 'checkpoints'] as const).flatMap(diff);
     });
     out.push(`definition of success: CHANGED${notes.length ? ` (${notes.join('; ')})` : ' (rules, pin or context)'}`);
   }

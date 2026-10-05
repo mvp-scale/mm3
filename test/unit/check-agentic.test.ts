@@ -81,4 +81,12 @@ describe('agentic ledger and gate [C-260]', () => {
     expect(text).toContain('first request accepted: 25% → 75%');
     expect(text).toContain('S1 · mcp · sonnet: 0/1 → 1/1');
   });
+
+  it('[C-260] comparing against an older record that never stored prompts or models says "not recorded", not "changed"', () => {
+    const old = started({ id: 'CER-0001' });
+    const legacy = { ...old, definition: { ...old.definition, hash: 'legacy-shape', scenarios: old.definition.scenarios.map(({ prompt: _p, model: _m, routes: _r, ...rest }) => rest) as unknown as StartedRecord['definition']['scenarios'] } };
+    const text = compareRuns({ started: legacy as StartedRecord }, { started: started({ id: 'CER-0002' }) }).join('\n');
+    expect(text).toContain('S1: prompt was not recorded in the older run');
+    expect(text).not.toContain('prompt changed');
+  });
 });
