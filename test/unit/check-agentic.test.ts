@@ -36,7 +36,7 @@ describe('agentic ledger and gate [C-260]', () => {
     expect(definitionOf(spec(), FIX).hash).toBe(base);
   });
   it('[C-260] the definition also carries a plain-English sentence for a person', () => {
-    expect(definitionOf(spec(), FIX).plain).toBe('1 scenarios (S1) on OWASP Juice Shop v1.0.0, over the mcp route; sonnet must pass 2 of 3 trials of each, haiku is reported but does not gate; every agent must get a verdict within its promised verb requests (3); first-request target 80%; sample provider, no key, no spend');
+    expect(definitionOf(spec(), FIX).plain).toBe('1 jobs (S1) on OWASP Juice Shop v1.0.0, over the mcp route; sonnet must pass 2 of 3 trials of each, haiku is reported but does not gate; every agent must get a verdict within its promised verb requests (3); first-request target 80%; sample provider, no key, no spend');
   });
   it('[C-260] a pass under a different definition of success is stale', () => {
     expect(agenticProblem({ ...cur, definitionHash: definitionOf(spec({ prompt: 'changed' }), FIX).hash }, { started: started(), finished: finished() })).toMatch(/definition of success changed since CER-0001/u);

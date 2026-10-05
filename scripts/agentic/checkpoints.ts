@@ -101,7 +101,7 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
     short: 'r',
     label: 'id in ledger',
     text: 'Every run id the final answer cites is in the ledger',
-    means: 'the agent reported a run that did not happen',
+    means: 'no run id was cited, or a cited id is not in the ledger (an agent reporting a run that did not happen)',
     check: (e) => {
       const ids = idsIn(e.answer);
       return ids.length > 0 && ids.every((id) => e.ledger.includes(id));

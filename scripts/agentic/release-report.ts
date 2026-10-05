@@ -74,8 +74,18 @@ const path = (t: Transcript | undefined, max: number): string => {
   return picks.map((v) => BARS[Math.min(BARS.length - 1, Math.floor((v / Math.max(max, 1)) * BARS.length))]).join('');
 };
 
-/** A whole run on one screen: the verdict, the five steps with their criteria matrix, the tokens, and the record's integrity. */
-export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey: string | undefined, load: (file: string) => Transcript | undefined = () => undefined): string[] {
+export interface Names {
+  purpose?: string;
+  notTested?: string[];
+  scenarios: Record<string, { title?: string; story?: string; success?: string; matters?: string }>;
+}
+
+/** What went wrong, in the checkpoints' own words, once each. */
+const wrong = (rows: Row[]): string[] => [...new Set(rows.flatMap((r) => r.failed.map((f) => CHECKPOINTS[f]?.means ?? f)))];
+const tries = (rows: Row[]): string => rows.flatMap((r) => r.attempts).map((a) => (a === 0 ? 'never' : String(a))).join(', ');
+
+/** A whole run, plain words first: the question, the jobs and how each went, what it means for the release; then the data. */
+export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey: string | undefined, load: (file: string) => Transcript | undefined = () => undefined, names?: Names): string[] {
   const starts = records.filter((r): r is StartedRecord => r.phase === 'started');
   const started = id ? starts.find((s) => s.id === id) : starts[starts.length - 1];
   if (!started) return [id ? `✖ release report: no run ${id} in the ledger → npm run agentic:runs lists them` : '✖ release report: the ledger has no runs yet → npm run ceremony -- --version <exact version>'];
@@ -86,30 +96,54 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
     return row ? tellRow(started, row, load) : [`✖ release report: no level 3 row ${rowKey} in ${started.id} → rows look like B1-class-a-file/mcp/sonnet/1`];
   }
   const gaps = recordGaps(started, end);
-  const rules = started.definition.rules as { gateModel?: string };
-  const status = end ? (end.phase === 'aborted' ? `ABORTED (${end.reason})` : end.passed ? 'PASSED' : 'FAILED') : 'INCOMPLETE';
+  const rules = started.definition.rules as { gateModel?: string; floorModel?: string };
+  const gateName = rules.gateModel ?? 'the gate model';
   const l1 = end?.level1 ?? [];
   const l2 = end?.level2 ?? [];
   const l3 = end?.level3 ?? [];
   const gate = l3.filter((r) => r.model === rules.gateModel);
   const floor = l3.filter((r) => r.model !== rules.gateModel);
   const sum = (rows: Row[]): string => `${rows.filter((r) => r.pass).length}/${rows.length}`;
+  const h = (sc: StartedRecord['definition']['scenarios'][number]) => ({ title: sc.title ?? names?.scenarios[sc.id]?.title ?? sc.id, story: sc.story ?? names?.scenarios[sc.id]?.story, success: sc.success ?? names?.scenarios[sc.id]?.success, matters: sc.matters ?? names?.scenarios[sc.id]?.matters });
+  const purpose = started.definition.purpose ?? names?.purpose;
+  const notTested = started.definition.notTested ?? names?.notTested ?? [];
+  const status = end ? (end.phase === 'aborted' ? `ABORTED (${end.reason})` : end.passed ? 'PASSED' : 'FAILED') : 'INCOMPLETE';
   const out: string[] = [
-    `AGENTIC RELEASE REPORT  ${started.id}  ${status} · ${started.formal ? 'FORMAL: the release gate reads it' : 'NOT FORMAL: the release gate ignores it'}`,
-    `version   ${started.version}`,
-    `code      built from ${started.versionCommit ?? '?'}, ran from ${started.head.slice(0, 7)}${started.formal ? '' : `   (not formal: ${[...(started.versionCommit && started.head.startsWith(started.versionCommit) ? [] : ["checkout is not the build's commit"]), ...(started.dirty ? ['uncommitted changes'] : []), ...(started.trialsOverride !== null ? [`${started.trialsOverride} trial each`] : [])].join('; ') || started.formalReason})`}`,
-    ...wrap('proven    ', started.definition.plain),
-    `record    ${started.schema === undefined ? 'old format, not checked' : gaps.length === 0 ? 'complete' : `${gaps.length} thing(s) not captured`} · chain ${chainProblem() ? 'BROKEN' : 'intact'} · guidance ${started.fingerprint.slice(0, 8)} · definition ${started.definition.hash.slice(0, 8)} · stated ${started.ts.slice(0, 16)}Z, before the run`,
+    `AGENTIC RELEASE REPORT · ${started.id} · MM3 ${started.version}`,
+    `RESULT  ${status}${started.formal ? '' : ' · a REHEARSAL: recorded, but it does not count toward the release gate'}`,
+    '',
+    'WHAT THIS TESTS',
+    ...(purpose ? wrap('  ', purpose, 100) : ['  (this run was recorded before the question was written down)']),
+    '  Not covered here:',
+    ...notTested.flatMap((t) => wrap('   - ', t, 100)),
     '',
   ];
   if (!end) return [...out, 'nothing further was recorded: the run never closed.'];
-  out.push(`1 PROVEN    ${started.definition.scenarios.length} scenarios, success defined before anything ran`);
-  out.push(`2 FREE      ${l1.filter((r) => r.ok).length}/${l1.length}   ${l1.map((r) => `${r.ok ? '✔' : '✖'} ${r.name.split(',')[0]!.replace('unit', 'tests').replace('CLI end to end', 'e2e')} ${/\d[\d,]*(\/\d+)?/u.exec(r.detail)?.[0] ?? ''}`.trim()).join(' · ')}`);
-  out.push(`3 CONTEXT   ${(['none', 'some', 'detailed'] as const).map((lv) => `${lv === 'some' ? 'instructions' : lv === 'detailed' ? '+cards' : 'none'} ${l2.filter((r) => r.level === lv && r.pass).length}/${l2.filter((r) => r.level === lv).length}`).join(' · ')}   (next step from text alone; not gated)`);
-  out.push(`4 AGENTS    ${rules.gateModel ?? 'gate model'} ${sum(gate)} ${gate.every((r) => r.pass) ? '✔' : '✖'}   floor ${sum(floor)} (reported, not gated)   sample provider: no live call`);
+  out.push(`THE JOBS, AND HOW EACH WENT   (${gateName} decides; ${rules.floorModel ?? 'the smaller model'} runs once for comparison, marked *)`);
+  started.definition.scenarios.forEach((sc, i) => {
+    const t = h(sc);
+    const g = gate.filter((r) => r.id === sc.id);
+    const f = floor.filter((r) => r.id === sc.id);
+    out.push('', `  ${i + 1}. ${t.title}`, ...(t.story ? wrap('     ', t.story, 100) : []), ...(t.success ? wrap('     Success: ', t.success, 100) : []));
+    out.push(`     Result: ${gateName} ${sum(g)} ${g.every((r) => r.pass) ? '✔' : '✖'} (tries ${tries(g)} · ${g.map((r) => r.route).join('/')})   ${rules.floorModel ?? 'smaller'}* ${sum(f)} (tries ${tries(f)})`);
+    for (const m of wrong(g)) out.push(...wrap('       ✖ ', `${gateName}: ${m}`, 100));
+    for (const m of wrong(f)) out.push(...wrap('       ✖ ', `${rules.floorModel ?? 'smaller model'}*: ${m}`, 100));
+    if (t.matters) out.push(...wrap('     Why it matters: ', t.matters, 100));
+  });
+  const rate = Math.round((end.firstRequestAcceptedRate ?? 0) * 100);
+  out.push('', 'WHAT THIS MEANS FOR THE RELEASE');
+  out.push(...wrap('  - ', gate.every((r) => r.pass) ? `${gateName}, the model that decides, completed every job on every route. Agents can get MM3 ${started.version.split('-')[0]} to work.` : `${gateName}, the model that decides, missed at least one job (marked ✖ above). That blocks the release until it is understood.`, 100));
+  out.push(...wrap('  - ', `The agent's first request to MM3 was accepted ${rate}% of the time (target 80%). ${rate < 80 ? 'Agents usually needed a retry, so the instructions and error messages still cost them effort.' : 'The instructions work.'}`, 100));
+  if (floor.length) out.push(...wrap('  - ', `${rules.floorModel ?? 'The smaller model'} passed ${sum(floor)}. It is a floor, not a gate: it shows how forgiving MM3 is to a weaker agent.`, 100));
+  out.push(...wrap('  - ', started.formal ? 'This is a formal run: the release gate reads it.' : 'This is a rehearsal: it ran from a checkout that is not the published build\'s own commit, with one trial per job. A formal run on the published commit is still needed.', 100));
+  out.push(...wrap('  - ', 'It does not say the 0.1.2 features work or that MM3\'s verdicts are right (see "Not covered here").', 100));
+
   const max = Math.max(1, ...l3.flatMap((r) => (load(r.transcript)?.turns ?? []).map((x) => x.inputTokens + x.cacheReadTokens + x.cacheCreationTokens)));
+  out.push('', 'THE DATA   (the whole definition of success is in the ledger line that was written before the run)');
+  out.push(`  free checks ${l1.filter((r) => r.ok).length}/${l1.length}: ${l1.map((r) => `${r.ok ? '✔' : '✖'} ${r.name.split(',')[0]!.replace('unit', 'tests').replace('CLI end to end', 'e2e')} ${/\d[\d,]*(\/\d+)?/u.exec(r.detail)?.[0] ?? ''}`.trim()).join(' · ')}`);
+  out.push(`  context test (next step from text alone, not gated): ${(['none', 'some', 'detailed'] as const).map((lv) => `${lv === 'some' ? 'with instructions' : lv === 'detailed' ? 'with cards too' : 'no guidance'} ${l2.filter((r) => r.level === lv && r.pass).length}/${l2.filter((r) => r.level === lv).length}`).join(' · ')}`);
   for (const sc of started.definition.scenarios) {
-    out.push('', `  ${sc.id}: ${sc.goal}`, `  ${sc.checkpoints.map((c) => `${CHECKPOINTS[c.id]?.short ?? '?'} ${CHECKPOINTS[c.id]?.label ?? c.id}`).join(' · ')}`);
+    out.push('', `  ${h(sc).title} (${sc.id})`, `  ${sc.checkpoints.map((c) => `${CHECKPOINTS[c.id]?.short ?? '?'} ${CHECKPOINTS[c.id]?.label ?? c.id}`).join(' · ')}`);
     out.push(`  ${'route'.padEnd(5)} ${'model'.padEnd(7)} ${sc.checkpoints.map((c) => CHECKPOINTS[c.id]?.short ?? '?').join(' ')}   ${'tries'.padEnd(9)} ${'tokens in/out'.padEnd(13)} calls  context path`);
     for (const r of l3.filter((x) => x.id === sc.id)) {
       const mark = sc.checkpoints.map((c) => (r.failed.includes(c.id) ? '✖' : '✔')).join(' ');
@@ -119,10 +153,13 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
   }
   const eco = Object.entries(l3.reduce<Record<string, { c: number; b: number }>>((a, r) => { for (const [k, v] of Object.entries(r.economics ?? {})) { const e = (a[k] ??= { c: 0, b: 0 }); e.c += v.calls; e.b += v.resultTokens; } return a; }, {})).filter(([, v]) => v.c > 0);
   const u = end.usage;
-  out.push('', `5 GATE      ${end.passed ? 'PASS' : 'FAIL'} · first request accepted ${Math.round((end.firstRequestAcceptedRate ?? 0) * 100)}% of ${rules.gateModel ?? 'gate'} trials (target 80%)`);
-  out.push(`TOKENS      ${u ? `${u.claudeRuns} runs · ${u.turns} turns · ${kfmt(u.inputTokens + u.cacheReadTokens + u.cacheCreationTokens)} in · ${kfmt(u.outputTokens)} out · ${u.mm3Calls} MM3 calls` : 'not recorded'}${eco.length ? `   by kind (calls ≈tokens back): ${eco.map(([k, v]) => `${k} ${v.c} ≈${kfmt(v.b)}`).join(' · ')}` : ''}`);
+  const ecoText = eco.length ? ` · by kind of call (calls ≈tokens back): ${eco.map(([k, v]) => `${k} ${v.c} ≈${kfmt(v.b)}`).join(' · ')}` : '';
+  const tokenText = u ? `${u.claudeRuns} agent runs · ${u.turns} turns · ${kfmt(u.inputTokens + u.cacheReadTokens + u.cacheCreationTokens)} in · ${kfmt(u.outputTokens)} out · ${u.mm3Calls} MM3 calls` : 'not recorded';
+  out.push('', ...wrap('  tokens: ', `${tokenText}${ecoText}`, 110));
+  const recordText = started.schema === undefined ? 'old format, not checked' : gaps.length === 0 ? 'complete' : `${gaps.length} thing(s) not captured`;
+  out.push(...wrap('  record: ', `${recordText} · chain ${chainProblem() ? 'BROKEN' : 'intact'} · version ${started.version} built from ${started.versionCommit ?? '?'}, ran from ${started.head.slice(0, 7)} · guidance ${started.fingerprint.slice(0, 8)} · definition ${started.definition.hash.slice(0, 8)} stated ${started.ts.slice(0, 16)}Z, before the run`, 110));
   const bad = l3.find((r) => !r.pass && r.model === rules.gateModel) ?? l3.find((r) => !r.pass);
-  out.push(`READ MORE   ${'--row '}${(bad ?? l3[0])?.id}/${(bad ?? l3[0])?.route}/${(bad ?? l3[0])?.model}/${(bad ?? l3[0])?.trial}  tells one trial call by call${bad ? '  (a missed one)' : ''}`);
+  out.push(`  one trial, call by call: npm run agentic:release-report -- ${started.id} --row ${(bad ?? l3[0])?.id}/${(bad ?? l3[0])?.route}/${(bad ?? l3[0])?.model}/${(bad ?? l3[0])?.trial}${bad ? '  (a missed one)' : ''}`);
   return out;
 }
 
@@ -139,5 +176,8 @@ if (process.argv[1]?.endsWith('release-report.ts')) {
     const j = JSON.parse(text) as { calls: ClaudeCall[]; turns?: TurnUsage[] };
     return { text, calls: j.calls, ...(j.turns ? { turns: j.turns } : {}) };
   };
-  console.log(tellRun(readLedger(), id, rowAt >= 0 ? args[rowAt + 1] : undefined, load).join('\n'));
+  // a run recorded before titles existed is shown with the current scenario file's plain-language names
+  const spec = JSON.parse(readFileSync('test/agentic/scenarios/baseline.json', 'utf8')) as { purpose?: string; notTested?: string[]; full: Array<{ id: string; title?: string; story?: string; success?: string; matters?: string }> };
+  const names: Names = { ...(spec.purpose ? { purpose: spec.purpose } : {}), ...(spec.notTested ? { notTested: spec.notTested } : {}), scenarios: Object.fromEntries(spec.full.map((x) => [x.id, x])) };
+  console.log(tellRun(readLedger(), id, rowAt >= 0 ? args[rowAt + 1] : undefined, load, names).join('\n'));
 }

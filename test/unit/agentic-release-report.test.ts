@@ -24,23 +24,40 @@ const finished = (o: Partial<FinishedRecord> = {}): FinishedRecord => ({
 const load = (text: string) => () => ({ text, calls, turns: JSON.parse(text).turns });
 
 describe('agentic release report [C-263]', () => {
-  it('[C-263] a run is reported on one screen: the verdict, the five steps, a criteria matrix per scenario, tokens and the record check', () => {
-    const t = tellRun([started, finished()], 'CER-0007', undefined).join('\n');
-    expect(t).toContain('AGENTIC RELEASE REPORT  CER-0007  FAILED · FORMAL: the release gate reads it');
-    expect(t).toContain('version   0.1.2-nightly.test');
-    expect(t).toMatch(/record\s+old format, not checked · chain intact/u); // the fixture predates the schema; a complete record says "complete"
-    expect(t).toContain('2 FREE      1/2   ✔ hygiene · ✖ plugin bundle');
-    expect(t).toMatch(/3 CONTEXT\s+none 1\/1 · instructions 0\/1 · \+cards 0\/0/u);
-    expect(t).toContain('4 AGENTS    sonnet 0/1 ✖');
-    expect(t).toContain('e engaged · c cites run id'); // the legend names each column letter
-    expect(t).toMatch(/mcp\s+sonnet\s+✔ ✖\s+\[2\]\s+14k\/70\s+2/u); // the matrix row: criteria, tries, tokens in/out, calls
-    expect(t).toContain('5 GATE      FAIL · first request accepted 0% of sonnet trials (target 80%)');
-    expect(t).toContain('READ MORE   --row S1/mcp/sonnet/1');
-    expect(Math.max(...t.split('\n').map((l) => l.length))).toBeLessThanOrEqual(150);
+  const names = { purpose: 'Can an agent get a useful answer out of MM3 on its own?', notTested: ['Whether verdicts are right.'], scenarios: { S1: { title: 'Ask a plain question', story: 'A developer asks an agent whether a file is safe.', success: 'A verdict within 3 tries, with a real run id.', matters: 'A first minute that fails.' } } };
+
+  it('[C-263] a run is reported in plain words first: the question, each job and how it went, what it means for the release; then the data', () => {
+    const t = tellRun([started, finished()], 'CER-0007', undefined, undefined, names).join('\n');
+    expect(t).toContain('AGENTIC RELEASE REPORT · CER-0007 · MM3 0.1.2-nightly.test');
+    expect(t).toContain('RESULT  FAILED');
+    expect(t).toMatch(/WHAT THIS TESTS\n\s+Can an agent get a useful answer out of MM3 on its own\?/u);
+    expect(t).toContain('Not covered here:');
+    expect(t).toContain('1. Ask a plain question'); // the job is named like a job, not by its code
+    expect(t).toContain('Success: A verdict within 3 tries, with a real run id.');
+    expect(t).toContain('Result: sonnet 0/1 ✖');
+    expect(t).toContain('✖ sonnet: the agent did not report evidence it was asked to cite'); // a miss, in the checkpoint's own words
+    expect(t).toContain('Why it matters: A first minute that fails.');
+    expect(t).toContain('WHAT THIS MEANS FOR THE RELEASE');
+    expect(t).toContain('missed at least one job');
+    expect(t).toContain('THE DATA');
+    expect(t).toContain('one trial, call by call: npm run agentic:release-report -- CER-0007 --row S1/mcp/sonnet/1');
+    expect(t.indexOf('WHAT THIS TESTS')).toBeLessThan(t.indexOf('THE DATA')); // the point comes before the numbers
+  });
+
+  it('[C-263] the data part keeps the matrix: a legend, one letter per criterion, a tick or a cross per trial, tries, tokens and calls', () => {
+    const t = tellRun([started, finished()], 'CER-0007', undefined, undefined, names).join('\n');
+    expect(t).toContain('e engaged · c cites run id');
+    expect(t).toMatch(/mcp\s+sonnet\s+✔ ✖\s+\[2\]\s+14k\/70\s+2/u);
+    expect(t).toMatch(/free checks 1\/2: ✔ hygiene · ✖ plugin bundle/u);
+    expect(Math.max(...t.split('\n').map((l) => l.length))).toBeLessThanOrEqual(130);
+  });
+
+  it('[C-263] a run recorded without a stated question says so instead of guessing', () => {
+    expect(tellRun([started, finished()], 'CER-0007', undefined).join('\n')).toContain('recorded before the question was written down');
   });
 
   it('[C-263] with transcripts on hand each trial carries a context path: bars of the context the lead carried at each turn', () => {
-    const t = tellRun([started, finished()], 'CER-0007', undefined, load(body)).join('\n');
+    const t = tellRun([started, finished()], 'CER-0007', undefined, load(body), names).join('\n');
     expect(t).toMatch(/mcp\s+sonnet\s+✔ ✖\s+\[2\]\s+14k\/70\s+2\s+[▁-█]{2}/u);
   });
 
@@ -65,7 +82,7 @@ describe('agentic release report [C-263]', () => {
     expect(tellRun([started], 'CER-0099', undefined)[0]).toMatch(/no run CER-0099/u);
     expect(tellRun([started, finished()], 'CER-0007', 'X/mcp/sonnet/1')[0]).toMatch(/no level 3 row X\/mcp\/sonnet\/1/u);
     const open = tellRun([started], 'CER-0007', undefined).join('\n');
-    expect(open).toContain('CER-0007  INCOMPLETE');
+    expect(open).toContain('RESULT  INCOMPLETE');
     expect(open).toContain('the run never closed');
   });
 });

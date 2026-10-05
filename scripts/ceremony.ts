@@ -66,7 +66,8 @@ out(`\n1. IDENTIFY AND STATE SUCCESS (recorded in test/agentic/ledger.jsonl befo
 out(`   ${definition.plain}\n   version ${version}\n   commit ${head.slice(0, 7)}${dirty ? ' (dirty)' : ''} · guidance fingerprint ${fingerprint.slice(0, 16)} · definition of success ${definition.hash.slice(0, 16)}`);
 out(`   this run is ${formal ? 'FORMAL: it counts toward the release gate' : `NOT FORMAL (recorded, not counted): ${reasons.join('; ')}`}`);
 out(`   node ${env.node} · vitest ${env.vitest} · ${env.claude} · ${env.os}\n   tested artifact: npm integrity ${(started.artifact?.npmIntegrity ?? 'not found').slice(0, 24)}… · plugin commit ${versionCommit ?? 'none'}`);
-for (const s of started.definition.scenarios) out(`   ${s.id}: ${s.goal}\n      checkpoints: ${s.checkpoints.map((c) => c.id).join(', ')} (promise ${s.promise})`);
+if (definition.purpose) out(`   the question: ${definition.purpose}`);
+for (const s of started.definition.scenarios) out(`   ${s.title ?? s.id}: ${s.success ?? s.goal}\n      criteria: ${s.checkpoints.map((c) => c.id).join(', ')} (promise ${s.promise})`);
 
 let finishedWritten = false;
 const close = (r: Omit<FinishedRecord, 'kind' | 'startedId' | 'ts'>): void => {

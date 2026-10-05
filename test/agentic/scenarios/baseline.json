@@ -75,7 +75,11 @@
         "last-request-accepted",
         "answer-cites-run-id",
         "run-id-in-ledger"
-      ]
+      ],
+      "title": "Ask a plain question",
+      "story": "A developer asks their agent: \"Is routes/login.ts safe to ship? Use MM3 to check it.\" The agent has MM3 and no other help.",
+      "success": "MM3 gives the agent a recorded verdict within 3 tries, and the agent tells the developer the run id, which really exists.",
+      "matters": "If agents cannot do this, a new user's first minute with MM3 fails."
     },
     {
       "id": "B2-delegate",
@@ -95,7 +99,11 @@
         "helpers-cite-ids",
         "answer-cites-run-id",
         "run-id-in-ledger"
-      ]
+      ],
+      "title": "Hand the work to helper agents",
+      "story": "A developer asks the lead agent to review three files, one helper agent per file, using MM3.",
+      "success": "Every helper gets MM3 working, gets a verdict and reports its run id, and the lead reports all three.",
+      "matters": "Real work is split across helpers. If helpers start without MM3's guidance they flounder or skip MM3."
     },
     {
       "id": "B3-one-stop",
@@ -111,7 +119,11 @@
         "first-fix-works",
         "answer-cites-run-id",
         "run-id-in-ledger"
-      ]
+      ],
+      "title": "Recover from one mistake",
+      "story": "The agent is handed an MM3 request with one deliberate mistake: the decisions section is missing.",
+      "success": "MM3's error message tells the agent what to change, and its next request is accepted.",
+      "matters": "MM3 promises that an error message is enough to fix a mistake. This checks the promise."
     }
   ],
   "rules": {
@@ -127,5 +139,10 @@
     "The project is a fresh copy of the pinned Juice Shop checkout with no .mm3/ in it.",
     "The agent gets only the task prompt below: no hints, no expected outcome. Only Read/Glob/Grep (plus Write and a shell on the CLI route, the Agent tool for delegation) exist.",
     "Counted as a verb request: class, scan, drill, loop, view or replay. Calls to agent, template, help, probe or doctor are discovery, not attempts."
+  ],
+  "purpose": "Can an agent get a useful answer out of MM3 on its own? A developer tells an agent to use MM3 to check some code. We watch whether the agent succeeds without a person stepping in, using only what MM3 itself gives it: its instructions, its help and its error messages. The project the agents look at (OWASP Juice Shop) is sample material; it is not what is being tested.",
+  "notTested": [
+    "The 0.1.2 features themselves (config receipts, the budget stop, the doctor versions line, init --agents writing CLAUDE.md). The unit and CLI tests cover them; agents do not exercise them yet.",
+    "Whether MM3's verdicts are right. The sample provider gives canned answers, so that needs the keyed live suite."
   ]
 }
