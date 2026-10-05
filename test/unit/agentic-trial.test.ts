@@ -58,7 +58,7 @@ describe('the install-health setup [C-266]', () => {
     const real = path.join(root, 'real');
     mkdirSync(real);
     writeFileSync(path.join(real, 'mm3'), '#!/bin/sh\necho "dir=$CLAUDE_CONFIG_DIR args=$*"\n', { mode: 0o755 });
-    const dir = shimMm3(root, real, '/fake/claude dir');
+    const dir = shimMm3(real, '/fake/claude dir');
     const out = spawnSync(path.join(dir, 'mm3'), ['doctor'], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '' } });
     expect(out.stdout.trim()).toBe('dir=/fake/claude dir args=doctor');
     expect(process.env.CLAUDE_CONFIG_DIR).not.toBe('/fake/claude dir'); // nothing leaked into this process

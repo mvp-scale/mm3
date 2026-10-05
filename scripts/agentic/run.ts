@@ -22,6 +22,7 @@ export interface FullScenario {
   helpers?: number;
   promise: number;
   setup?: 'config-runs-1' | 'plugin-record-mismatch'; // what the project (or the environment) is set up with before the agent starts
+  shell?: 'mm3-only'; // the agent's shell may run only mm3: for a job about asking MM3 itself, so it cannot read the machine around it
   checkpoints: string[];
 }
 
@@ -94,9 +95,8 @@ export function installPackage(version: string): string {
 
 /** For the install-health job on the CLI route: Claude Code uses CLAUDE_CONFIG_DIR for its own login, so the fake plugin record cannot be set for the whole session.
  *  A small `mm3` on the path sets it for MM3 alone and runs the real one. Returns the folder to put first on PATH. */
-export function shimMm3(project: string, realBin: string, claudeDir: string): string {
-  const dir = path.join(project, '.shim');
-  mkdirSync(dir, { recursive: true });
+export function shimMm3(realBin: string, claudeDir: string): string {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'mm3-agentic-shim-'));
   writeFileSync(path.join(dir, 'mm3'), `#!/bin/sh\nCLAUDE_CONFIG_DIR=${JSON.stringify(claudeDir)} exec ${JSON.stringify(path.join(realBin, 'mm3'))} "$@"\n`, { mode: 0o755 });
   return dir;
 }
@@ -110,7 +110,7 @@ export function applySetup(setup: FullScenario['setup'], project: string): Recor
   }
   if (setup === 'plugin-record-mismatch') {
     // Claude's own record of an installed mm3 plugin, at an older commit than the copy under test
-    const claude = path.join(project, '.claude-fake');
+    const claude = mkdtempSync(path.join(os.tmpdir(), 'mm3-agentic-claude-')); // outside the project, so the agent does not find the fixture by looking around
     const install = path.join(claude, 'plugins', 'cache', 'mm3', 'mm3', 'f337f612ebb4');
     mkdirSync(install, { recursive: true });
     writeFileSync(path.join(install, 'package.json'), JSON.stringify({ name: '@mvpscale/mm3', version: '0.1.1' }));
@@ -184,10 +184,10 @@ export function runFull(scenarios: FullScenario[], version: string, rules: Rules
     const env: Record<string, string> = opts.paid ? { MM3_ACTOR: 'agentic', ...setupEnv } : { MM3_PROVIDER: 'fake', TYPESAFE_API_KEY: '', AI_GATEWAY_API_KEY: '', XDG_CONFIG_HOME: path.join(project, '.no-config'), MM3_ACTOR: 'agentic', ...setupEnv };
     const base = ['Read', 'Glob', 'Grep'];
     // a paid run gets only the mm3 command in the shell: nothing that could print a stored key
-    const shell = opts.paid ? ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)'] : ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)', 'Bash(command -v *)', 'Bash(which *)', 'Bash(cat *)', 'Bash(echo *)', 'Bash(printf *)', 'Bash(ls *)', 'Bash(pwd)', 'Bash(grep *)', 'Bash(find *)'];
+    const shell = opts.paid || s.shell === 'mm3-only' ? ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)'] : ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)', 'Bash(command -v *)', 'Bash(which *)', 'Bash(cat *)', 'Bash(echo *)', 'Bash(printf *)', 'Bash(ls *)', 'Bash(pwd)', 'Bash(grep *)', 'Bash(find *)'];
     // the fake plugin record must reach MM3 only: Claude Code itself reads CLAUDE_CONFIG_DIR for its login
     const claudeDir = env.CLAUDE_CONFIG_DIR;
-    const shim = route === 'cli' && claudeDir ? shimMm3(project, bin, claudeDir) : undefined;
+    const shim = route === 'cli' && claudeDir ? shimMm3(bin, claudeDir) : undefined;
     if (shim) delete env.CLAUDE_CONFIG_DIR;
     const run = route === 'cli'
       ? runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Edit', 'Bash'], allowedTools: [...base, 'Write', 'Edit', ...shell], env: { ...env, PATH: `${shim ? `${shim}:` : ''}${bin}:${process.env.PATH}` }, budgetUsd: 2 })

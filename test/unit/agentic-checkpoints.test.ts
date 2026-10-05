@@ -84,10 +84,13 @@ describe('feature job checkpoints [C-266]', () => {
     expect(run(['two-verdicts'], ev([mm3(['class', '-'], OK), mm3(['class', '-'], OK)]))['two-verdicts']).toBe(false); // the same run twice is one verdict
   });
 
-  it('[C-266] install health: the warning was seen, and the fix is the right one (never @latest)', () => {
-    const doctor = mm3(['doctor'], 'versions: "⚠ the plugin is 0.1.1 (f337f61) and this copy is 0.1.2-nightly.x → /plugin update … @nightly"');
-    expect(run(['doctor-versions-seen', 'right-fix-reported'], ev([doctor], { answer: 'Run /plugin update, or npm install -g @mvpscale/mm3@nightly.' }))).toEqual({ 'doctor-versions-seen': true, 'right-fix-reported': true });
-    expect(run(['right-fix-reported'], ev([doctor], { answer: 'npm install -g @mvpscale/mm3@latest' }))['right-fix-reported']).toBe(false);
+  it('[C-266] install health: the warning was seen, the older copy is named with how to update it, and a nightly copy is never sent to @latest', () => {
+    const doctor = mm3(['doctor'], 'versions: "⚠ the plugin is 0.1.1 (f337f61) and this copy is 0.1.2-nightly.x → update the older one: /plugin update in Claude Code, or npm install -g @mvpscale/mm3@nightly"');
+    expect(run(['doctor-versions-seen', 'right-fix-reported'], ev([doctor], { answer: 'The plugin is the older copy. Run /plugin update in Claude Code.' }))).toEqual({ 'doctor-versions-seen': true, 'right-fix-reported': true });
+    expect(run(['right-fix-reported'], ev([doctor], { answer: 'Run /plugin update, or npm install -g @mvpscale/mm3@latest' }))['right-fix-reported']).toBe(false); // would downgrade a nightly copy
+    expect(run(['right-fix-reported'], ev([doctor], { answer: 'Update something.' }))['right-fix-reported']).toBe(false);
+    const localDoctor = mm3(['doctor'], 'versions: "⚠ the plugin is 0.1.1 (f337f61) and this copy is 0.1.2 → update the older one: /plugin update in Claude Code, or npm install -g @mvpscale/mm3@latest"');
+    expect(run(['right-fix-reported'], ev([localDoctor], { answer: 'Run /plugin update (doctor also lists npm install -g @mvpscale/mm3@latest).' }))['right-fix-reported']).toBe(true); // a non-nightly copy: quoting doctor's own line is fine
     expect(run(['doctor-versions-seen'], ev([mm3(['doctor'], 'versions: ✔ the plugin and this copy are both 0.1.2')]))['doctor-versions-seen']).toBe(false);
   });
 

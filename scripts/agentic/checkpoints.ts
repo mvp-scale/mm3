@@ -113,9 +113,9 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
     short: 'k',
     label: 'right fix, no downgrade',
     fix: "Keep the doctor fix text specific: `/plugin update`, or `npm install -g @mvpscale/mm3@nightly` for a nightly copy.",
-    text: "The answer gives the right fix for the older copy and never advises @latest",
+    text: "The answer names the older copy (the plugin) and how to update it, and never sends a nightly copy to @latest",
     means: "the agent gave a fix that would downgrade a nightly copy, or none",
-    check: (e) => /\/plugin update|@nightly/u.test(e.answer) && !/@latest/u.test(e.answer),
+    check: (e) => /\/plugin update/u.test(e.answer) && !(mm3Calls(e).some((c) => c.result.includes('@nightly')) && /@latest/u.test(e.answer)), // the older copy is the plugin; a nightly copy is never sent to @latest
   },
   'agents-block-written': {
     id: 'agents-block-written',

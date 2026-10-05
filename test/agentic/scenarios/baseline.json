@@ -177,13 +177,13 @@
     {
       "id": "F3-install-health",
       "title": "Check the install is healthy",
-      "story": "A developer asks: \"Is my MM3 install healthy? If something needs updating, tell me which copy and how.\" Claude's own record shows the plugin at an older commit than the MM3 copy the agent has.",
+      "story": "A developer asks: \"Is my MM3 install healthy? If something needs updating, tell me which copy and how.\" The agent can ask MM3 itself; Claude's own record shows the plugin at an older commit than the MM3 copy the agent has.",
       "success": "The agent runs doctor, finds the versions warning, and gives the right fix: update the plugin, or install the nightly copy, and never the older latest.",
       "matters": "The versions line exists so a user knows which copy to update. A fix that downgrades a nightly copy would be worse than no advice.",
       "goal": "An agent finds the version mismatch with doctor and reports the right fix.",
       "prompt": "Is my MM3 install healthy? If something needs updating, tell me which copy and how.",
       "setup": "plugin-record-mismatch",
-      "setupNote": "Before the agent starts, a fake Claude config folder (CLAUDE_CONFIG_DIR) records an mm3 plugin install at commit f337f61, version 0.1.1.",
+      "setupNote": "Before the agent starts, a fake Claude config folder (outside the project) records an mm3 plugin install at commit f337f61, version 0.1.1, and the agent's shell may run only mm3.",
       "model": "sonnet",
       "routes": [
         "cli"
@@ -194,7 +194,8 @@
         "doctor-versions-seen",
         "right-fix-reported",
         "stays-on-mm3"
-      ]
+      ],
+      "shell": "mm3-only"
     },
     {
       "id": "F4-set-up-project",
