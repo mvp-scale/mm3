@@ -49,6 +49,8 @@ describe('agentic ledger and gate [C-260]', () => {
     expect(lastFormal(records)?.started.id).toBe('CER-0001'); // 0002 is not formal; 0003 never closed
     expect(incomplete(records).map((r) => r.id)).toEqual(['CER-0003']);
     expect(nextId(records)).toBe('CER-0004');
+    expect(nextId([started({ id: 'CER-0003' })])).toBe('CER-0004'); // earlier runs archived out of the file: an id is never reused
+    expect(nextId([])).toBe('CER-0001');
   });
 
   it('[C-260] every appended line carries the hash of the line before it, and an edited or removed line is caught', () => {

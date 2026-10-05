@@ -107,7 +107,8 @@ const lines = (file: string): string[] => (existsSync(file) ? readFileSync(file,
 
 export const readLedger = (file = LEDGER): LedgerRecord[] => lines(file).map((l) => JSON.parse(l) as LedgerRecord);
 
-export const nextId = (records: LedgerRecord[]): string => `CER-${String(records.filter((r) => r.phase === 'started').length + 1).padStart(4, '0')}`;
+/** One past the highest number used, so an id is never reused even when earlier runs were archived out of the file. */
+export const nextId = (records: LedgerRecord[]): string => `CER-${String(Math.max(0, ...records.filter((r) => r.phase === 'started').map((r) => Number(/\d+/u.exec(r.id)?.[0] ?? 0))) + 1).padStart(4, '0')}`;
 
 /** Appends a record, stamping the schema and the hash of the line before it. */
 export function append(r: LedgerRecord, file = LEDGER): void {
