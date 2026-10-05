@@ -14,6 +14,8 @@ export interface Evidence {
 
 export interface Checkpoint {
   id: string;
+  short: string; // one letter: the column heading in the terminal report
+  label: string; // two or three words: its legend entry
   text: string; // what is true when it passes
   means: string; // what a failure points at, so a red row says where to look
   check: (e: Evidence) => boolean;
@@ -29,42 +31,56 @@ const expectedAgents = (e: Evidence): number => Math.max(e.helpers, 1);
 export const CHECKPOINTS: Record<string, Checkpoint> = {
   engaged: {
     id: 'engaged',
+    short: 'e',
+    label: 'engaged',
     text: 'The agent calls MM3 at all',
     means: 'the guidance did not make the agent reach for MM3 (discoverability, the carriers)',
     check: (e) => e.calls.some(isMm3) || e.calls.some((c) => c.tool === 'Agent' && /mm3/iu.test(String(c.input.prompt ?? ''))),
   },
   'verdict-in-promise': {
     id: 'verdict-in-promise',
+    short: 'v',
+    label: 'verdict in promise',
     text: 'Every agent that works gets a verdict within the promised number of verb requests',
     means: 'stops or templates did not steer the agent to a valid request in time (stop wording, template, guidance)',
     check: (e) => groups(e).length >= expectedAgents(e) && groups(e).every((g) => g.outcomes.indexOf(true) !== -1 && g.outcomes.indexOf(true) < e.promise),
   },
   'first-fix-works': {
     id: 'first-fix-works',
+    short: 'f',
+    label: 'first fix works',
     text: 'After one stop that names the fix, the next request is accepted (verdict on the 2nd request at the latest)',
     means: 'the stop said what to change but the agent could not act on it (stop wording)',
     check: (e) => groups(e).length >= 1 && groups(e).every((g) => g.outcomes.indexOf(true) !== -1 && g.outcomes.indexOf(true) < 2),
   },
   'last-request-accepted': {
     id: 'last-request-accepted',
+    short: 'l',
+    label: 'last request ok',
     text: "Each agent's last verb request was accepted (no unrecovered stop)",
     means: 'the agent gave up or ran out of road on a stop',
     check: (e) => groups(e).length >= 1 && groups(e).every((g) => g.outcomes[g.outcomes.length - 1] === true),
   },
   'helpers-spawned': {
     id: 'helpers-spawned',
+    short: 'h',
+    label: 'helpers',
     text: 'The lead hands the work to the expected number of helpers',
     means: 'delegation did not happen (guidance on delegating)',
     check: (e) => e.calls.filter((c) => c.tool === 'Agent').length >= e.helpers,
   },
   'delegate-card-in-prompts': {
     id: 'delegate-card-in-prompts',
+    short: 'd',
+    label: 'card in prompts',
     text: "Every helper's prompt carries the `mm3 agent delegate` card",
     means: 'the lead delegated without the card, so helpers start without MM3 guidance',
     check: (e) => e.calls.filter((c) => c.tool === 'Agent').every((c) => /never read \.mm3\/log\.jsonl|MM3 run id with its gate/u.test(String(c.input.prompt ?? ''))) && e.calls.some((c) => c.tool === 'Agent'),
   },
   'helpers-cite-ids': {
     id: 'helpers-cite-ids',
+    short: 'x',
+    label: 'helpers cite ids',
     text: "Each helper's report cites an MM3 run id",
     means: 'helpers did not follow the report rule on the card',
     check: (e) => {
@@ -74,12 +90,16 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
   },
   'answer-cites-run-id': {
     id: 'answer-cites-run-id',
+    short: 'c',
+    label: 'cites run id',
     text: 'The final answer states the MM3 run id',
     means: 'the agent did not report evidence it was asked to cite (guidance on citing)',
     check: (e) => idsIn(e.answer).length > 0,
   },
   'run-id-in-ledger': {
     id: 'run-id-in-ledger',
+    short: 'r',
+    label: 'id in ledger',
     text: 'Every run id the final answer cites is in the ledger',
     means: 'the agent reported a run that did not happen',
     check: (e) => {

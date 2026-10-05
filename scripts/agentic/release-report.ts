@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import type { ClaudeCall, TurnUsage } from './claude.ts';
 import { chainProblem, readLedger, recordGaps, type FinishedRecord, type LedgerRecord, type StartedRecord } from './ledger.ts';
+import { CHECKPOINTS } from './checkpoints.ts';
 import { approxTokens, economicsLine, kindOf } from './trace.ts';
 
 type Row = NonNullable<FinishedRecord['level3']>[number];
@@ -50,7 +51,30 @@ function totals(row: Row): string[] {
   return [u ? `  totals (exact, from the run's own usage): ${tok(u.inputTokens + u.cacheReadTokens + u.cacheCreationTokens)} tokens in, ${tok(u.outputTokens)} out, ${u.turns} model turns, ${row.mm3Calls} MM3 calls` : `  totals: tokens not recorded for this run; ${row.mm3Calls} MM3 calls`, `  attempts to a verdict, per agent: ${JSON.stringify(row.attempts)} · first request accepted: ${row.firstRequestAccepted ? 'yes' : 'no'}`];
 }
 
-/** A whole run, reported in five steps, each with its criteria and its result. */
+/** Wraps a long sentence to the screen, indenting the continuation lines under the first. */
+const wrap = (label: string, text: string, width = 104): string[] => {
+  const lines: string[] = [];
+  let cur = '';
+  for (const w of text.split(' ')) {
+    if ((cur + ' ' + w).length > width - label.length && cur) {
+      lines.push(cur);
+      cur = w;
+    } else cur = cur ? `${cur} ${w}` : w;
+  }
+  lines.push(cur);
+  return lines.map((l, i) => (i === 0 ? `${label}${l}` : `${' '.repeat(label.length)}${l}`));
+};
+
+const kfmt = (n: number): string => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e4 ? `${Math.round(n / 1e3)}k` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n));
+const BARS = '▁▂▃▄▅▆▇█';
+/** The context the lead carried at each of its turns, as a row of bars scaled to the biggest in the run. */
+const path = (t: Transcript | undefined, max: number): string => {
+  const lead = (t?.turns ?? []).filter((x) => x.agent === 'lead').map((x) => x.inputTokens + x.cacheReadTokens + x.cacheCreationTokens);
+  const picks = lead.length > 14 ? Array.from({ length: 14 }, (_, i) => lead[Math.round((i * (lead.length - 1)) / 13)]!) : lead;
+  return picks.map((v) => BARS[Math.min(BARS.length - 1, Math.floor((v / Math.max(max, 1)) * BARS.length))]).join('');
+};
+
+/** A whole run on one screen: the verdict, the five steps with their criteria matrix, the tokens, and the record's integrity. */
 export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey: string | undefined, load: (file: string) => Transcript | undefined = () => undefined): string[] {
   const starts = records.filter((r): r is StartedRecord => r.phase === 'started');
   const started = id ? starts.find((s) => s.id === id) : starts[starts.length - 1];
@@ -62,31 +86,43 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
     return row ? tellRow(started, row, load) : [`✖ release report: no level 3 row ${rowKey} in ${started.id} → rows look like B1-class-a-file/mcp/sonnet/1`];
   }
   const gaps = recordGaps(started, end);
+  const rules = started.definition.rules as { gateModel?: string };
+  const status = end ? (end.phase === 'aborted' ? `ABORTED (${end.reason})` : end.passed ? 'PASSED' : 'FAILED') : 'INCOMPLETE';
+  const l1 = end?.level1 ?? [];
+  const l2 = end?.level2 ?? [];
+  const l3 = end?.level3 ?? [];
+  const gate = l3.filter((r) => r.model === rules.gateModel);
+  const floor = l3.filter((r) => r.model !== rules.gateModel);
+  const sum = (rows: Row[]): string => `${rows.filter((r) => r.pass).length}/${rows.length}`;
   const out: string[] = [
-    `AGENTIC RELEASE REPORT · ${started.id} · ${started.version} · ${started.formal ? 'a FORMAL run' : 'NOT formal'} · ${end ? (end.phase === 'aborted' ? `ABORTED (${end.reason})` : end.passed ? 'PASSED' : 'FAILED') : 'INCOMPLETE (it never closed)'}`,
-    `  ${started.formal ? 'counts toward the release gate' : `recorded, does not count toward the release gate: ${started.formalReason}`}`,
-    `  record check: ${started.schema === undefined ? 'recorded before the schema existed (backfilled): not checked, and it cannot bless a release' : gaps.length === 0 ? 'complete: every field a release decision needs was captured' : `${gaps.length} thing(s) not captured: ${gaps.join('; ')}`}`, '',
-    `STEP 1 · what was to be proven, stated before anything ran (recorded ${started.ts.slice(0, 16)}Z, definition ${started.definition.hash.slice(0, 12)})`,
-    `  ${started.definition.plain}`,
-    `  commit tested ${started.head.slice(0, 7)} · guidance ${started.fingerprint.slice(0, 12)}${started.guidance ? ` (${started.guidance.surfaces} surfaces)` : ''}${started.environment ? ` · node ${started.environment.node} · ${started.environment.claude}` : ''}`,
-    ...(started.artifact?.npmIntegrity ? [`  tested artifact: npm ${started.artifact.npmIntegrity.slice(0, 22)}…`] : []),
+    `AGENTIC RELEASE REPORT  ${started.id}  ${status} · ${started.formal ? 'FORMAL: the release gate reads it' : 'NOT FORMAL: the release gate ignores it'}`,
+    `version   ${started.version}`,
+    `code      built from ${started.versionCommit ?? '?'}, ran from ${started.head.slice(0, 7)}${started.formal ? '' : `   (not formal: ${[...(started.versionCommit && started.head.startsWith(started.versionCommit) ? [] : ["checkout is not the build's commit"]), ...(started.dirty ? ['uncommitted changes'] : []), ...(started.trialsOverride !== null ? [`${started.trialsOverride} trial each`] : [])].join('; ') || started.formalReason})`}`,
+    ...wrap('proven    ', started.definition.plain),
+    `record    ${started.schema === undefined ? 'old format, not checked' : gaps.length === 0 ? 'complete' : `${gaps.length} thing(s) not captured`} · chain ${chainProblem() ? 'BROKEN' : 'intact'} · guidance ${started.fingerprint.slice(0, 8)} · definition ${started.definition.hash.slice(0, 8)} · stated ${started.ts.slice(0, 16)}Z, before the run`,
     '',
   ];
-  if (!end) return [...out, '  nothing further was recorded: the run did not close.'];
-  out.push(`STEP 2 · level 1, the free checks: ${end.level1?.filter((r) => r.ok).length ?? 0} of ${end.level1?.length ?? 0} met their criterion`);
-  for (const r of end.level1 ?? []) out.push(`  ${r.ok ? '✔' : '✖'} ${r.name}: ${r.detail}`);
-  const l2 = end.level2 ?? [];
-  out.push('', `STEP 3 · level 2, the context test (next step from text alone; recorded, does not gate): ${l2.filter((r) => r.pass).length} of ${l2.length} right`);
-  for (const lv of ['none', 'some', 'detailed']) out.push(`  knowledge ${lv.padEnd(8)}: ${l2.filter((r) => r.level === lv && r.pass).length} of ${l2.filter((r) => r.level === lv).length}`);
-  const l3 = end.level3 ?? [];
-  out.push('', `STEP 4 · level 3, real agents on the pinned project with the sample provider: ${l3.filter((r) => r.pass).length} of ${l3.length} trials met every criterion`);
-  for (const r of l3) {
-    const sc = started.definition.scenarios.find((s) => s.id === r.id);
-    const of = sc?.checkpoints.length ?? 0;
-    out.push(`  ${r.pass ? '✔' : '✖'} ${r.id} · ${r.route} · ${r.model} · trial ${r.trial}: ${of - r.failed.length} of ${of} criteria${r.failed.length ? ` (missed: ${r.failed.join(', ')})` : ''} · attempts ${JSON.stringify(r.attempts)} · ${r.usage ? `${tok(r.usage.inputTokens + r.usage.cacheReadTokens + r.usage.cacheCreationTokens)} in / ${tok(r.usage.outputTokens)} out` : 'tokens not recorded'} · ${r.mm3Calls} MM3 calls  → --row ${r.id}/${r.route}/${r.model}/${r.trial}`);
+  if (!end) return [...out, 'nothing further was recorded: the run never closed.'];
+  out.push(`1 PROVEN    ${started.definition.scenarios.length} scenarios, success defined before anything ran`);
+  out.push(`2 FREE      ${l1.filter((r) => r.ok).length}/${l1.length}   ${l1.map((r) => `${r.ok ? '✔' : '✖'} ${r.name.split(',')[0]!.replace('unit', 'tests').replace('CLI end to end', 'e2e')} ${/\d[\d,]*(\/\d+)?/u.exec(r.detail)?.[0] ?? ''}`.trim()).join(' · ')}`);
+  out.push(`3 CONTEXT   ${(['none', 'some', 'detailed'] as const).map((lv) => `${lv === 'some' ? 'instructions' : lv === 'detailed' ? '+cards' : 'none'} ${l2.filter((r) => r.level === lv && r.pass).length}/${l2.filter((r) => r.level === lv).length}`).join(' · ')}   (next step from text alone; not gated)`);
+  out.push(`4 AGENTS    ${rules.gateModel ?? 'gate model'} ${sum(gate)} ${gate.every((r) => r.pass) ? '✔' : '✖'}   floor ${sum(floor)} (reported, not gated)   sample provider: no live call`);
+  const max = Math.max(1, ...l3.flatMap((r) => (load(r.transcript)?.turns ?? []).map((x) => x.inputTokens + x.cacheReadTokens + x.cacheCreationTokens)));
+  for (const sc of started.definition.scenarios) {
+    out.push('', `  ${sc.id}: ${sc.goal}`, `  ${sc.checkpoints.map((c) => `${CHECKPOINTS[c.id]?.short ?? '?'} ${CHECKPOINTS[c.id]?.label ?? c.id}`).join(' · ')}`);
+    out.push(`  ${'route'.padEnd(5)} ${'model'.padEnd(7)} ${sc.checkpoints.map((c) => CHECKPOINTS[c.id]?.short ?? '?').join(' ')}   ${'tries'.padEnd(9)} ${'tokens in/out'.padEnd(13)} calls  context path`);
+    for (const r of l3.filter((x) => x.id === sc.id)) {
+      const mark = sc.checkpoints.map((c) => (r.failed.includes(c.id) ? '✖' : '✔')).join(' ');
+      const tokens = r.usage ? `${kfmt(r.usage.inputTokens + r.usage.cacheReadTokens + r.usage.cacheCreationTokens)}/${kfmt(r.usage.outputTokens)}` : '-';
+      out.push(`  ${r.route.padEnd(5)} ${(r.model + (r.model === rules.gateModel ? '' : '*')).padEnd(7)} ${mark}   ${JSON.stringify(r.attempts).padEnd(9)} ${tokens.padEnd(13)} ${String(r.mm3Calls).padStart(3)}    ${path(load(r.transcript), max)}`);
+    }
   }
-  const rate = end.firstRequestAcceptedRate;
-  out.push('', `STEP 5 · the gate: ${end.passed ? 'PASS' : 'FAIL'}${rate === undefined ? '' : ` · first request accepted in ${Math.round(rate * 100)}% of gate trials`}`, `  ${started.formal ? 'the release gate reads this run' : 'the release gate ignores this run (not formal)'}`);
+  const eco = Object.entries(l3.reduce<Record<string, { c: number; b: number }>>((a, r) => { for (const [k, v] of Object.entries(r.economics ?? {})) { const e = (a[k] ??= { c: 0, b: 0 }); e.c += v.calls; e.b += v.resultTokens; } return a; }, {})).filter(([, v]) => v.c > 0);
+  const u = end.usage;
+  out.push('', `5 GATE      ${end.passed ? 'PASS' : 'FAIL'} · first request accepted ${Math.round((end.firstRequestAcceptedRate ?? 0) * 100)}% of ${rules.gateModel ?? 'gate'} trials (target 80%)`);
+  out.push(`TOKENS      ${u ? `${u.claudeRuns} runs · ${u.turns} turns · ${kfmt(u.inputTokens + u.cacheReadTokens + u.cacheCreationTokens)} in · ${kfmt(u.outputTokens)} out · ${u.mm3Calls} MM3 calls` : 'not recorded'}${eco.length ? `   by kind (calls ≈tokens back): ${eco.map(([k, v]) => `${k} ${v.c} ≈${kfmt(v.b)}`).join(' · ')}` : ''}`);
+  const bad = l3.find((r) => !r.pass && r.model === rules.gateModel) ?? l3.find((r) => !r.pass);
+  out.push(`READ MORE   ${'--row '}${(bad ?? l3[0])?.id}/${(bad ?? l3[0])?.route}/${(bad ?? l3[0])?.model}/${(bad ?? l3[0])?.trial}  tells one trial call by call${bad ? '  (a missed one)' : ''}`);
   return out;
 }
 

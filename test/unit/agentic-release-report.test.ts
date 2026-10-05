@@ -24,16 +24,24 @@ const finished = (o: Partial<FinishedRecord> = {}): FinishedRecord => ({
 const load = (text: string) => () => ({ text, calls, turns: JSON.parse(text).turns });
 
 describe('agentic release report [C-263]', () => {
-  it('[C-263] a run is reported in five steps, each with what it had to meet and whether it did', () => {
+  it('[C-263] a run is reported on one screen: the verdict, the five steps, a criteria matrix per scenario, tokens and the record check', () => {
     const t = tellRun([started, finished()], 'CER-0007', undefined).join('\n');
-    expect(t).toContain('AGENTIC RELEASE REPORT · CER-0007 · 0.1.2-nightly.test · a FORMAL run · FAILED');
-    expect(t).toContain('STEP 1 · what was to be proven, stated before anything ran');
-    expect(t).toContain('STEP 2 · level 1, the free checks: 1 of 2 met their criterion');
-    expect(t).toContain('✖ plugin bundle: stale');
-    expect(t).toContain('STEP 3 · level 2');
-    expect(t).toContain('STEP 4 · level 3, real agents on the pinned project with the sample provider: 0 of 1 trials met every criterion');
-    expect(t).toContain('1 of 2 criteria (missed: answer-cites-run-id)');
-    expect(t).toContain('STEP 5 · the gate: FAIL');
+    expect(t).toContain('AGENTIC RELEASE REPORT  CER-0007  FAILED · FORMAL: the release gate reads it');
+    expect(t).toContain('version   0.1.2-nightly.test');
+    expect(t).toMatch(/record\s+old format, not checked · chain intact/u); // the fixture predates the schema; a complete record says "complete"
+    expect(t).toContain('2 FREE      1/2   ✔ hygiene · ✖ plugin bundle');
+    expect(t).toMatch(/3 CONTEXT\s+none 1\/1 · instructions 0\/1 · \+cards 0\/0/u);
+    expect(t).toContain('4 AGENTS    sonnet 0/1 ✖');
+    expect(t).toContain('e engaged · c cites run id'); // the legend names each column letter
+    expect(t).toMatch(/mcp\s+sonnet\s+✔ ✖\s+\[2\]\s+14k\/70\s+2/u); // the matrix row: criteria, tries, tokens in/out, calls
+    expect(t).toContain('5 GATE      FAIL · first request accepted 0% of sonnet trials (target 80%)');
+    expect(t).toContain('READ MORE   --row S1/mcp/sonnet/1');
+    expect(Math.max(...t.split('\n').map((l) => l.length))).toBeLessThanOrEqual(150);
+  });
+
+  it('[C-263] with transcripts on hand each trial carries a context path: bars of the context the lead carried at each turn', () => {
+    const t = tellRun([started, finished()], 'CER-0007', undefined, load(body)).join('\n');
+    expect(t).toMatch(/mcp\s+sonnet\s+✔ ✖\s+\[2\]\s+14k\/70\s+2\s+[▁-█]{2}/u);
   });
 
   it('[C-263] one trial is reported call by call: the starting tokens, each MM3 call marked as a sample call, the stop and the verdict', () => {
@@ -56,6 +64,8 @@ describe('agentic release report [C-263]', () => {
   it('[C-263] an unknown run, an unknown row and a run that never closed each say so', () => {
     expect(tellRun([started], 'CER-0099', undefined)[0]).toMatch(/no run CER-0099/u);
     expect(tellRun([started, finished()], 'CER-0007', 'X/mcp/sonnet/1')[0]).toMatch(/no level 3 row X\/mcp\/sonnet\/1/u);
-    expect(tellRun([started], 'CER-0007', undefined).join('\n')).toContain('INCOMPLETE (it never closed)');
+    const open = tellRun([started], 'CER-0007', undefined).join('\n');
+    expect(open).toContain('CER-0007  INCOMPLETE');
+    expect(open).toContain('the run never closed');
   });
 });
