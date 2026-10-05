@@ -163,10 +163,19 @@ export function adapters(ledger: string): Record<string, number> {
 export function setCap(project: string, usd: number): void {
   const file = path.join(project, '.mm3', 'config.yaml');
   mkdirSync(path.dirname(file), { recursive: true });
-  const text = existsSync(file) ? readFileSync(file, 'utf8') : '';
-  if (/^\s{2}usd:/mu.test(text)) writeFileSync(file, text.replace(/^(\s{2}usd:).*$/mu, `$1 ${usd}`));
-  else if (/^budget:/mu.test(text)) writeFileSync(file, text.replace(/^budget:.*$/mu, `budget:\n  usd: ${usd}`));
-  else writeFileSync(file, `${text}${text && !text.endsWith('\n') ? '\n' : ''}budget:\n  usd: ${usd}\n`);
+  let text = '';
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch {
+    /* no config file yet: start one */
+  }
+  // one pure rewrite and one write: no "does it exist" check between reading and writing the same file
+  const next = /^\s{2}usd:/mu.test(text)
+    ? text.replace(/^(\s{2}usd:).*$/mu, `$1 ${usd}`)
+    : /^budget:/mu.test(text)
+      ? text.replace(/^budget:.*$/mu, `budget:\n  usd: ${usd}`)
+      : `${text}${text && !text.endsWith('\n') ? '\n' : ''}budget:\n  usd: ${usd}\n`;
+  writeFileSync(file, next);
 }
 
 export interface RunOptions {
