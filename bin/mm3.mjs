@@ -7452,7 +7452,9 @@ var package_default = {
     ceremony: "tsx scripts/ceremony.ts",
     "agentic:sheet": "tsx scripts/agentic/sheet.ts",
     "agentic:report": "tsx scripts/agentic/report.ts",
-    "agentic:compare": "tsx scripts/agentic/compare.ts"
+    "agentic:compare": "tsx scripts/agentic/compare.ts",
+    "agentic:trace": "tsx scripts/agentic/trace.ts",
+    "agentic:story": "tsx scripts/agentic/story.ts"
   },
   devDependencies: {
     "@types-floor/node": "npm:@types/node@22.19.18",
