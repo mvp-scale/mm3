@@ -26,6 +26,11 @@
 | Check the committed bundle matches a fresh build | `npm run check:plugin` |
 | README drift check: story phrases, every request example dry-runs, links, badges, old names (builds first) | `npm run check:readme` |
 | README quality grading by MM3; one paid call; pre-release only, not in CI | `npm run judge:readme` |
+| Agentic ceremony on a published build: free checks, context test, real agents, decision; always recorded in `test/agentic/ledger.jsonl` (free path, sample provider; use the version's own commit for a formal run) | `npm run ceremony -- --version <exact version>` |
+| Read a ceremony run: the release report (plain words first, decision last), one trial call by call, the list, a comparison, repeated improvements | `npm run agentic:release-report -- CER-####` · `... --row <job>/<route>/<model>/<trial>` · `npm run agentic:runs` · `npm run agentic:compare -- CER-#### CER-####` · `npm run agentic:patterns` |
+| Manual sheet for one job, from the same definition the harness grades | `npm run agentic:sheet -- <version> <job> <cli\|mcp>` |
+| Release gate for the agentic stage (fails with no formal run, a failed, stale or incomplete one, or a broken ledger chain) | `npm run check:agentic` |
+| Take a change to any text an agent reads on purpose (snapshots under `test/golden/guidance/`), then re-run the ceremony | `npm run guidance:accept` |
 
 ## Rules
 

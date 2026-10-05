@@ -17,6 +17,12 @@ Newest first. Each entry says what you can now do, and the number is the pull re
 - **A failing MCP call now says what it ignored.** Agents sometimes sent the request under a field of their own, and got "request: empty". Now: `ignored "request" → the YAML goes in "stdin"`. (#24)
 - **`doctor` tells you which copy to update**, the plugin or the terminal install, when their versions differ. (#23)
 
+### Every release candidate is tested by real agents
+- **A release is now judged by what agents can actually do with it.** One command, `npm run ceremony`, runs a published build through the free checks, a context test and real agents doing real jobs (ask a plain question, hand work to helpers, recover from one mistake) on a pinned sample project. It ends with a decision: ship, ship with exceptions, or don't. (#25)
+- **Every run leaves a record you can read.** The definition of success is written to an append-only, hash-chained ledger before anything runs; the release report puts the question, each job and what the result means for the release first, and the data after. Tokens are broken down by kind of call, and recovery after an error message is measured. (#25)
+- **Guidance changes can't slip through.** Every text an agent reads is snapshotted; a changed word fails a test with a diff and says whether a command moved or only the wording. (#25)
+- **Improvements are captured, not acted on in a hurry.** Each one is tagged from a fixed list of 25 themes, so a pattern across runs shows up as a count. (#25)
+
 ### Same answer, any way in
 - **The terminal and the plugin are tested against each other.** The same command through both gives the same text and the same run id, and the plugin's startup instructions are checked against the source on every test run. Every command, flag and stop is also driven through the built CLI and through real MCP, on Node 22 and 24. (#23, #24)
 
