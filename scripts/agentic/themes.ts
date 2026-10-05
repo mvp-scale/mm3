@@ -52,6 +52,7 @@ export const THEMES_OF: Record<string, string[]> = {
   'stays-on-mm3': ['recovery-leaves-mm3', 'stop-next-command'],
   'helpers-spawned': ['guidance-delegation'],
   'delegate-card-in-prompts': ['guidance-delegation'],
+  'helper-made-the-call': ['guidance-delegation'],
   'helpers-cite-ids': ['guidance-citing', 'card-content'],
   'answer-cites-run-id': ['guidance-citing'],
   'run-id-in-ledger': ['guidance-citing'],

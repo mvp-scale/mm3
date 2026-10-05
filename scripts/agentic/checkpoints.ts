@@ -229,6 +229,15 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
     means: 'the lead delegated without the card, so helpers start without MM3 guidance',
     check: (e) => e.calls.filter((c) => c.tool === 'Agent').every((c) => /never read \.mm3\/log\.jsonl|MM3 run id with its gate/u.test(String(c.input.prompt ?? ''))) && e.calls.some((c) => c.tool === 'Agent'),
   },
+  'helper-made-the-call': {
+    id: 'helper-made-the-call',
+    short: 'b',
+    label: 'helper made the call',
+    fix: "Make the delegate card say the helper makes the MM3 request itself; the lead hands over the card and the file, not the answer.",
+    text: 'A helper (not the lead) made its own MM3 request and got a verdict',
+    means: 'the lead did the MM3 work itself, or the helper never got a verdict (the hand-off did not carry the guidance)',
+    check: (e) => groups(e).filter((g) => g.who !== 'lead' && g.outcomes.includes(true)).length >= Math.max(e.helpers, 1),
+  },
   'helpers-cite-ids': {
     id: 'helpers-cite-ids',
     fix: "Put the report rule at the top of the delegate card so helpers cite run ids.",

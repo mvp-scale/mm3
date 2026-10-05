@@ -111,4 +111,12 @@ describe('feature job checkpoints [C-266]', () => {
     expect(run(both, ev([mm3(['class', '-'], IGNORED), mm3(['class', '-'], IGNORED)]))['ignored-stop-fixed']).toBe(false);
     expect(run(both, ev([mm3(['class', '-'], IGNORED), mm3(['template', 'class'], 'skeleton'), mm3(['class', '-'], OK)]))['ignored-stop-fixed']).toBe(true); // one discovery call in between, then a verdict
   });
+
+  it('[C-266] a helper gets the guidance: the verdict must come from a helper, not from the lead', () => {
+    const asHelper = ev([mm3(['agent', 'delegate'], 'card'), mm3(['class', '-'], OK, 'a1')], { helpers: 1 });
+    expect(run(['helper-made-the-call'], asHelper)['helper-made-the-call']).toBe(true);
+    const lead = ev([mm3(['class', '-'], OK)], { helpers: 1 });
+    expect(run(['helper-made-the-call', 'verdict-in-promise'], lead)).toEqual({ 'helper-made-the-call': false, 'verdict-in-promise': true }); // verdict-in-promise alone cannot tell a lead from a helper
+    expect(run(['helper-made-the-call'], ev([mm3(['class', '-'], '✖ mak.ask.decisions: 0 categories', 'a1')], { helpers: 1 }))['helper-made-the-call']).toBe(false);
+  });
 });

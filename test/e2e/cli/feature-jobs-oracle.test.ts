@@ -17,10 +17,10 @@ const GOOD = readFileSync('test/fixtures/requests/valid/class.yaml', 'utf8');
 const FILES = { 'src/user.ts': USER_TS, 'src/handlers/user.ts': USER_TS, 'AGENTS.md': '# a project\n' };
 
 /** Runs one command the way an agent's shell would, and records it as the call the checkpoints read. */
-function sh(root: string, calls: ClaudeCall[], args: string[], o: { input?: string; env?: Record<string, string> } = {}): string {
+function sh(root: string, calls: ClaudeCall[], args: string[], o: { input?: string; env?: Record<string, string>; parent?: string } = {}): string {
   const r = mm3(root, args, { ...(o.input === undefined ? {} : { input: o.input }), ...(o.env ? { env: o.env } : {}) });
   const text = `${r.stdout}${r.stderr}`;
-  calls.push({ tool: 'Bash', input: { command: `mm3 ${args.join(' ')}` }, parent: null, id: String(calls.length), result: text, turn: calls.length + 1 });
+  calls.push({ tool: 'Bash', input: { command: `mm3 ${args.join(' ')}` }, parent: o.parent ?? null, id: String(calls.length), result: text, turn: calls.length + 1 });
   return text;
 }
 /** Runs calls through the real plugin tool (one `mm3 mcp` process) and records each as the call the checkpoints read; `extra` is any further field the agent put in its call. */
@@ -103,5 +103,24 @@ describe('the feature jobs can be passed [C-266]', () => {
     const [only] = await viaTool(other, direct, [{ args: ['class', '-'], stdin: yaml }]);
     const idOnly = /id: (MM3-\d+)/u.exec(only ?? '')?.[1];
     expect(failed(s, evidence(other, direct, `Run ${idOnly}.`, s))).toEqual(['ignored-stop-met']);
+  });
+
+  it('[C-266] F6, a helper gets the guidance: the lead pastes `mm3 agent delegate` into one helper\'s prompt, the helper makes its own request, and the lead reports its run id', () => {
+    const { root } = tempProject({ ...FILES, 'routes/login.ts': USER_TS });
+    const calls: ClaudeCall[] = [];
+    const s = job('F6-guidance-reaches-helper');
+    const card = sh(root, calls, ['agent', 'delegate']);
+    calls.push({ tool: 'Agent', input: { prompt: `Check routes/login.ts with MM3 and report the run id.\n\n${card}` }, parent: null, id: 'helper1', result: '', turn: calls.length + 1 });
+    sh(root, calls, ['template', 'class'], { parent: 'helper1' }); // the helper starts from the card's own advice: edit a template
+    const verdict = sh(root, calls, ['class', '-'], { input: GOOD, parent: 'helper1' });
+    const id = /id: (MM3-\d+)/u.exec(verdict)?.[1];
+    expect(id).toBeDefined();
+    calls.push({ tool: 'SubagentHandback', input: { message: `${id}: gate fail. I did not run any other verb.` }, parent: 'helper1', id: 'back1', result: '', turn: calls.length + 1 });
+    expect(failed(s, evidence(root, calls, `The helper checked routes/login.ts: run ${id}, gate fail.`, s))).toEqual([]);
+    // a lead that does the MM3 work itself, with no helper, is not this job
+    const lone: ClaudeCall[] = [];
+    const { root: other } = tempProject({ ...FILES, 'routes/login.ts': USER_TS });
+    const mine = sh(other, lone, ['class', '-'], { input: GOOD });
+    expect(failed(s, evidence(other, lone, `Run ${/id: (MM3-\d+)/u.exec(mine)?.[1]}.`, s))).toEqual(expect.arrayContaining(['helpers-spawned', 'helper-made-the-call']));
   });
 });
