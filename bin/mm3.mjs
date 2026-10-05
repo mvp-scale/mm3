@@ -17273,6 +17273,7 @@ function overview(env, deps) {
       "run: mm3 agent probe \u2014 before writing questions: how to phrase one",
       "run: mm3 agent verdict \u2014 before reading a response: how to read it",
       "run: mm3 agent delegate \u2014 before handing MM3 work to a helper agent: what to paste into its prompt",
+      "run: mm3 init --agents --yes \u2014 to set this project up for agents: writes the MM3 guidance into AGENTS.md (alone, not with mm3 init)",
       ...noKeyRunLine(env, deps)
     ]
   );

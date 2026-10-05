@@ -1,5 +1,5 @@
 {
-  "fingerprint": "28e9e98d8f0c4b864f133ae0ab2da5472100bdc3c571da189749b01d68e147f9",
+  "fingerprint": "a6254146abf5cb973f0226a05b52f77fd21619d99079a4a6b4fc8a54c5f64be8",
   "surfaces": {
     "mcp/instructions": {
       "sha256": "f84efd4ca9f7037dc64709b9f5972deb4092f5652aeaa8b393fdc48134ce2951",
@@ -14,8 +14,8 @@
       "lines": 9
     },
     "agent/overview": {
-      "sha256": "3c5121a4e0eb24741b757e8e80a6c19573566cbeff9251e2dddb214de32812cc",
-      "lines": 31
+      "sha256": "7edf89dd479dc2ac6248911862b7e5624dc28415b1de9047ca8b7adee5533fe8",
+      "lines": 32
     },
     "help/overview": {
       "sha256": "72d676b93f6c015df1026ebe55a3e989bf28a67a0b85325c52195ddc5cf78b16",
