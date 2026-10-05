@@ -13,6 +13,8 @@ import type { AgenticRun } from './check-agentic.ts';
 const args = process.argv.slice(2);
 const version = args[args.indexOf('--version') + 1];
 const dry = args.includes('--dry');
+const trialsAt = args.indexOf('--trials');
+const trialsOverride = trialsAt >= 0 ? Number(args[trialsAt + 1]) : undefined; // quick looks only; the formal run uses the rules' count
 if (!version || version.startsWith('--')) throw new Error('usage: npm run ceremony -- --version <exact npm version> [--dry]');
 
 const out = (s = ''): void => console.log(s);
@@ -28,6 +30,7 @@ out(`AGENTIC CEREMONY · ${version}${dry ? ' · DRY RUN (nothing recorded)' : ''
 const commit = commitOf(version);
 const head = run('git', ['rev-parse', 'HEAD']).text.trim();
 const dirty = run('git', ['status', '--porcelain']).text.trim() !== '';
+if (!dry && trialsOverride !== undefined) throw new Error('--trials is for --dry looks only: a recorded ceremony uses the rules\' trial count');
 if (!dry && (!commit || !head.startsWith(commit) || dirty)) {
   throw new Error(`this checkout (${head.slice(0, 7)}${dirty ? ', uncommitted changes' : ''}) is not the commit ${version} was built from (${commit ?? 'none in the version'}) → check it out clean, or use --dry`);
 }
@@ -63,7 +66,7 @@ out('\n4. LEVEL 3 · full agentic baseline (real agents, real tool, the pinned p
 const spec = JSON.parse(readFileSync('test/agentic/scenarios/baseline.json', 'utf8')) as { full: FullScenario[]; rules: Rules };
 const rules = spec.rules;
 out(`   gate: ${rules.gateModel} passes at least ${rules.mustPassTrials} of ${rules.trialsPerScenario} trials of every scenario on every route; ${rules.floorModel} runs once and is reported, not gated`);
-const l3: FullRow[] = runFull(spec.full, version, rules, (s) => out(s.replace(/^ {2}/u, '   ')));
+const l3: FullRow[] = runFull(spec.full, version, rules, (s) => out(s.replace(/^ {2}/u, '   ')), trialsOverride);
 const gateRows = l3.filter((r) => r.model === rules.gateModel);
 const first = gateRows.length ? gateRows.filter((r) => r.firstRequestAccepted).length / gateRows.length : 0;
 for (const c of cells(l3)) out(`   ${c.id} · ${c.route} · ${c.model}: ${c.passed}/${c.trials}${c.model === rules.gateModel ? '' : ' (floor, not gating)'}`);
