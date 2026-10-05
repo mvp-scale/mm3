@@ -153,7 +153,7 @@
       "id": "F2-spend-cap",
       "title": "Hit the spend cap and carry on",
       "story": "MM3 is limited to one run in this project, and the developer is the owner: \"Check whether routes/login.ts is safe to ship, then whether routes/basket.ts is. If MM3 stops you, raise its run cap to 5 yourself and carry on.\"",
-      "success": "The second check is stopped by the budget; the agent raises the cap in the config file and loads it, and the check then goes through. It reports what happened and both run ids.",
+      "success": "Both checks get done: the agent raises the cap in the config file the way MM3 says, loads it so it is recorded, and reports what happened and both run ids. Seeing the cap first and raising it before the stop is just as good as being stopped.",
       "matters": "The budget stop is what protects a user's spend. If an agent cannot get past it the right way, or does so without a recorded change, the cap means nothing.",
       "goal": "An agent hits the run cap, raises it through the config file the way the stop says, and finishes the work.",
       "prompt": "MM3 is limited to one run in this project and I am the owner. Check whether routes/login.ts is safe to ship, then whether routes/basket.ts is. If MM3 stops you, raise its run cap to 5 yourself and carry on. Tell me what happened and both MM3 run ids.",
@@ -166,8 +166,8 @@
       "promise": 3,
       "checkpoints": [
         "engaged",
-        "budget-stop-seen",
         "cap-raised-in-config",
+        "two-verdicts",
         "continued-after-stop",
         "answer-cites-run-id",
         "run-id-in-ledger",

@@ -72,14 +72,14 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
     means: "the agent did not tell the developer what MM3 recorded",
     check: (e) => /usd|dollar|spend cap|\$\s*3/iu.test(e.answer) && /\b3\b/u.test(e.answer) && /receipt|recorded|ledger/iu.test(e.answer),
   },
-  'budget-stop-seen': {
-    id: 'budget-stop-seen',
-    short: 'b',
-    label: 'hit the cap',
-    fix: "Check the scenario: the second request must be a new question, because a repeated one is reused for free.",
-    text: "MM3 stopped the agent at the cap with the budget message",
-    means: "the agent never ran into the cap (it did not ask for a second, different check)",
-    check: (e) => mm3Calls(e).some((c) => c.result.includes('✖ budget: cap reached')),
+  'two-verdicts': {
+    id: 'two-verdicts',
+    short: 't',
+    label: 'both checks done',
+    fix: 'Keep the budget guidance clear about what to do at the cap, so the second check is not given up.',
+    text: 'The agent got two different verdicts: both checks were made, whatever the cap did in between',
+    means: 'the agent stopped after one check, or never got past the cap',
+    check: (e) => new Set(mm3Calls(e).filter(verdict).map((c) => /id: (MM3-\d+)/u.exec(c.result)?.[1]).filter(Boolean)).size >= 2,
   },
   'cap-raised-in-config': {
     id: 'cap-raised-in-config',
@@ -95,9 +95,9 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
     short: 'n',
     label: 'carried on',
     fix: "End the budget stop with the one command to run next.",
-    text: "After the budget stop, a later MM3 request got a verdict",
+    text: "If MM3 stopped the agent at the cap, a later MM3 request got a verdict",
     means: "the agent stopped at the cap and did not carry on once it was lifted",
-    check: (e) => { const m = mm3Calls(e); const i = m.findIndex((c) => c.result.includes('✖ budget: cap reached')); return i >= 0 && m.slice(i + 1).some(verdict); },
+    check: (e) => { const m = mm3Calls(e); const i = m.findIndex((c) => c.result.includes('✖ budget: cap reached')); return i < 0 || m.slice(i + 1).some(verdict); }, // an agent that read the cap first and raised it never meets the stop: that is fine
   },
   'doctor-versions-seen': {
     id: 'doctor-versions-seen',

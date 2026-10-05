@@ -92,6 +92,15 @@ export function installPackage(version: string): string {
   return path.join(prefix, 'node_modules', '.bin');
 }
 
+/** For the install-health job on the CLI route: Claude Code uses CLAUDE_CONFIG_DIR for its own login, so the fake plugin record cannot be set for the whole session.
+ *  A small `mm3` on the path sets it for MM3 alone and runs the real one. Returns the folder to put first on PATH. */
+export function shimMm3(project: string, realBin: string, claudeDir: string): string {
+  const dir = path.join(project, '.shim');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, 'mm3'), `#!/bin/sh\nCLAUDE_CONFIG_DIR=${JSON.stringify(claudeDir)} exec ${JSON.stringify(path.join(realBin, 'mm3'))} "$@"\n`, { mode: 0o755 });
+  return dir;
+}
+
 /** The state a job starts from, written before the agent runs. Returns any extra environment it needs. Plain files, nothing hidden from the agent. */
 export function applySetup(setup: FullScenario['setup'], project: string): Record<string, string> {
   if (setup === 'config-runs-1') {
@@ -176,8 +185,12 @@ export function runFull(scenarios: FullScenario[], version: string, rules: Rules
     const base = ['Read', 'Glob', 'Grep'];
     // a paid run gets only the mm3 command in the shell: nothing that could print a stored key
     const shell = opts.paid ? ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)'] : ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)', 'Bash(command -v *)', 'Bash(which *)', 'Bash(cat *)', 'Bash(echo *)', 'Bash(printf *)', 'Bash(ls *)', 'Bash(pwd)', 'Bash(grep *)', 'Bash(find *)'];
+    // the fake plugin record must reach MM3 only: Claude Code itself reads CLAUDE_CONFIG_DIR for its login
+    const claudeDir = env.CLAUDE_CONFIG_DIR;
+    const shim = route === 'cli' && claudeDir ? shimMm3(project, bin, claudeDir) : undefined;
+    if (shim) delete env.CLAUDE_CONFIG_DIR;
     const run = route === 'cli'
-      ? runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Edit', 'Bash'], allowedTools: [...base, 'Write', 'Edit', ...shell], env: { ...env, PATH: `${bin}:${process.env.PATH}` }, budgetUsd: 2 })
+      ? runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Edit', 'Bash'], allowedTools: [...base, 'Write', 'Edit', ...shell], env: { ...env, PATH: `${shim ? `${shim}:` : ''}${bin}:${process.env.PATH}` }, budgetUsd: 2 })
       : runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Edit', 'Agent'], allowedTools: [...base, 'Write', 'Edit', 'Agent', 'mcp__plugin_mm3_mm3__mm3'], pluginDir: plugin, env, budgetUsd: 2 }); // both routes get the file tools a Claude Code user has: some jobs change a setting in the project's own files
     const row = grade(s, run, project, route, model, trial);
     const logFile = path.join(project, '.mm3', 'log.jsonl');

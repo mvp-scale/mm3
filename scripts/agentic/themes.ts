@@ -59,7 +59,7 @@ export const THEMES_OF: Record<string, string[]> = {
   'config-file-has-cap': ['tool-discovery'],
   'config-receipt-shows-cap': ['tool-discovery', 'card-content'],
   'answer-states-the-change': ['guidance-citing'],
-  'budget-stop-seen': ['scenario-design'],
+  'two-verdicts': ['recovery-leaves-mm3'],
   'cap-raised-in-config': ['stop-names-the-edit', 'stop-next-command'],
   'continued-after-stop': ['recovery-leaves-mm3', 'stop-next-command'],
   'doctor-versions-seen': ['tool-discovery'],

@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { definitionOf, lastFormal, nextId, recordGaps, type FinishedRecord, type StartedRecord } from '../../scripts/agentic/ledger.ts';
-import { setCap, spentUsd } from '../../scripts/agentic/run.ts';
+import { setCap, shimMm3, spentUsd } from '../../scripts/agentic/run.ts';
+import { spawnSync } from 'node:child_process';
 import { parseTrialArgs } from '../../scripts/agentic/trial.ts';
 import { tellRun } from '../../scripts/agentic/release-report.ts';
 
@@ -48,6 +49,19 @@ describe('paid trials hold their cap [C-267]', () => {
     expect(readFileSync(path.join(b, '.mm3', 'config.yaml'), 'utf8')).toBe('budget:\n  usd: 0.25\n  runs: 1\n');
     setCap(b, 0.1); // a second cap replaces the first
     expect(readFileSync(path.join(b, '.mm3', 'config.yaml'), 'utf8')).toBe('budget:\n  usd: 0.1\n  runs: 1\n');
+  });
+});
+
+describe('the install-health setup [C-266]', () => {
+  it('[C-266] the fake plugin record reaches MM3 alone: a shim sets CLAUDE_CONFIG_DIR and runs the real mm3, so Claude Code keeps its own login', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'mm3-shim-'));
+    const real = path.join(root, 'real');
+    mkdirSync(real);
+    writeFileSync(path.join(real, 'mm3'), '#!/bin/sh\necho "dir=$CLAUDE_CONFIG_DIR args=$*"\n', { mode: 0o755 });
+    const dir = shimMm3(root, real, '/fake/claude dir');
+    const out = spawnSync(path.join(dir, 'mm3'), ['doctor'], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '' } });
+    expect(out.stdout.trim()).toBe('dir=/fake/claude dir args=doctor');
+    expect(process.env.CLAUDE_CONFIG_DIR).not.toBe('/fake/claude dir'); // nothing leaked into this process
   });
 });
 
