@@ -74,6 +74,8 @@ export function decide(started: StartedRecord, end: FinishedRecord | undefined, 
 
   const verdict: Decision['verdict'] = blockers.length ? 'DO NOT SHIP' : exceptions.length ? 'SHIP WITH EXCEPTIONS' : 'SHIP';
   const formal = started.formal;
-  const headline = `${formal ? '' : 'REHEARSAL, for the record only: this would be '}${verdict}${formal ? '' : '; a formal run on the published commit has to confirm it'}`;
+  const headline = started.kind === 'trial'
+    ? `TRIAL, a development check that never decides a release: this would be ${verdict}`
+    : `${formal ? '' : 'REHEARSAL, for the record only: this would be '}${verdict}${formal ? '' : '; a formal run on the published commit has to confirm it'}`;
   return { verdict, formal, headline, blockers, exceptions, improvements };
 }

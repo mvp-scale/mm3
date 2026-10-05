@@ -40,6 +40,7 @@ export interface FullRow {
   usage: Usage;
   economics: Economics; // where the tokens went, by kind of call
   recovery: Recovery; // after each stop: did the agent stay on MM3, and did its next MM3 request fix it
+  spentUsd?: number; // paid trials: the real TypeSafe dollars this run spent
   transcript?: string; // file name under lab/archive/agentic
   transcriptSha256?: string; // digest of that file, so the record can say which transcript it means
 }
@@ -122,34 +123,77 @@ export function grade(s: FullScenario, run: ClaudeRun, project: string, route: '
   return { id: s.id, route, model, resolvedModel: run.model, trial, pass: run.ok && checks.every((c) => c.pass || CHECKPOINTS[c.id]?.severity === 'exception'), checks, attempts, firstRequestAccepted: m.firstRequestAccepted, mm3Calls: m.mm3Calls, problems, usage: run.usage, economics: economics(run.calls), recovery: recoveryOf(run.calls) };
 }
 
-/** Gate rows (the gate model, several trials) and floor rows (the other model, once). */
-export function runFull(scenarios: FullScenario[], version: string, rules: Rules, log: (s: string) => void = () => undefined, trialsOverride?: number): FullRow[] {
+/** The real TypeSafe dollars a project's own ledger recorded, summed over its runs. */
+export function spentUsd(ledger: string): number {
+  return ledger.split('\n').filter((l) => l.includes('"kind":"run"')).reduce((sum, l) => {
+    try {
+      const c = (JSON.parse(l) as { costUsd?: unknown }).costUsd;
+      return sum + (typeof c === 'number' ? c : 0);
+    } catch {
+      return sum;
+    }
+  }, 0);
+}
+
+/** Puts a dollar cap into the project's config file so MM3's own budget enforces it, keeping whatever the job's setup already wrote. */
+export function setCap(project: string, usd: number): void {
+  const file = path.join(project, '.mm3', 'config.yaml');
+  mkdirSync(path.dirname(file), { recursive: true });
+  const text = existsSync(file) ? readFileSync(file, 'utf8') : '';
+  if (/^\s{2}usd:/mu.test(text)) writeFileSync(file, text.replace(/^(\s{2}usd:).*$/mu, `$1 ${usd}`));
+  else if (/^budget:/mu.test(text)) writeFileSync(file, text.replace(/^budget:.*$/mu, `budget:\n  usd: ${usd}`));
+  else writeFileSync(file, `${text}${text && !text.endsWith('\n') ? '\n' : ''}budget:\n  usd: ${usd}\n`);
+}
+
+export interface RunOptions {
+  build?: { bin: string; plugin: string }; // a build to test that is not a published version (a trial's working tree); skips the install and the checkout
+  models?: Array<'haiku' | 'sonnet'>; // run exactly these models, `trials` times each, and no floor (a trial picks its model)
+  trials?: number;
+  paid?: { approvedUsd: number }; // use the live classifier within this many real dollars; the free path is the default
+}
+
+/** Gate rows (the gate model, several trials) and floor rows (the other model, once); or, with `models`, exactly those. */
+export function runFull(scenarios: FullScenario[], version: string, rules: Rules, log: (s: string) => void = () => undefined, trialsOverride?: number, opts: RunOptions = {}): FullRow[] {
   const commit = commitOf(version);
   const rows: FullRow[] = [];
-  const bin = scenarios.some((s) => s.routes.includes('cli')) ? installPackage(version) : '';
-  const plugin = scenarios.some((s) => s.routes.includes('mcp')) ? (commit ? checkoutPlugin(commit) : (() => { throw new Error(`cannot find the commit in version ${version}; the MCP route needs it`); })()) : '';
-  const plan = scenarios.flatMap((s) => s.routes.flatMap((route) => [
-    ...Array.from({ length: trialsOverride ?? rules.trialsPerScenario }, (_, i) => ({ s, route, model: rules.gateModel, trial: i + 1 })),
-    { s, route, model: rules.floorModel, trial: 1 },
-  ]));
+  const bin = opts.build?.bin ?? (scenarios.some((s) => s.routes.includes('cli')) ? installPackage(version) : '');
+  const plugin = opts.build?.plugin ?? (scenarios.some((s) => s.routes.includes('mcp')) ? (commit ? checkoutPlugin(commit) : (() => { throw new Error(`cannot find the commit in version ${version}; the MCP route needs it`); })()) : '');
+  const trials = opts.trials ?? trialsOverride ?? rules.trialsPerScenario;
+  const plan = scenarios.flatMap((s) => s.routes.flatMap((route) => opts.models
+    ? opts.models.flatMap((model) => Array.from({ length: trials }, (_, i) => ({ s, route, model, trial: i + 1 })))
+    : [...Array.from({ length: trials }, (_, i) => ({ s, route, model: rules.gateModel, trial: i + 1 })), { s, route, model: rules.floorModel, trial: 1 }]));
+  let spent = 0;
   for (const { s, route, model, trial } of plan) {
+    if (opts.paid && spent >= opts.paid.approvedUsd) {
+      log(`  ■ stopped: the approved $${opts.paid.approvedUsd} is spent ($${spent.toFixed(4)}); ${plan.length - rows.length} planned run(s) not made`);
+      break;
+    }
     const project = prepareProject();
-    const isolated = { MM3_PROVIDER: 'fake', TYPESAFE_API_KEY: '', AI_GATEWAY_API_KEY: '', XDG_CONFIG_HOME: path.join(project, '.no-config'), MM3_ACTOR: 'agentic', ...applySetup(s.setup, project) };
+    const setupEnv = applySetup(s.setup, project);
+    if (opts.paid) setCap(project, opts.paid.approvedUsd - spent);
+    // free: the sample provider and no key. paid: the owner's own key and settings, never read or printed here; MM3's budget holds the cap.
+    const env: Record<string, string> = opts.paid ? { MM3_ACTOR: 'agentic', ...setupEnv } : { MM3_PROVIDER: 'fake', TYPESAFE_API_KEY: '', AI_GATEWAY_API_KEY: '', XDG_CONFIG_HOME: path.join(project, '.no-config'), MM3_ACTOR: 'agentic', ...setupEnv };
     const base = ['Read', 'Glob', 'Grep'];
-    const shell = ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)', 'Bash(command -v *)', 'Bash(which *)', 'Bash(cat *)', 'Bash(echo *)', 'Bash(printf *)', 'Bash(ls *)', 'Bash(pwd)', 'Bash(grep *)', 'Bash(find *)'];
+    // a paid run gets only the mm3 command in the shell: nothing that could print a stored key
+    const shell = opts.paid ? ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)'] : ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)', 'Bash(command -v *)', 'Bash(which *)', 'Bash(cat *)', 'Bash(echo *)', 'Bash(printf *)', 'Bash(ls *)', 'Bash(pwd)', 'Bash(grep *)', 'Bash(find *)'];
     const run = route === 'cli'
-      ? runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Bash'], allowedTools: [...base, 'Write', ...shell], env: { ...isolated, PATH: `${bin}:${process.env.PATH}` }, budgetUsd: 2 })
-      : runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Agent'], allowedTools: [...base, 'Agent', 'mcp__plugin_mm3_mm3__mm3'], pluginDir: plugin, env: isolated, budgetUsd: 2 });
+      ? runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Bash'], allowedTools: [...base, 'Write', ...shell], env: { ...env, PATH: `${bin}:${process.env.PATH}` }, budgetUsd: 2 })
+      : runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Agent'], allowedTools: [...base, 'Agent', 'mcp__plugin_mm3_mm3__mm3'], pluginDir: plugin, env, budgetUsd: 2 });
     const row = grade(s, run, project, route, model, trial);
+    const logFile = path.join(project, '.mm3', 'log.jsonl');
+    if (opts.paid) {
+      row.spentUsd = existsSync(logFile) ? spentUsd(readFileSync(logFile, 'utf8')) : 0;
+      spent += row.spentUsd;
+    }
     rows.push(row);
     // every transcript is kept (gitignored lab/archive) so a red row can be read, not guessed at
     mkdirSync('lab/archive/agentic', { recursive: true });
-    const file = `${version}-${s.id}-${route}-${model}-${trial}.json`;
+    const file = `${version.replace(/[^A-Za-z0-9._+-]/gu, '_')}-${s.id}-${route}-${model}-${trial}.json`;
     const body = JSON.stringify({ row, answer: run.answer, plugins: run.plugins, mcp: run.mcp, turns: run.turns, calls: run.calls }, null, 1);
     writeFileSync(`lab/archive/agentic/${file}`, body);
     row.transcript = file;
     row.transcriptSha256 = createHash('sha256').update(body).digest('hex');
-    log(`  ${row.pass ? '✔' : '✖'} ${s.id} · ${route} · ${model} · trial ${trial}: attempts ${JSON.stringify(row.attempts)}${row.problems.length ? ` — ${row.problems.join(' | ')}` : ''}`);
+    log(`  ${row.pass ? '✔' : '✖'} ${s.id} · ${route} · ${model} · trial ${trial}: attempts ${JSON.stringify(row.attempts)}${row.problems.length ? ` — ${row.problems.join(' | ')}` : ''}${opts.paid ? ` · spent $${(row.spentUsd ?? 0).toFixed(4)} (running total $${spent.toFixed(4)} of $${opts.paid.approvedUsd})` : ''}`);
   }
   return rows;
 }

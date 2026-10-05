@@ -115,8 +115,8 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
   const notTested = started.definition.notTested ?? names?.notTested ?? [];
   const status = end ? (end.phase === 'aborted' ? `ABORTED (${end.reason})` : end.passed ? 'PASSED' : 'FAILED') : 'INCOMPLETE';
   const out: string[] = [
-    `AGENTIC RELEASE REPORT · ${started.id} · MM3 ${started.version}`,
-    `RESULT  ${status}${started.formal ? '' : ' · a REHEARSAL: recorded, but it does not count toward the release gate'}`,
+    `${started.kind === 'trial' ? 'AGENTIC FEATURE TRIAL REPORT' : 'AGENTIC RELEASE REPORT'} · ${started.id} · MM3 ${started.version}`,
+    `RESULT  ${status}${started.formal ? '' : started.kind === 'trial' ? ' · a TRIAL of one job on a local build: recorded, and it never counts toward the release gate' : ' · a REHEARSAL: recorded, but it does not count toward the release gate'}${started.mode === 'paid' ? ` · PAID run: $${end?.spentUsd ?? 0} of an approved $${started.paid?.approvedUsd ?? '?'} real TypeSafe spend` : ''}`,
     `DECISION  ${decision.headline}  (reasoning at the end)`,
     '',
     'WHAT THIS TESTS',
@@ -145,13 +145,13 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
   const rf = recOf(floor);
   const recText = (x: Recovery | undefined): string => (x ? (x.stops === 0 ? 'hit no stops' : `after ${x.stops} stop(s) stayed on MM3 ${x.onTrack} time(s) and got a verdict on the next MM3 request ${x.fixedNext} time(s)`) : 'recovery not measurable for this run');
   out.push(...wrap('  - ', `Recovery, the test of a good error message: ${gateName} ${recText(rg)}.${rf ? ` ${rules.floorModel ?? 'The smaller model'}* ${recText(rf)}.` : ''} The goal is every stop followed by MM3 and fixed on the next request.`, 100));
-  out.push(...wrap('  - ', started.formal ? 'This is a formal run: the release gate reads it.' : 'This is a rehearsal: it ran from a checkout that is not the published build\'s own commit, with one trial per job. A formal run on the published commit is still needed.', 100));
+  out.push(...wrap('  - ', started.formal ? 'This is a formal run: the release gate reads it.' : started.kind === 'trial' ? 'This is a development trial of one job on a local build. It tells you whether the feature works for an agent; the release ceremony on the published nightly is what decides a release.' : 'This is a rehearsal: it ran from a checkout that is not the published build\'s own commit, with one trial per job. A formal run on the published commit is still needed.', 100));
   out.push(...wrap('  - ', 'It does not say the 0.1.2 features work or that MM3\'s verdicts are right (see "Not covered here").', 100));
 
   const max = Math.max(1, ...l3.flatMap((r) => (load(r.transcript)?.turns ?? []).map((x) => x.inputTokens + x.cacheReadTokens + x.cacheCreationTokens)));
   out.push('', 'THE DATA   (the whole definition of success is in the ledger line that was written before the run)');
-  out.push(`  free checks ${l1.filter((r) => r.ok).length}/${l1.length}: ${l1.map((r) => `${r.ok ? '✔' : '✖'} ${r.name.split(',')[0]!.replace('unit', 'tests').replace('CLI end to end', 'e2e')} ${/\d[\d,]*(\/\d+)?/u.exec(r.detail)?.[0] ?? ''}`.trim()).join(' · ')}`);
-  out.push(`  context test (next step from text alone, not gated): ${(['none', 'some', 'detailed'] as const).map((lv) => `${lv === 'some' ? 'with instructions' : lv === 'detailed' ? 'with cards too' : 'no guidance'} ${l2.filter((r) => r.level === lv && r.pass).length}/${l2.filter((r) => r.level === lv).length}`).join(' · ')}`);
+  if (l1.length) out.push(`  free checks ${l1.filter((r) => r.ok).length}/${l1.length}: ${l1.map((r) => `${r.ok ? '✔' : '✖'} ${r.name.split(',')[0]!.replace('unit', 'tests').replace('CLI end to end', 'e2e')} ${/\d[\d,]*(\/\d+)?/u.exec(r.detail)?.[0] ?? ''}`.trim()).join(' · ')}`);
+  if (l2.length) out.push(`  context test (next step from text alone, not gated): ${(['none', 'some', 'detailed'] as const).map((lv) => `${lv === 'some' ? 'with instructions' : lv === 'detailed' ? 'with cards too' : 'no guidance'} ${l2.filter((r) => r.level === lv && r.pass).length}/${l2.filter((r) => r.level === lv).length}`).join(' · ')}`);
   for (const sc of started.definition.scenarios) {
     out.push('', `  ${h(sc).title} (${sc.id})`, `  ${sc.checkpoints.map((c) => `${CHECKPOINTS[c.id]?.short ?? '?'} ${CHECKPOINTS[c.id]?.label ?? c.id}${CHECKPOINTS[c.id]?.severity === 'exception' ? ' (exception-level)' : ''}`).join(' · ')}`);
     out.push(`  ${'route'.padEnd(5)} ${'model'.padEnd(7)} ${sc.checkpoints.map((c) => CHECKPOINTS[c.id]?.short ?? '?').join(' ')}   ${'tries'.padEnd(9)} ${'tokens in/out'.padEnd(13)} calls  context path`);
