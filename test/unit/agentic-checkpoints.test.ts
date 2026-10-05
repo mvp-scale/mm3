@@ -119,4 +119,18 @@ describe('feature job checkpoints [C-266]', () => {
     expect(run(['helper-made-the-call', 'verdict-in-promise'], lead)).toEqual({ 'helper-made-the-call': false, 'verdict-in-promise': true }); // verdict-in-promise alone cannot tell a lead from a helper
     expect(run(['helper-made-the-call'], ev([mm3(['class', '-'], '✖ mak.ask.decisions: 0 categories', 'a1')], { helpers: 1 }))['helper-made-the-call']).toBe(false);
   });
+
+  it('[C-266] terminal and plugin: both ran the same command, the texts match, and the answer says they agree (a wrong claim either way fails)', () => {
+    const shell = (command: string, result: string): ClaudeCall => ({ tool: 'Bash', input: { command }, parent: null, id: command, result });
+    const list = ['terminal-and-plugin-both-used', 'routes-agree-and-said-so'];
+    const card = 'tool: agent\nrules:\n- start from a template';
+    const wrapped = JSON.stringify([{ type: 'text', text: card }]); // how the stream can hand back an MCP result
+    const good = ev([shell('mm3 agent', card), mm3(['agent'], wrapped)], { answer: 'The two answers agree: the same card.' });
+    expect(run(list, good)).toEqual({ 'terminal-and-plugin-both-used': true, 'routes-agree-and-said-so': true });
+    expect(run(list, ev([shell('mm3 agent', card)], { answer: 'They agree.' }))).toEqual({ 'terminal-and-plugin-both-used': false, 'routes-agree-and-said-so': false });
+    expect(run(list, ev([shell('mm3 doctor', 'ok'), mm3(['agent'], card)], { answer: 'They agree.' }))['terminal-and-plugin-both-used']).toBe(false); // not the same command
+    expect(run(list, ev([shell('mm3 agent', card), mm3(['agent'], `${card}\n- something else`)], { answer: 'They agree.' }))['routes-agree-and-said-so']).toBe(false); // said so, but the texts differ
+    expect(run(list, ev([shell('mm3 agent', card), mm3(['agent'], card)], { answer: 'They do not agree.' }))['routes-agree-and-said-so']).toBe(false);
+    expect(run(list, ev([shell('mm3 agent', card), mm3(['agent'], card)], { answer: 'Both ran fine.' }))['routes-agree-and-said-so']).toBe(false); // never said whether they agree
+  });
 });

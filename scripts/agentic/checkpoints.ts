@@ -41,6 +41,29 @@ const configRecords = (ledger: string): Array<{ settings?: { budget?: { usd?: nu
       return [];
     }
   });
+/** What a call returned as plain text: over MCP the stream can hand back the tool's content as a JSON list of text parts. */
+const plain = (c: ClaudeCall): string => {
+  try {
+    const parts = JSON.parse(c.result) as unknown;
+    if (Array.isArray(parts) && parts.every((p) => typeof (p as { text?: unknown }).text === 'string')) return parts.map((p: { text: string }) => p.text).join('\n');
+  } catch {
+    /* plain text, not a list */
+  }
+  return c.result;
+};
+const squash = (s: string): string => s.replace(/\s+/gu, ' ').trim();
+/** The same mm3 arguments run in the shell and through the plugin tool: the text each returned. A stop on either side is not an answer. */
+const sameCommandBothWays = (e: Evidence): Array<{ terminal: string; plugin: string }> => {
+  const shell = e.calls.filter((c) => c.tool === 'Bash').flatMap((c) => {
+    const args = /(?:^|[;&|]\s*)(?:\S*\/)?mm3\s+([a-z][^|;&\n]*)/u.exec(String(c.input.command ?? ''))?.[1];
+    return args === undefined || isStop(c) ? [] : [{ key: args.trim().replace(/\s+/gu, ' '), text: squash(plain(c)) }];
+  });
+  return e.calls.filter((c) => c.tool.includes('mm3') && Array.isArray(c.input.args) && !isStop(c)).flatMap((c) => {
+    const key = (c.input.args as unknown[]).map(String).join(' ');
+    const t = shell.find((x) => x.key === key);
+    return t ? [{ terminal: t.text, plugin: squash(plain(c)) }] : [];
+  });
+};
 const mm3Calls = (e: Evidence): ClaudeCall[] => e.calls.filter(isMm3);
 const verdict = (c: ClaudeCall): boolean => /\bgate: (pass|fail|unsure)/u.test(c.result);
 /** Each call that came back saying which field it ignored, with what the same agent did after it. */
@@ -161,6 +184,24 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
       const verb = after.find(isVerbRequest);
       return after[0] !== undefined && kindOf(after[0]) === 'mm3' && !isStop(after[0]) && verb !== undefined && isVerdict(verb);
     }), // with no such stop this is true and says nothing: "stop was met" is the box that reports the job did not exercise the feature
+  },
+  'terminal-and-plugin-both-used': {
+    id: 'terminal-and-plugin-both-used',
+    short: 'q',
+    label: 'both ways used',
+    fix: "Say in `mm3 agent` and the tool description that the terminal and the plugin run the same command.",
+    text: 'The same mm3 command was run in the terminal and through the plugin tool, and both answered',
+    means: 'the agent used only one of the two, or ran different commands, so nothing was compared',
+    check: (e) => sameCommandBothWays(e).length > 0,
+  },
+  'routes-agree-and-said-so': {
+    id: 'routes-agree-and-said-so',
+    short: 'y',
+    label: 'agree, and said so',
+    fix: "If the two texts differ, that is a bug in one route: make the terminal and the plugin return the same text.",
+    text: 'The two answers were the same text, and the final answer says they agree',
+    means: 'the two routes returned different text for the same command (a real inconsistency), or the agent reported a difference that is not there, or no agreement at all',
+    check: (e) => sameCommandBothWays(e).some((p) => p.terminal === p.plugin && p.terminal !== '') && /\b(agree|same|identical|match)/iu.test(e.answer) && !/\b(differ|disagree|mismatch|inconsisten)|\b(not|n't|never)\s+(agree|match|identical|the same)/iu.test(e.answer),
   },
   'stays-on-mm3': {
     id: 'stays-on-mm3',
