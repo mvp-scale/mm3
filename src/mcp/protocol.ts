@@ -91,6 +91,10 @@ export async function handleMessage(msg: JsonRpcRequest, deps: { runOne: RunOne;
     const params = (msg.params ?? {}) as { name?: unknown; arguments?: { args?: unknown; stdin?: unknown; project?: unknown } };
     if (params.name !== TOOL_NAME) return err(id, -32602, `Unknown tool: ${String(params.name)}`);
     const rawArgs = params.arguments?.args;
+    // `args` as a string (an agent folded stdin into it) used to become [] and print the generic help, saying nothing about why.
+    if (rawArgs !== undefined && !Array.isArray(rawArgs)) {
+      return ok(id, { content: [{ type: 'text', text: `✖ args: must be an array of strings, got ${typeof rawArgs} → args: ["class","-"] and the request YAML as the separate field stdin` }], isError: true });
+    }
     const args = Array.isArray(rawArgs) ? rawArgs.map(String) : [];
     const stdin = typeof params.arguments?.stdin === 'string' ? params.arguments.stdin : undefined;
     const project = typeof params.arguments?.project === 'string' ? params.arguments.project : undefined;

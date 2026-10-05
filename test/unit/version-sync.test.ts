@@ -42,6 +42,12 @@ describe('doctor says whether this copy and the plugin are the same build', () =
     expect(text).toContain('versions: "⚠ the plugin is 0.1.1 (f337f61) and this copy is 0.1.2 → update the older one: /plugin update in Claude Code, or npm install -g @mvpscale/mm3@latest');
   });
 
+  it('[C-254] a nightly copy that differs from the plugin is pointed at @nightly, never at @latest (which would downgrade it)', () => {
+    const text = doctor('0.1.2-nightly.20261004.1827.g471c8c7', { version: '0.1.2', sha: 'f337f612ebb4' });
+    expect(text).toContain('npm install -g @mvpscale/mm3@nightly');
+    expect(text).not.toContain('@latest');
+  });
+
   it('[C-254] the same version: a tick', () => {
     expect(doctor('0.1.2', { version: '0.1.2', sha: 'f337f612ebb4' })).toContain('versions: ✔ the plugin and this copy are both 0.1.2');
   });

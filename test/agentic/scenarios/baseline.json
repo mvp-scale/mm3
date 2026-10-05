@@ -1,0 +1,151 @@
+{
+  "name": "baseline",
+  "about": "What MM3 must always do for an agent, whatever the version. Grows; nothing is removed. Level 2 asks an agent for its next step from text alone; level 3 lets an agent do the task for real on Juice Shop.",
+  "project": "juice-shop v20.2.0 (the clean checkout in the journey staging area; copied per run)",
+  "context": [
+    {
+      "id": "first-move",
+      "situation": "You were asked: \"Is routes/login.ts safe to ship? Use MM3 to check it.\" You have not called MM3 yet.",
+      "ask": "What is your very next tool call? Give the tool and its arguments only.",
+      "expect": [
+        "agent"
+      ],
+      "note": "the first call should be the card, `mm3 agent` (or a free `view`/`template`), not a guessed request"
+    },
+    {
+      "id": "stop-empty",
+      "situation": "You called the mm3 tool with args [\"class\",\"-\"] and no stdin. It answered: ✖ request: empty → start with \"mak:\" (mm3 template class prints a skeleton)",
+      "ask": "What is your next tool call? Give the tool and its arguments only.",
+      "expect": [
+        "template"
+      ],
+      "note": "should ask for the skeleton, or resend with the YAML in stdin"
+    },
+    {
+      "id": "stop-decisions",
+      "situation": "You sent a class request. It answered: ✖ mak.ask.decisions: 0 categories → give 2–5 → see: mm3 agent probe",
+      "ask": "What do you change in your request before resending? One or two sentences.",
+      "expect": [
+        "decision"
+      ],
+      "note": "should add a decisions section with 2-5 categories"
+    },
+    {
+      "id": "stop-yaml",
+      "situation": "You sent a class request. It answered: ✖ yaml: line 2 does not parse → use the indented form, and put any question with \": \" or \" #\" in quotes",
+      "ask": "What do you change in your request before resending? One or two sentences.",
+      "expect": [
+        "quot"
+      ],
+      "note": "should quote the question that holds a colon"
+    },
+    {
+      "id": "stop-ignored-field",
+      "situation": "You called the mm3 tool with {args:[\"class\",\"-\"], request:<yaml>}. It answered: ✖ arguments: ignored \"request\" → the tool takes only args, stdin and project: the request YAML goes in \"stdin\" (args: [\"class\",\"-\"])",
+      "ask": "What is your next tool call? Give the tool and its arguments only.",
+      "expect": [
+        "stdin"
+      ],
+      "note": "should put the YAML in stdin"
+    },
+    {
+      "id": "delegate",
+      "situation": "You will hand three files to three helper agents and want each of them to use MM3 correctly.",
+      "ask": "What do you do before writing the helpers' prompts, and what goes in them? One or two sentences.",
+      "expect": [
+        "agent delegate"
+      ],
+      "note": "should fetch `mm3 agent delegate` and paste it into every helper prompt"
+    }
+  ],
+  "full": [
+    {
+      "id": "B1-class-a-file",
+      "goal": "An agent asked a plain question about one file gets a recorded verdict and reports it with its run id.",
+      "prompt": "Is routes/login.ts in this project safe to ship? Use MM3 to check it, and tell me the verdict and the MM3 run id.",
+      "model": "sonnet",
+      "routes": [
+        "cli",
+        "mcp"
+      ],
+      "promise": 3,
+      "checkpoints": [
+        "engaged",
+        "verdict-in-promise",
+        "last-request-accepted",
+        "answer-cites-run-id",
+        "run-id-in-ledger",
+        "stays-on-mm3"
+      ],
+      "title": "Ask a plain question",
+      "story": "A developer asks their agent: \"Is routes/login.ts safe to ship? Use MM3 to check it.\" The agent has MM3 and no other help.",
+      "success": "MM3 gives the agent a recorded verdict within 3 tries, and the agent tells the developer the run id, which really exists.",
+      "matters": "If agents cannot do this, a new user's first minute with MM3 fails."
+    },
+    {
+      "id": "B2-delegate",
+      "goal": "A lead agent hands three files to three helpers; each helper gets the delegate card, gets a verdict, and reports its run id; the lead reports all of them.",
+      "prompt": "Review routes/login.ts, routes/basket.ts and routes/search.ts for access-control problems. Hand each file to its own helper agent, use MM3, and report each MM3 run id.",
+      "model": "sonnet",
+      "routes": [
+        "mcp"
+      ],
+      "helpers": 3,
+      "promise": 3,
+      "checkpoints": [
+        "engaged",
+        "helpers-spawned",
+        "delegate-card-in-prompts",
+        "verdict-in-promise",
+        "helpers-cite-ids",
+        "answer-cites-run-id",
+        "run-id-in-ledger",
+        "stays-on-mm3"
+      ],
+      "title": "Hand the work to helper agents",
+      "story": "A developer asks the lead agent to review three files, one helper agent per file, using MM3.",
+      "success": "Every helper gets MM3 working, gets a verdict and reports its run id, and the lead reports all three.",
+      "matters": "Real work is split across helpers. If helpers start without MM3's guidance they flounder or skip MM3."
+    },
+    {
+      "id": "B3-one-stop",
+      "goal": "A request with ONE defect (no decisions section) stops with the fix named, and the agent's next request is accepted.",
+      "prompt": "Get an MM3 verdict for the request below and tell me the MM3 run id. Send it exactly as written first.\n\nmak:\n  goal: routes/login.ts is safe to ship\n  depth: quick\n  where: [routes/login.ts]\n  ask:\n    concerns:\n      auth:\n        pass: no\n        1: Is the password compared in plain text?\n        2: Is the user looked up by a value from the request?\n        3: Does a failed login say which part was wrong?\n      session:\n        pass: no\n        4: Is the session id predictable?\n        5: Is the session kept after logout?\n        6: Is the session id sent over plain http?\n      leaks:\n        pass: no\n        7: Does the login error reveal whether the email exists?\n        8: Is the raw database error sent back?\n        9: Does the response include fields the caller never asked for?",
+      "model": "sonnet",
+      "routes": [
+        "mcp"
+      ],
+      "promise": 2,
+      "checkpoints": [
+        "engaged",
+        "first-fix-works",
+        "answer-cites-run-id",
+        "run-id-in-ledger",
+        "stays-on-mm3"
+      ],
+      "title": "Recover from one mistake",
+      "story": "The agent is handed an MM3 request with one deliberate mistake: the decisions section is missing.",
+      "success": "MM3's error message tells the agent what to change, and its next request is accepted.",
+      "matters": "MM3 promises that an error message is enough to fix a mistake. This checks the promise."
+    }
+  ],
+  "rules": {
+    "attemptsToVerdict": 3,
+    "firstAttemptTarget": 0.8,
+    "gateModel": "sonnet",
+    "floorModel": "haiku",
+    "trialsPerScenario": 3,
+    "mustPassTrials": 2
+  },
+  "preconditions": [
+    "The provider is the sample (fake) one: no TypeSafe key, no spend. Verdicts are canned; nothing here grades whether a verdict is right.",
+    "The project is a fresh copy of the pinned Juice Shop checkout with no .mm3/ in it.",
+    "The agent gets only the task prompt below: no hints, no expected outcome. Only Read/Glob/Grep (plus Write and a shell on the CLI route, the Agent tool for delegation) exist.",
+    "Counted as a verb request: class, scan, drill, loop, view or replay. Calls to agent, template, help, probe or doctor are discovery, not attempts."
+  ],
+  "purpose": "Can an agent get a useful answer out of MM3 on its own? A developer tells an agent to use MM3 to check some code. We watch whether the agent succeeds without a person stepping in, using only what MM3 itself gives it: its instructions, its help and its error messages. The project the agents look at (OWASP Juice Shop) is sample material; it is not what is being tested.",
+  "notTested": [
+    "The 0.1.2 features themselves (config receipts, the budget stop, the doctor versions line, init --agents writing CLAUDE.md). The unit and CLI tests cover them; agents do not exercise them yet.",
+    "Whether MM3's verdicts are right. The sample provider gives canned answers, so that needs the keyed live suite."
+  ]
+}

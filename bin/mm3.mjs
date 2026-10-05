@@ -7444,7 +7444,18 @@ var package_default = {
     "gen:evidence-index": "tsx scripts/evidence-index.ts",
     prepare: "git config core.hooksPath .github/hooks 2>/dev/null || true",
     "dev:install": 'npm run build && tgz="$(pwd)/$(npm pack --silent | tail -1)" && cd "${INIT_CWD:-.}" && npx --yes --package "$tgz" mm3 init',
-    "check:node-floor": "tsc -p tsconfig.node-floor.json"
+    "check:node-floor": "tsc -p tsconfig.node-floor.json",
+    "guidance:accept": "npm run build && tsx scripts/guidance-snapshot.ts && MM3_ACCEPT_GUIDANCE=1 vitest run --project cli test/e2e/cli/stop-recovery.test.ts",
+    "check:agentic": "tsx scripts/check-agentic.ts",
+    "agentic:context": "tsx scripts/agentic/context.ts",
+    "agentic:run": "tsx scripts/agentic/run.ts",
+    ceremony: "tsx scripts/ceremony.ts",
+    "agentic:sheet": "tsx scripts/agentic/sheet.ts",
+    "agentic:runs": "tsx scripts/agentic/runs.ts",
+    "agentic:compare": "tsx scripts/agentic/compare.ts",
+    "agentic:trace": "tsx scripts/agentic/trace.ts",
+    "agentic:release-report": "tsx scripts/agentic/release-report.ts",
+    "agentic:patterns": "tsx scripts/agentic/patterns.ts"
   },
   devDependencies: {
     "@types-floor/node": "npm:@types/node@22.19.18",
@@ -10518,6 +10529,9 @@ async function handleMessage(msg, deps) {
     const params = msg.params ?? {};
     if (params.name !== TOOL_NAME) return err(id, -32602, `Unknown tool: ${String(params.name)}`);
     const rawArgs = params.arguments?.args;
+    if (rawArgs !== void 0 && !Array.isArray(rawArgs)) {
+      return ok(id, { content: [{ type: "text", text: `\u2716 args: must be an array of strings, got ${typeof rawArgs} \u2192 args: ["class","-"] and the request YAML as the separate field stdin` }], isError: true });
+    }
     const args2 = Array.isArray(rawArgs) ? rawArgs.map(String) : [];
     const stdin = typeof params.arguments?.stdin === "string" ? params.arguments.stdin : void 0;
     const project = typeof params.arguments?.project === "string" ? params.arguments.project : void 0;
@@ -11909,7 +11923,7 @@ function versionsLine(running, plugin) {
   const sameBase = plugin.version !== void 0 && base(plugin.version) === base(running);
   const sameCommit = nightlySha === void 0 || plugin.sha.startsWith(nightlySha.slice(0, 7)) || nightlySha.startsWith(plugin.sha.slice(0, 7));
   if (sameBase && sameCommit) return plugin.version === running ? `\u2714 the plugin and this copy are both ${running}` : `\u2714 the plugin and this copy are the same build (${running})`;
-  return `\u26A0 the plugin is ${plugin.version ?? "an unknown version"} (${plugin.sha.slice(0, 7)}) and this copy is ${running} \u2192 update the older one: /plugin update in Claude Code, or npm install -g @mvpscale/mm3@latest`;
+  return `\u26A0 the plugin is ${plugin.version ?? "an unknown version"} (${plugin.sha.slice(0, 7)}) and this copy is ${running} \u2192 update the older one: /plugin update in Claude Code, or npm install -g @mvpscale/mm3@${running.includes("-nightly.") ? "nightly" : "latest"}`;
 }
 function cliLine(env, platform, version) {
   const resolved = findOnPath("mm3", env, platform);

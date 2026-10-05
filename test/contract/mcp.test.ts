@@ -167,6 +167,18 @@ describe('mcp protocol: tools/call [C-103]', () => {
     expect((ok?.result as { content: Array<{ text: string }> }).content[0]?.text).not.toContain('ignored'); // a passing call is untouched
   });
 
+  it('[C-103] args that is not an array (a string with the YAML folded into it) stops with the fix instead of the generic help, and runs nothing', async () => {
+    let ran = false;
+    const resp = await handleMessage(
+      { jsonrpc: '2.0', id: 14, method: 'tools/call', params: { name: 'mm3', arguments: { args: '["class","-"],\n"stdin":"mak:"' } } },
+      { runOne: async () => { ran = true; return { exit: 0, text: 'ran' }; }, serverVersion: '0.0.0-test' },
+    );
+    const result = resp?.result as { content: Array<{ text: string }>; isError: boolean };
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toBe('✖ args: must be an array of strings, got string → args: ["class","-"] and the request YAML as the separate field stdin');
+    expect(ran).toBe(false);
+  });
+
   it('a request YAML on stdin (args: ["class", "-"]) with no project stops the same way the CLI would', async () => {
     const ctx = fakeCtx();
     const resp = await handleMessage(

@@ -54,13 +54,14 @@ describe('expandGlob', () => {
 
   it('rejects a pattern that tries to escape the project root, even when a matching file really exists there', () => {
     const { root } = tempProject({ 'src/a.ts': '' });
-    // '../x/*.ts' and 'src/../../x/*.ts' both resolve to the same sibling of root: root's parent + '/x'.
-    const outside = path.join(path.dirname(root), 'x');
+    // both patterns below resolve to the same sibling of root: root's parent plus the sibling's name.
+    const sibling = `${path.basename(root)}-outside`; // unique per run: a fixed '/tmp/x' collides with any file already there
+    const outside = path.join(path.dirname(root), sibling);
     mkdirSync(outside, { recursive: true });
     writeFileSync(path.join(outside, 'secret.ts'), 'x');
     try {
-      expect(expandGlob(root, '../x/*.ts')).toEqual({ files: [], truncated: false });
-      expect(expandGlob(root, 'src/../../x/*.ts')).toEqual({ files: [], truncated: false });
+      expect(expandGlob(root, `../${sibling}/*.ts`)).toEqual({ files: [], truncated: false });
+      expect(expandGlob(root, `src/../../${sibling}/*.ts`)).toEqual({ files: [], truncated: false });
       expect(expandGlob(root, path.join(outside, '*.ts'))).toEqual({ files: [], truncated: false });
     } finally {
       rmSync(outside, { recursive: true, force: true });
