@@ -3,7 +3,7 @@
 // no TypeSafe key: the sample provider answers with canned verdicts, so nothing here judges whether a verdict is RIGHT,
 // only whether an agent could get a well-formed verdict recorded. Verdict correctness is a separate, keyed, capped live suite.
 import { attemptsByAgent, type ClaudeCall } from './claude.ts';
-import { isStop, isVerbRequest, isVerdict, kindOf, recoveryOf } from './trace.ts';
+import { isStop, isVerbRequest, recoveryOf } from './trace.ts';
 
 export interface Evidence {
   calls: ClaudeCall[];
@@ -25,6 +25,8 @@ export interface Checkpoint {
   check: (e: Evidence) => boolean;
 }
 
+/** The fields the plugin's tool takes (src/mcp/protocol.ts); the oracle sends a real extra field through the real bundle, so a change there fails a test. */
+const TOOL_FIELDS = ['args', 'stdin', 'project'];
 const MM3_ID = /MM3-\d{4}/gu;
 const idsIn = (s: string): string[] => [...s.matchAll(MM3_ID)].map((m) => m[0]);
 const isMm3 = (c: ClaudeCall): boolean => c.tool.includes('mm3') || (c.tool === 'Bash' && /mm3/u.test(String(c.input.command ?? '')));
@@ -66,13 +68,6 @@ const sameCommandBothWays = (e: Evidence): Array<{ terminal: string; plugin: str
 };
 const mm3Calls = (e: Evidence): ClaudeCall[] => e.calls.filter(isMm3);
 const verdict = (c: ClaudeCall): boolean => /\bgate: (pass|fail|unsure)/u.test(c.result);
-/** Each call that came back saying which field it ignored, with what the same agent did after it. */
-const ignoredStops = (e: Evidence): Array<{ after: ClaudeCall[] }> =>
-  [...new Set(e.calls.map((c) => c.parent ?? 'lead'))].flatMap((a) => {
-    const mine = e.calls.filter((c) => (c.parent ?? 'lead') === a);
-    return mine.flatMap((c, i) => (c.result.includes('✖ arguments: ignored') ? [{ after: mine.slice(i + 1) }] : []));
-  });
-
 export const CHECKPOINTS: Record<string, Checkpoint> = {
   'config-file-has-cap': {
     id: 'config-file-has-cap',
@@ -164,26 +159,17 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
     means: "the project was left with a block no agent reads",
     check: (e) => /^@AGENTS\.md$/mu.test(e.read('CLAUDE.md') ?? '') || /^@\.\.\/AGENTS\.md$/mu.test(e.read('.claude/CLAUDE.md') ?? ''),
   },
-  'ignored-stop-met': {
-    id: 'ignored-stop-met',
-    short: 'o',
-    label: 'stop was met',
-    fix: "If agents never meet it, the job does not exercise the feature: change the job's wording, not the stop.",
-    text: 'A call that sent the request under a field the tool ignores was stopped with a line saying what it ignored',
-    means: 'the stop never happened in this run, so the feature was NOT EXERCISED (it says nothing about MM3; the agent used "stdin" at once)',
-    check: (e) => ignoredStops(e).length > 0,
-  },
   'ignored-stop-fixed': {
     id: 'ignored-stop-fixed',
     short: 'j',
-    label: 'next call fixed it',
+    label: 'first call fixed it',
     fix: 'Keep the ignored-field stop naming the field to use ("stdin") and an example of the args.',
-    text: 'After that stop, the agent\'s very next call was MM3 again, and its next verb request got a verdict',
-    means: 'the agent met the stop and did not recover from it in one call (the stop wording did not say enough)',
-    check: (e) => ignoredStops(e).every(({ after }) => {
-      const verb = after.find(isVerbRequest);
-      return after[0] !== undefined && kindOf(after[0]) === 'mm3' && !isStop(after[0]) && verb !== undefined && isVerdict(verb);
-    }), // with no such stop this is true and says nothing: "stop was met" is the box that reports the job did not exercise the feature
+    text: 'The agent was handed the wrong-field stop; its very first MM3 call put the request in "stdin" (and in no field the tool ignores) and was accepted',
+    means: 'the agent did not fix the call in one go from the stop text: it repeated the wrong field, got another stop, or went elsewhere first (the stop wording did not say enough)',
+    check: (e) => {
+      const first = mm3Calls(e)[0];
+      return first !== undefined && first.tool.includes('mm3') && isVerbRequest(first) && typeof first.input.stdin === 'string' && first.input.stdin.trim() !== '' && Object.keys(first.input).every((k) => TOOL_FIELDS.includes(k)) && !isStop(first) && !first.result.includes('ignored'); // the job starts the agent at the stop, so the stop is not in the trace: the first call is the one judged
+    },
   },
   'terminal-and-plugin-both-used': {
     id: 'terminal-and-plugin-both-used',

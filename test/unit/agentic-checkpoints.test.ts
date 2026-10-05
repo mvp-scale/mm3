@@ -101,15 +101,17 @@ describe('feature job checkpoints [C-266]', () => {
     expect(run(['agents-block-written', 'claude-md-imports'], ev([], { read: files({ 'AGENTS.md': block }) }))).toEqual({ 'agents-block-written': true, 'claude-md-imports': false });
   });
 
-  it('[C-266] the wrong field: the stop must be met, and the very next call must be MM3 and fix it; not meeting it is reported, not passed', () => {
+  it('[C-266] the wrong field: the agent starts at the stop, and its very first MM3 call must put the request in "stdin" and be accepted', () => {
+    const call = (input: Record<string, unknown>, result: string): ClaudeCall => ({ tool: 'mcp__plugin_mm3_mm3__mm3', input, parent: null, id: `${Math.random()}`, result });
     const IGNORED = `✖ request: empty → start with "mak:"\n✖ arguments: ignored "request" → the tool takes only args, stdin and project: the request YAML goes in "stdin" (args: ["class","-"])`;
-    const both = ['ignored-stop-met', 'ignored-stop-fixed'];
-    expect(run(both, ev([mm3(['class', '-'], IGNORED), mm3(['class', '-'], OK)]))).toEqual({ 'ignored-stop-met': true, 'ignored-stop-fixed': true });
-    expect(run(both, ev([mm3(['class', '-'], OK)]))['ignored-stop-met']).toBe(false); // never met: the feature was not exercised
-    const wandered: ClaudeCall = { tool: 'Read', input: { file_path: 'x' }, parent: null, id: 'r', result: 'text' };
-    expect(run(both, ev([mm3(['class', '-'], IGNORED), wandered, mm3(['class', '-'], OK)]))).toEqual({ 'ignored-stop-met': true, 'ignored-stop-fixed': false }); // left MM3 after the stop
-    expect(run(both, ev([mm3(['class', '-'], IGNORED), mm3(['class', '-'], IGNORED)]))['ignored-stop-fixed']).toBe(false);
-    expect(run(both, ev([mm3(['class', '-'], IGNORED), mm3(['template', 'class'], 'skeleton'), mm3(['class', '-'], OK)]))['ignored-stop-fixed']).toBe(true); // one discovery call in between, then a verdict
+    const fixed = ['ignored-stop-fixed'];
+    const yaml = 'mak:\n  goal: x';
+    expect(run(fixed, ev([call({ args: ['class', '-'], stdin: yaml }, OK)]))['ignored-stop-fixed']).toBe(true);
+    expect(run(fixed, ev([call({ args: ['class', '-'], request: yaml }, IGNORED), call({ args: ['class', '-'], stdin: yaml }, OK)]))['ignored-stop-fixed']).toBe(false); // repeated the wrong field first
+    expect(run(fixed, ev([call({ args: ['class', '-'], stdin: yaml, request: yaml }, OK)]))['ignored-stop-fixed']).toBe(false); // the field is still sent, even if the tool took the call
+    expect(run(fixed, ev([call({ args: ['class', '-'], stdin: yaml }, STOP)]))['ignored-stop-fixed']).toBe(false); // right field, but the request itself was stopped
+    expect(run(fixed, ev([call({ args: ['agent', 'class'] }, 'card'), call({ args: ['class', '-'], stdin: yaml }, OK)]))['ignored-stop-fixed']).toBe(false); // went elsewhere first
+    expect(run(fixed, ev([]))['ignored-stop-fixed']).toBe(false);
   });
 
   it('[C-266] a helper gets the guidance: the verdict must come from a helper, not from the lead', () => {

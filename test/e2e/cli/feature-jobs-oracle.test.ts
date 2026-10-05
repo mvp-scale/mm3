@@ -11,7 +11,7 @@ import { mm3 } from '../../helpers/cli.ts';
 import { overMcp } from '../../helpers/mcp.ts';
 import { gitInit, tempProject, USER_TS } from '../../helpers/project.ts';
 
-const spec = JSON.parse(readFileSync('test/agentic/scenarios/baseline.json', 'utf8')) as { full: FullScenario[] };
+const spec = JSON.parse(readFileSync('test/agentic/scenarios/baseline.json', 'utf8')) as { full: FullScenario[]; context: Array<{ id: string; situation: string }> };
 const job = (id: string): FullScenario => spec.full.find((s) => s.id === id)!;
 const GOOD = readFileSync('test/fixtures/requests/valid/class.yaml', 'utf8');
 const FILES = { 'src/user.ts': USER_TS, 'src/handlers/user.ts': USER_TS, 'AGENTS.md': '# a project\n' };
@@ -87,22 +87,31 @@ describe('the feature jobs can be passed [C-266]', () => {
     expect(failed(s, evidence(root, calls, 'Done: AGENTS.md has the MM3 block and CLAUDE.md imports it.', s))).toEqual([]);
   });
 
-  it('[C-266] F5, the wrong field: the request under "request" is stopped with what was ignored, and the next call with "stdin" gets a verdict', async () => {
+  it('[C-266] F5, the wrong field: the stop quoted in the job is exactly what the real plugin returns, and one call with "stdin" after it gets a verdict', async () => {
     const { root } = tempProject({ ...FILES, 'routes/login.ts': USER_TS });
-    const calls: ClaudeCall[] = [];
     const s = job('F5-ignored-field');
-    const yaml = s.prompt.slice(s.prompt.indexOf('mak:')); // the very request the agent is handed
-    const [stopped, accepted] = await viaTool(root, calls, [{ args: ['class', '-'], extra: { request: yaml } }, { args: ['class', '-'], stdin: yaml }]);
-    expect(stopped).toContain('✖ arguments: ignored "request"');
+    const yaml = s.prompt.slice(s.prompt.lastIndexOf('\nmak:\n') + 1); // the very request the agent is handed (the stop above it also says "mak:")
+    // the real plugin bundle, sent the YAML under "request": this is the stop the job starts the agent at
+    const [stop] = await viaTool(root, [], [{ args: ['class', '-'], extra: { request: yaml } }]);
+    expect(stop).toContain('✖ arguments: ignored "request" → the tool takes only args, stdin and project: the request YAML goes in "stdin" (args: ["class","-"])');
+    // the seeded text cannot drift from the product: the prompt carries the whole reply character for character, and the context test's quote is part of it
+    expect(s.prompt).toContain(`and it answered:\n\n${stop}\n\nCarry on`);
+    const quoted = spec.context.find((c) => c.id === 'stop-ignored-field')!.situation.split('It answered: ')[1];
+    expect(quoted).toBeDefined();
+    expect(stop).toContain(quoted!);
+    // the ideal run: the very first call carries the YAML in "stdin", is accepted, and the agent reports the run id
+    const { root: good } = tempProject({ ...FILES, 'routes/login.ts': USER_TS });
+    const calls: ClaudeCall[] = [];
+    const [accepted] = await viaTool(good, calls, [{ args: ['class', '-'], stdin: yaml }]);
     const id = /id: (MM3-\d+)/u.exec(accepted ?? '')?.[1];
     expect(id).toBeDefined();
-    expect(failed(s, evidence(root, calls, `The first call was stopped: the tool ignored "request" and wants the YAML in "stdin". The second was accepted: run ${id}, gate fail.`, s))).toEqual([]);
-    // an agent that used "stdin" first never exercised the stop, and the job says so instead of passing
-    const { root: other } = tempProject({ ...FILES, 'routes/login.ts': USER_TS });
-    const direct: ClaudeCall[] = [];
-    const [only] = await viaTool(other, direct, [{ args: ['class', '-'], stdin: yaml }]);
-    const idOnly = /id: (MM3-\d+)/u.exec(only ?? '')?.[1];
-    expect(failed(s, evidence(other, direct, `Run ${idOnly}.`, s))).toEqual(['ignored-stop-met']);
+    expect(failed(s, evidence(good, calls, `The YAML goes in "stdin": the call was accepted, run ${id}, gate fail.`, s))).toEqual([]);
+    // an agent that repeats the wrong field first did not fix the call in one go, even if its second call is fine
+    const { root: again } = tempProject({ ...FILES, 'routes/login.ts': USER_TS });
+    const repeat: ClaudeCall[] = [];
+    const [stopped, then] = await viaTool(again, repeat, [{ args: ['class', '-'], extra: { request: yaml } }, { args: ['class', '-'], stdin: yaml }]);
+    expect(stopped).toBe(stop);
+    expect(failed(s, evidence(again, repeat, `Run ${/id: (MM3-\d+)/u.exec(then ?? '')?.[1]}, gate fail.`, s))).toEqual(['ignored-stop-fixed']);
   });
 
   it('[C-266] F6, a helper gets the guidance: the lead pastes `mm3 agent delegate` into one helper\'s prompt, the helper makes its own request, and the lead reports its run id', () => {

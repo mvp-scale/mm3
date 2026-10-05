@@ -69,7 +69,6 @@ export const THEMES_OF: Record<string, string[]> = {
   'claude-md-imports': ['tool-discovery', 'stop-names-the-edit'],
   'terminal-and-plugin-both-used': ['tool-discovery'],
   'routes-agree-and-said-so': ['tool-schema', 'harness-grader'],
-  'ignored-stop-met': ['scenario-design'],
   'ignored-stop-fixed': ['tool-schema', 'stop-names-the-edit'],
   'lower-tier-models': ['lower-tier-models', 'guidance-length'],
 };
