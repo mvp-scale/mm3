@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { definitionOf, lastFormal, nextId, recordGaps, type FinishedRecord, type StartedRecord } from '../../scripts/agentic/ledger.ts';
-import { setCap, shimMm3, spentUsd } from '../../scripts/agentic/run.ts';
+import { adapters, setCap, shimMm3, spentUsd } from '../../scripts/agentic/run.ts';
 import { spawnSync } from 'node:child_process';
 import { keyFound, parseTrialArgs } from '../../scripts/agentic/trial.ts';
 import { tellRun } from '../../scripts/agentic/release-report.ts';
@@ -36,6 +36,21 @@ describe('a paid trial checks for a key first [C-267]', () => {
     expect(keyFound('doctor:\n  provider: typesafe\n  key: yes · from env TYPESAFE_API_KEY\n')).toBe(true);
     expect(keyFound('doctor:\n  provider: fake\n  key: no  → run "mm3 init" to add one\n')).toBe(false);
     expect(keyFound('doctor:\n  provider: fake\n  key: yes · from keychain\n')).toBe(false); // a key, but the sample provider is switched on
+  });
+});
+
+describe('a paid trial must really be live [C-267]', () => {
+  it('[C-267] the providers that answered are read from the project ledger, so a run labelled paid on the sample provider is caught', () => {
+    const ledger = [JSON.stringify({ kind: 'run', adapter: 'fake' }), JSON.stringify({ kind: 'run', adapter: 'typesafe' }), JSON.stringify({ kind: 'config' }), JSON.stringify({ kind: 'run', adapter: 'typesafe' })].join('\n');
+    expect(adapters(ledger)).toEqual({ fake: 1, typesafe: 2 });
+    expect(adapters('')).toEqual({});
+  });
+  it('[C-267] a report on a paid run that recorded no spend says the live classifier may never have been reached', () => {
+    const sp = { full: [{ id: 'S1', title: 'Spend', goal: 'g', prompt: 'p', model: 'sonnet', routes: ['mcp'], promise: 3, checkpoints: ['engaged'] }], rules: { gateModel: 'sonnet', floorModel: 'haiku', mustPassTrials: 2, trialsPerScenario: 3, firstAttemptTarget: 0.8 } };
+    const started: StartedRecord = { kind: 'trial', phase: 'started', schema: 2, id: 'TRL-0001', ts: 't', version: 'local+abc', versionCommit: 'abc', head: 'abc', dirty: false, fingerprint: 'f', definition: definitionOf(sp, { tag: 't', sha: 's' }), mode: 'paid', paid: { approvedUsd: 0.05 }, trialsOverride: 1, formal: false, formalReason: 'trial' };
+    const done: FinishedRecord = { kind: 'trial', phase: 'finished', startedId: 'TRL-0001', ts: 't', passed: true, spentUsd: 0, level3: [{ id: 'S1', route: 'mcp', model: 'sonnet', trial: 1, pass: true, failed: [], attempts: [1], firstRequestAccepted: true, mm3Calls: 1, transcript: 't' }] };
+    expect(tellRun([started, done], 'TRL-0001', undefined).join('\n')).toContain('labelled PAID but recorded no spend');
+    expect(tellRun([started, { ...done, spentUsd: 0.0021 }], 'TRL-0001', undefined).join('\n')).not.toContain('labelled PAID but recorded no spend');
   });
 });
 

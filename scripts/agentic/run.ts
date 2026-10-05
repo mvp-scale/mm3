@@ -144,6 +144,20 @@ export function spentUsd(ledger: string): number {
   }, 0);
 }
 
+/** Which providers answered the runs in a project's ledger. A paid trial that shows `fake` here never reached the live classifier, whatever it was labelled. */
+export function adapters(ledger: string): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const l of ledger.split('\n').filter((x) => x.includes('"kind":"run"'))) {
+    try {
+      const a = (JSON.parse(l) as { adapter?: unknown }).adapter;
+      if (typeof a === 'string') out[a] = (out[a] ?? 0) + 1;
+    } catch {
+      /* a line that is not json is not a run */
+    }
+  }
+  return out;
+}
+
 /** Puts a dollar cap into the project's config file so MM3's own budget enforces it, keeping whatever the job's setup already wrote. */
 export function setCap(project: string, usd: number): void {
   const file = path.join(project, '.mm3', 'config.yaml');
@@ -196,8 +210,13 @@ export function runFull(scenarios: FullScenario[], version: string, rules: Rules
     const row = grade(s, run, project, route, model, trial);
     const logFile = path.join(project, '.mm3', 'log.jsonl');
     if (opts.paid) {
-      row.spentUsd = existsSync(logFile) ? spentUsd(readFileSync(logFile, 'utf8')) : 0;
+      const ledgerText = existsSync(logFile) ? readFileSync(logFile, 'utf8') : '';
+      row.spentUsd = spentUsd(ledgerText);
       spent += row.spentUsd;
+      if ((adapters(ledgerText).fake ?? 0) > 0) {
+        row.pass = false;
+        row.problems.unshift('the paid trial ran on the sample provider (adapter fake): the key never reached MM3 on this route → store it with `mm3 init` (keychain) for the MCP route, or use --route cli');
+      }
     }
     rows.push(row);
     // every transcript is kept (gitignored lab/archive) so a red row can be read, not guessed at

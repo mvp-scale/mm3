@@ -137,6 +137,7 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
     if (t.matters) out.push(...wrap('     Why it matters: ', t.matters, 100));
   });
   const rate = Math.round((end.firstRequestAcceptedRate ?? 0) * 100);
+  if (started.mode === 'paid' && (end?.spentUsd ?? 0) === 0) out.push('', '  ⚠ This was labelled PAID but recorded no spend: the live classifier may never have been reached. Check the trace for "adapter fake".');
   out.push('', 'WHAT THIS MEANS FOR THE RELEASE');
   out.push(...wrap('  - ', gate.every((r) => r.pass) ? `${gateName}, the model that decides, completed every job on every route. Agents can get MM3 ${started.version.split('-')[0]} to work.` : `${gateName}, the model that decides, missed at least one job (marked ✖ above). That blocks the release until it is understood.`, 100));
   out.push(...wrap('  - ', `The agent's first request to MM3 was accepted ${rate}% of the time (target 80%). ${rate < 80 ? 'Agents usually needed a retry, so the instructions and error messages still cost them effort.' : 'The instructions work.'}`, 100));

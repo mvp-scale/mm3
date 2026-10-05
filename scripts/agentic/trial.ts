@@ -94,11 +94,20 @@ if (process.argv[1]?.endsWith('trial.ts')) {
     formalReason: 'a development trial of one job on a local build: it never counts toward the release gate',
   };
   if (a.paid) {
-    // before anything is recorded or run: does a key resolve the way a paid trial will need it? (the environment minus the sample-provider switches)
-    const env = { ...process.env } as NodeJS.ProcessEnv;
-    delete env.MM3_PROVIDER;
-    const doctor = spawnSync('node', [path.resolve('dist/cli.js'), 'doctor'], { cwd: process.cwd(), env, encoding: 'utf8' });
-    if (!keyFound(`${doctor.stdout}${doctor.stderr}`)) throw new Error('✖ trial: --paid found no TypeSafe key → put TYPESAFE_API_KEY in the shell you run this from, or run `mm3 init` to store one (nothing was recorded and nothing was spent; the key is never read or printed here)');
+    // before anything is recorded or run: does a key resolve the way each route will need it? The plugin's MCP server takes its key from the
+    // plugin's own setting, not from the shell, so for that route the key has to be stored (keychain or the user file), not just exported.
+    const check = (withoutEnvKey: boolean): boolean => {
+      const env = { ...process.env } as NodeJS.ProcessEnv;
+      delete env.MM3_PROVIDER;
+      if (withoutEnvKey) {
+        delete env.TYPESAFE_API_KEY;
+        delete env.AI_GATEWAY_API_KEY;
+      }
+      const doctor = spawnSync('node', [path.resolve('dist/cli.js'), 'doctor'], { cwd: process.cwd(), env, encoding: 'utf8' });
+      return keyFound(`${doctor.stdout}${doctor.stderr}`);
+    };
+    if (!check(false)) throw new Error('✖ trial: --paid found no TypeSafe key → put TYPESAFE_API_KEY in the shell you run this from, or run `mm3 init` to store one (nothing was recorded and nothing was spent; the key is never read or printed here)');
+    if (scoped.routes.includes('mcp') && !check(true)) throw new Error('✖ trial: the MCP route cannot use a key that is only in the shell: the plugin passes its own setting to its server → store the key with `mm3 init` (keychain), or run this job with --route cli (nothing was recorded and nothing was spent)');
   }
   append(started);
   console.log(`AGENTIC FEATURE TRIAL ${started.id} · ${(job as { title?: string }).title ?? job.id} · ${a.model} × ${a.trials} · ${a.paid ? `PAID: up to $${a.paid.approvedUsd} of real TypeSafe spend, approved on the command line` : 'free path (sample provider, no key, no spend)'}`);
