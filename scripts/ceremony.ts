@@ -104,7 +104,8 @@ try {
   out(`   gate: ${rules.gateModel} passes at least ${rules.mustPassTrials} of ${rules.trialsPerScenario} trials of every scenario on every route; ${rules.floorModel} runs once and is reported, not gated`);
   const l3: FullRow[] = runFull(spec.full, version, rules, (s) => out(s.replace(/^ {2}/u, '   ')), trialsOverride);
   const gateRows = l3.filter((r) => r.model === rules.gateModel);
-  const first = gateRows.length ? gateRows.filter((r) => r.firstRequestAccepted).length / gateRows.length : 0;
+  const asked = gateRows.filter((r) => r.attempts.length > 0); // jobs with no verb request (a setting, a health check) say nothing about first requests
+  const first = asked.length ? asked.filter((r) => r.firstRequestAccepted).length / asked.length : 0;
   for (const c of cells(l3)) out(`   ${c.id} · ${c.route} · ${c.model}: ${c.passed}/${c.trials}${c.model === rules.gateModel ? '' : ' (floor, not gating)'}`);
   out(`   → first request accepted in ${(first * 100).toFixed(0)}% of gate trials (target ${(rules.firstAttemptTarget * 100).toFixed(0)}%, reported)`);
 

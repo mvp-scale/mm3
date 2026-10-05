@@ -7,7 +7,7 @@ import { evaluate, metrics, type Evidence } from '../../scripts/agentic/checkpoi
 const mm3 = (args: string[], result: string, parent: string | null = null): ClaudeCall => ({ tool: 'mcp__plugin_mm3_mm3__mm3', input: { args }, parent, id: `${Math.random()}`, result });
 const OK = 'mak:\n  id: MM3-0001\n  gate: fail';
 const STOP = '✖ mak.ask.decisions: 0 categories → give 2–5';
-const ev = (calls: ClaudeCall[], o: Partial<Evidence> = {}): Evidence => ({ calls, answer: 'verdict fail, run MM3-0001', ledger: '{"id":"MM3-0001"}', promise: 3, helpers: 0, ...o });
+const ev = (calls: ClaudeCall[], o: Partial<Evidence> = {}): Evidence => ({ calls, answer: 'verdict fail, run MM3-0001', ledger: '{"id":"MM3-0001"}', promise: 3, helpers: 0, read: () => undefined, ...o });
 const ids = (e: Evidence, list: string[]): Record<string, boolean> => Object.fromEntries(evaluate(list, e).map((c) => [c.id, c.pass]));
 
 describe('agentic checkpoints [C-261]', () => {
@@ -54,5 +54,44 @@ describe('agentic checkpoints [C-261]', () => {
 
   it('[C-261] an unknown checkpoint name is an error, not a silent pass', () => {
     expect(() => evaluate(['no-such-checkpoint'], ev([]))).toThrow(/unknown checkpoint/u);
+  });
+});
+
+// The jobs for the features new since the last release: each criterion is checked from the files the agent left and the ledger, never from a verdict's content.
+describe('feature job checkpoints [C-266]', () => {
+  const cfg = (usd: number, runs?: number): string => JSON.stringify({ kind: 'config', id: 'X', settings: { budget: { usd, ...(runs ? { runs } : {}) } } });
+  const files = (m: Record<string, string>) => (rel: string): string | undefined => m[rel];
+  const run = (list: string[], e: Evidence): Record<string, boolean> => ids(e, list);
+
+  it('[C-266] changing a setting: the file holds the cap, the ledger holds a receipt for it, and the answer says what changed', () => {
+    const good = ev([mm3(['config', '--load'], '✔ valid · loaded')], { read: files({ '.mm3/config.yaml': 'budget:\n  usd: 3\n' }), ledger: cfg(3), answer: 'Set budget.usd to 3; the load recorded a receipt in the ledger.' });
+    expect(Object.values(run(['config-file-has-cap', 'config-receipt-shows-cap', 'answer-states-the-change'], good)).every(Boolean)).toBe(true);
+    const unloaded = ev([], { read: files({ '.mm3/config.yaml': 'budget:\n  usd: 3\n' }), ledger: '', answer: 'Changed it to 3 dollars.' });
+    expect(run(['config-file-has-cap', 'config-receipt-shows-cap', 'answer-states-the-change'], unloaded)).toEqual({ 'config-file-has-cap': true, 'config-receipt-shows-cap': false, 'answer-states-the-change': false });
+    expect(run(['config-file-has-cap'], ev([], { read: files({ '.mm3/config.yaml': '#   usd: 3\n' }) }))['config-file-has-cap']).toBe(false); // a commented-out line is not a setting
+  });
+
+  it('[C-266] the spend cap: the stop was seen, the cap raised in the file AND recorded, and a verdict followed the stop', () => {
+    const stop = mm3(['class', '-'], '✖ budget: cap reached ($0.00 of $5.00 · 1 of 1 runs) → ask the owner to raise budget.runs in .mm3/config.yaml');
+    const calls = [mm3(['class', '-'], OK), stop, mm3(['config', '--load'], '✔ valid'), mm3(['class', '-'], OK)];
+    const good = ev(calls, { read: files({ '.mm3/config.yaml': 'budget:\n  runs: 5\n' }), ledger: cfg(5, 5) });
+    expect(run(['budget-stop-seen', 'cap-raised-in-config', 'continued-after-stop'], good)).toEqual({ 'budget-stop-seen': true, 'cap-raised-in-config': true, 'continued-after-stop': true });
+    const stuck = ev([mm3(['class', '-'], OK), stop], { read: files({ '.mm3/config.yaml': 'budget:\n  runs: 1\n' }), ledger: '' });
+    expect(run(['budget-stop-seen', 'cap-raised-in-config', 'continued-after-stop'], stuck)).toEqual({ 'budget-stop-seen': true, 'cap-raised-in-config': false, 'continued-after-stop': false });
+    expect(run(['budget-stop-seen'], ev([mm3(['class', '-'], OK)]))['budget-stop-seen']).toBe(false); // never reached the cap
+  });
+
+  it('[C-266] install health: the warning was seen, and the fix is the right one (never @latest)', () => {
+    const doctor = mm3(['doctor'], 'versions: "⚠ the plugin is 0.1.1 (f337f61) and this copy is 0.1.2-nightly.x → /plugin update … @nightly"');
+    expect(run(['doctor-versions-seen', 'right-fix-reported'], ev([doctor], { answer: 'Run /plugin update, or npm install -g @mvpscale/mm3@nightly.' }))).toEqual({ 'doctor-versions-seen': true, 'right-fix-reported': true });
+    expect(run(['right-fix-reported'], ev([doctor], { answer: 'npm install -g @mvpscale/mm3@latest' }))['right-fix-reported']).toBe(false);
+    expect(run(['doctor-versions-seen'], ev([mm3(['doctor'], 'versions: ✔ the plugin and this copy are both 0.1.2')]))['doctor-versions-seen']).toBe(false);
+  });
+
+  it('[C-266] setting a project up: the block is in AGENTS.md and a CLAUDE.md imports it (either location)', () => {
+    const block = '<!-- mm3:agents -->\nIf the `mm3` tool is available…\n<!-- /mm3:agents -->';
+    expect(run(['agents-block-written', 'claude-md-imports'], ev([], { read: files({ 'AGENTS.md': block, 'CLAUDE.md': '@AGENTS.md\n' }) }))).toEqual({ 'agents-block-written': true, 'claude-md-imports': true });
+    expect(run(['claude-md-imports'], ev([], { read: files({ '.claude/CLAUDE.md': '# c\n@../AGENTS.md\n' }) }))['claude-md-imports']).toBe(true);
+    expect(run(['agents-block-written', 'claude-md-imports'], ev([], { read: files({ 'AGENTS.md': block }) }))).toEqual({ 'agents-block-written': true, 'claude-md-imports': false });
   });
 });
