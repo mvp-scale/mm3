@@ -4,7 +4,7 @@
 // changed, or a scenario, checkpoint or rule has, the result is stale and the ceremony must be run again.
 import { readFileSync } from 'node:fs';
 import { collectSurfaces, manifestOf } from '../test/helpers/guidance-surfaces.ts';
-import { chainProblem, definitionOf, lastFormal, readLedger, type FinishedRecord, type Spec, type StartedRecord } from './agentic/ledger.ts';
+import { chainProblem, definitionOf, lastFormal, readLedger, recordGaps, type FinishedRecord, type Spec, type StartedRecord } from './agentic/ledger.ts';
 
 export interface Current {
   fingerprint: string;
@@ -17,6 +17,8 @@ export function agenticProblem(current: Current, last: { started: StartedRecord;
   const { started, finished } = last;
   if (!finished.passed) return `✖ agentic: the last formal run ${started.id} (${started.version}, ${started.ts.slice(0, 10)}) did not pass → fix what it found and run the ceremony again`;
   if (started.fingerprint !== current.fingerprint) return `✖ agentic: guidance changed since ${started.id} passed (${started.fingerprint.slice(0, 12)} → ${current.fingerprint.slice(0, 12)}, tested ${started.version}) → run the ceremony again`;
+  const gaps = recordGaps(started, finished);
+  if (gaps.length) return `✖ agentic: the record of ${started.id} is incomplete (${gaps.slice(0, 3).join('; ')}${gaps.length > 3 ? '…' : ''}) → run the ceremony again`;
   if (started.definition.hash !== current.definitionHash) return `✖ agentic: the definition of success changed since ${started.id} passed (a scenario, checkpoint or rule) → run the ceremony again`;
   return undefined;
 }

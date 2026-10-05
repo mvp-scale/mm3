@@ -5,13 +5,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { agenticProblem } from '../../scripts/check-agentic.ts';
-import { append, chainProblem, compareRuns, definitionOf, incomplete, lastFormal, nextId, type FinishedRecord, type LedgerRecord, type Spec, type StartedRecord } from '../../scripts/agentic/ledger.ts';
+import { append, chainProblem, compareRuns, definitionOf, incomplete, lastFormal, nextId, recordGaps, type FinishedRecord, type LedgerRecord, type Spec, type StartedRecord } from '../../scripts/agentic/ledger.ts';
 
 const RULES = { gateModel: 'sonnet', floorModel: 'haiku', mustPassTrials: 2, trialsPerScenario: 3, firstAttemptTarget: 0.8 };
 const FIX = { tag: 'v1.0.0', sha: 'a'.repeat(40) };
 const spec = (o: { goal?: string; prompt?: string; model?: string } = {}): Spec => ({ full: [{ id: 'S1', goal: o.goal ?? 'goal', prompt: o.prompt ?? 'Is it safe?', model: o.model ?? 'sonnet', routes: ['mcp'], promise: 3, checkpoints: ['engaged', 'answer-cites-run-id'] }], rules: RULES });
-const started = (o: Partial<StartedRecord> = {}): StartedRecord => ({ kind: 'ceremony', phase: 'started', id: 'CER-0001', ts: '2026-10-05T10:00:00.000Z', version: '0.1.2-nightly.test', versionCommit: 'abc1234', head: 'abc1234', dirty: false, fingerprint: 'f'.repeat(64), definition: definitionOf(spec(), FIX), mode: 'free', trialsOverride: null, formal: true, formalReason: 'ok', ...o });
-const finished = (o: Partial<FinishedRecord> = {}): FinishedRecord => ({ kind: 'ceremony', phase: 'finished', startedId: 'CER-0001', ts: '2026-10-05T10:30:00.000Z', passed: true, ...o });
+const started = (o: Partial<StartedRecord> = {}): StartedRecord => ({ kind: 'ceremony', phase: 'started', schema: 1, guidance: { surfaces: 58, snapshot: 'test/golden/guidance/surfaces.txt' }, environment: { node: 'v22', vitest: '5', claude: '2.1', os: 'Linux' }, artifact: { npmIntegrity: 'sha512-x', npmShasum: 'abc', pluginCommit: 'abc1234' }, id: 'CER-0001', ts: '2026-10-05T10:00:00.000Z', version: '0.1.2-nightly.test', versionCommit: 'abc1234', head: 'abc1234', dirty: false, fingerprint: 'f'.repeat(64), definition: definitionOf(spec(), FIX), mode: 'free', trialsOverride: null, formal: true, formalReason: 'ok', ...o });
+const USAGE = { inputTokens: 1, outputTokens: 1, cacheReadTokens: 1, cacheCreationTokens: 1, turns: 1 };
+const ECO = { mm3: { calls: 1, argsTokens: 1, resultTokens: 1 }, bash: { calls: 0, argsTokens: 0, resultTokens: 0 }, files: { calls: 0, argsTokens: 0, resultTokens: 0 }, agent: { calls: 0, argsTokens: 0, resultTokens: 0 }, other: { calls: 0, argsTokens: 0, resultTokens: 0 } };
+const ROW = { id: 'S1', route: 'mcp', model: 'sonnet', resolvedModel: 'claude-sonnet-x', trial: 1, pass: true, failed: [], attempts: [1], firstRequestAccepted: true, mm3Calls: 1, usage: USAGE, economics: ECO, transcript: 't.json', transcriptSha256: 'ab' };
+const finished = (o: Partial<FinishedRecord> = {}): FinishedRecord => ({ kind: 'ceremony', phase: 'finished', startedId: 'CER-0001', ts: '2026-10-05T10:30:00.000Z', passed: true, level1: [{ name: 'x', ok: true, detail: 'ok' }], level2: [{ id: 'a', level: 'none', pass: true }], level3: [ROW], usage: { ...USAGE, claudeRuns: 1, mm3Calls: 1 }, firstRequestAcceptedRate: 1, ...o });
 const cur = { fingerprint: 'f'.repeat(64), definitionHash: definitionOf(spec(), FIX).hash };
 
 describe('agentic ledger and gate [C-260]', () => {
@@ -79,7 +82,7 @@ describe('agentic ledger and gate [C-260]', () => {
     expect(text).toContain('S1: prompt changed');
     expect(text).toContain('level 3 gate-model trials passed: 0/1 → 1/1');
     expect(text).toContain('first request accepted: 25% → 75%');
-    expect(text).toContain('usage: 1000 in / 50 out, 6 turns, 3 MM3 calls → not recorded'); // tokens and turns, never a dollar figure
+    expect(text).toContain('usage: 1000 in / 50 out, 6 turns, 3 MM3 calls → 3 in / 1 out, 1 turns, 1 MM3 calls'); // tokens and turns, never a dollar figure
     expect(text).toContain('S1 · mcp · sonnet: 0/1 → 1/1');
   });
 
@@ -89,5 +92,18 @@ describe('agentic ledger and gate [C-260]', () => {
     const text = compareRuns({ started: legacy as StartedRecord }, { started: started({ id: 'CER-0002' }) }).join('\n');
     expect(text).toContain('S1: prompt was not recorded in the older run');
     expect(text).not.toContain('prompt changed');
+  });
+
+  it('[C-260] a complete record has no gaps; each missing piece is named, and an old-format record is not held to the schema', () => {
+    expect(recordGaps(started(), finished())).toEqual([]);
+    expect(recordGaps(started({ environment: undefined }), finished())).toEqual(['the environment (node, vitest, claude, OS)']);
+    expect(recordGaps(started({ artifact: { npmIntegrity: null, npmShasum: null, pluginCommit: null } }), finished())[0]).toMatch(/tested artifact/u);
+    expect(recordGaps(started(), finished({ level3: [{ ...ROW, transcriptSha256: undefined, usage: undefined }] }))).toEqual(['S1/mcp/sonnet/1: tokens', 'S1/mcp/sonnet/1: the transcript digest']);
+    expect(recordGaps(started())).toContain('the closing line (the run never finished)');
+    expect(recordGaps(started({ schema: undefined }), finished())[0]).toMatch(/written before the schema existed/u);
+  });
+
+  it('[C-260] the gate fails on a formal run whose record is incomplete, naming what is missing', () => {
+    expect(agenticProblem(cur, { started: started(), finished: finished({ level3: [{ ...ROW, usage: undefined }] }) })).toMatch(/the record of CER-0001 is incomplete \(S1\/mcp\/sonnet\/1: tokens\)/u);
   });
 });

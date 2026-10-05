@@ -128,6 +128,36 @@ export function chainProblem(file = LEDGER): string | undefined {
   return undefined;
 }
 
+/** What a release decision needs that this run's record does not hold. Empty: the record is complete. A record written before the schema existed is not held to it. */
+export function recordGaps(started: StartedRecord, finished?: FinishedRecord): string[] {
+  if (started.schema === undefined) return ['written before the schema existed (backfilled), so it is not checked'];
+  const gaps: string[] = [];
+  const need = (ok: unknown, what: string): void => {
+    if (!ok) gaps.push(what);
+  };
+  need(started.definition?.plain && started.definition.hash, 'the definition of success (plain summary and hash)');
+  need(started.definition?.scenarios?.every((s) => s.prompt && s.model && s.checkpoints.length > 0), 'every scenario\'s prompt, model and checkpoints');
+  need(started.environment?.node && started.environment.claude && started.environment.vitest && started.environment.os, 'the environment (node, vitest, claude, OS)');
+  need(started.artifact?.npmIntegrity || started.artifact?.note, 'the tested artifact (npm integrity, or why it is missing)');
+  need(started.guidance?.surfaces && started.fingerprint, 'the guidance fingerprint and what it covers');
+  need(started.formalReason, 'why the run is or is not formal');
+  if (finished === undefined) return [...gaps, 'the closing line (the run never finished)'];
+  if (finished.phase === 'aborted') return gaps;
+  need(finished.level1?.length, 'the level 1 results');
+  need(finished.level2?.length, 'the level 2 results');
+  need(finished.level3?.length, 'the level 3 results');
+  need(finished.usage, 'the run\'s token totals');
+  need(finished.firstRequestAcceptedRate !== undefined, 'the first-request rate');
+  for (const r of finished.level3 ?? []) {
+    const who = `${r.id}/${r.route}/${r.model}/${r.trial}`;
+    need(r.usage, `${who}: tokens`);
+    need(r.economics, `${who}: tokens by kind of call`);
+    need(r.resolvedModel, `${who}: the model it actually used`);
+    need(r.transcriptSha256, `${who}: the transcript digest`);
+  }
+  return gaps;
+}
+
 /** The newest formal run that finished, with its closing line; undefined when none. */
 export function lastFormal(records: LedgerRecord[]): { started: StartedRecord; finished: FinishedRecord } | undefined {
   const starts = records.filter((r): r is StartedRecord => r.phase === 'started' && r.formal);

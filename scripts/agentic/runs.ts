@@ -1,4 +1,4 @@
-// `npm run agentic:report`: a read-only view of test/agentic/ledger.jsonl, one line per ceremony run. The ledger is the
+// `npm run agentic:runs`: a read-only list of test/agentic/ledger.jsonl, one line per ceremony run. The ledger is the
 // source of truth; nothing is written here, so there is no second file to keep in step.
 import { chainProblem, incomplete, lastFormal, readLedger, type FinishedRecord } from './ledger.ts';
 

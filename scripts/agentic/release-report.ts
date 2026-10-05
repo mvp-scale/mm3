@@ -1,12 +1,12 @@
-// `npm run agentic:story -- [CER-0002] [--row <scenario>/<route>/<model>/<trial>]`: read one ceremony run back from the
-// ledger as a story, step by step. Each step says what it had to prove, whether it did, and what it used. With --row, one
+// `npm run agentic:release-report -- [CER-0002] [--row <scenario>/<route>/<model>/<trial>]`: the agentic release report. It reads
+// one ceremony run back from the ledger, step by step, the way a person approving a release needs to read it. Each step says what it had to prove, whether it did, and what it used. With --row, one
 // level 3 trial is told call by call: the tokens the model started with, what each call added, each MM3 call marked as a
 // sample-provider call (no live call, no key). The ledger holds the run; a transcript, when it is still on this machine and
 // its digest matches the ledger's, supplies the call-by-call detail. A pure function builds the text so it can be tested.
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import type { ClaudeCall, TurnUsage } from './claude.ts';
-import { chainProblem, readLedger, type FinishedRecord, type LedgerRecord, type StartedRecord } from './ledger.ts';
+import { chainProblem, readLedger, recordGaps, type FinishedRecord, type LedgerRecord, type StartedRecord } from './ledger.ts';
 import { approxTokens, economicsLine, kindOf } from './trace.ts';
 
 type Row = NonNullable<FinishedRecord['level3']>[number];
@@ -50,20 +50,22 @@ function totals(row: Row): string[] {
   return [u ? `  totals (exact, from the run's own usage): ${tok(u.inputTokens + u.cacheReadTokens + u.cacheCreationTokens)} tokens in, ${tok(u.outputTokens)} out, ${u.turns} model turns, ${row.mm3Calls} MM3 calls` : `  totals: tokens not recorded for this run; ${row.mm3Calls} MM3 calls`, `  attempts to a verdict, per agent: ${JSON.stringify(row.attempts)} · first request accepted: ${row.firstRequestAccepted ? 'yes' : 'no'}`];
 }
 
-/** A whole run as a story: five steps, each with its criteria and its result. */
+/** A whole run, reported in five steps, each with its criteria and its result. */
 export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey: string | undefined, load: (file: string) => Transcript | undefined = () => undefined): string[] {
   const starts = records.filter((r): r is StartedRecord => r.phase === 'started');
   const started = id ? starts.find((s) => s.id === id) : starts[starts.length - 1];
-  if (!started) return [id ? `✖ story: no run ${id} in the ledger → npm run agentic:report lists them` : '✖ story: the ledger has no runs yet → npm run ceremony -- --version <exact version>'];
+  if (!started) return [id ? `✖ release report: no run ${id} in the ledger → npm run agentic:runs lists them` : '✖ release report: the ledger has no runs yet → npm run ceremony -- --version <exact version>'];
   const end = records.find((r): r is FinishedRecord => r.phase !== 'started' && r.startedId === started.id);
   if (rowKey) {
     const [sid, route, model, trial] = rowKey.split('/');
     const row = end?.level3?.find((r) => r.id === sid && r.route === route && r.model === model && String(r.trial) === trial);
-    return row ? tellRow(started, row, load) : [`✖ story: no level 3 row ${rowKey} in ${started.id} → rows look like B1-class-a-file/mcp/sonnet/1`];
+    return row ? tellRow(started, row, load) : [`✖ release report: no level 3 row ${rowKey} in ${started.id} → rows look like B1-class-a-file/mcp/sonnet/1`];
   }
+  const gaps = recordGaps(started, end);
   const out: string[] = [
-    `${started.id} · ${started.version} · ${started.formal ? 'a FORMAL run' : 'NOT formal'} · ${end ? (end.phase === 'aborted' ? `ABORTED (${end.reason})` : end.passed ? 'PASSED' : 'FAILED') : 'INCOMPLETE (it never closed)'}`,
-    `  ${started.formal ? 'counts toward the release gate' : `recorded, does not count toward the release gate: ${started.formalReason}`}`, '',
+    `AGENTIC RELEASE REPORT · ${started.id} · ${started.version} · ${started.formal ? 'a FORMAL run' : 'NOT formal'} · ${end ? (end.phase === 'aborted' ? `ABORTED (${end.reason})` : end.passed ? 'PASSED' : 'FAILED') : 'INCOMPLETE (it never closed)'}`,
+    `  ${started.formal ? 'counts toward the release gate' : `recorded, does not count toward the release gate: ${started.formalReason}`}`,
+    `  record check: ${started.schema === undefined ? 'recorded before the schema existed (backfilled): not checked, and it cannot bless a release' : gaps.length === 0 ? 'complete: every field a release decision needs was captured' : `${gaps.length} thing(s) not captured: ${gaps.join('; ')}`}`, '',
     `STEP 1 · what was to be proven, stated before anything ran (recorded ${started.ts.slice(0, 16)}Z, definition ${started.definition.hash.slice(0, 12)})`,
     `  ${started.definition.plain}`,
     `  commit tested ${started.head.slice(0, 7)} · guidance ${started.fingerprint.slice(0, 12)}${started.guidance ? ` (${started.guidance.surfaces} surfaces)` : ''}${started.environment ? ` · node ${started.environment.node} · ${started.environment.claude}` : ''}`,
@@ -88,7 +90,7 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
   return out;
 }
 
-if (process.argv[1]?.endsWith('story.ts')) {
+if (process.argv[1]?.endsWith('release-report.ts')) {
   const args = process.argv.slice(2);
   const rowAt = args.indexOf('--row');
   const id = args.find((a) => /^CER-\d+$/u.test(a));

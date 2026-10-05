@@ -1,11 +1,11 @@
-// Reading a ceremony run back as a story [C-263]: five steps, each with the criteria it had to meet and whether it did; one
+// The agentic release report [C-263], a ceremony run read back for a release decision: five steps, each with the criteria it had to meet and whether it did; one
 // trial told call by call from the tokens the model started with, with every MM3 call marked as a sample-provider call, and
 // a transcript trusted only when its digest matches the ledger's.
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { ClaudeCall } from '../../scripts/agentic/claude.ts';
 import { definitionOf, type FinishedRecord, type StartedRecord } from '../../scripts/agentic/ledger.ts';
-import { tellRun } from '../../scripts/agentic/story.ts';
+import { tellRun } from '../../scripts/agentic/release-report.ts';
 
 const spec = { full: [{ id: 'S1', goal: 'a goal', prompt: 'Is it safe?', model: 'sonnet', routes: ['mcp'], promise: 3, checkpoints: ['engaged', 'answer-cites-run-id'] }], rules: { gateModel: 'sonnet', floorModel: 'haiku', mustPassTrials: 2, trialsPerScenario: 3, firstAttemptTarget: 0.8 } };
 const started: StartedRecord = { kind: 'ceremony', phase: 'started', id: 'CER-0007', ts: '2026-10-06T09:00:00.000Z', version: '0.1.2-nightly.test', versionCommit: 'abc1234', head: 'abc1234def', dirty: false, fingerprint: 'f'.repeat(64), definition: definitionOf(spec, { tag: 'v1', sha: 'a'.repeat(40) }), mode: 'free', trialsOverride: null, formal: true, formalReason: 'ok' };
@@ -23,10 +23,10 @@ const finished = (o: Partial<FinishedRecord> = {}): FinishedRecord => ({
 });
 const load = (text: string) => () => ({ text, calls, turns: JSON.parse(text).turns });
 
-describe('agentic story [C-263]', () => {
-  it('[C-263] a run is told in five steps, each with what it had to meet and whether it did', () => {
+describe('agentic release report [C-263]', () => {
+  it('[C-263] a run is reported in five steps, each with what it had to meet and whether it did', () => {
     const t = tellRun([started, finished()], 'CER-0007', undefined).join('\n');
-    expect(t).toContain('CER-0007 · 0.1.2-nightly.test · a FORMAL run · FAILED');
+    expect(t).toContain('AGENTIC RELEASE REPORT · CER-0007 · 0.1.2-nightly.test · a FORMAL run · FAILED');
     expect(t).toContain('STEP 1 · what was to be proven, stated before anything ran');
     expect(t).toContain('STEP 2 · level 1, the free checks: 1 of 2 met their criterion');
     expect(t).toContain('✖ plugin bundle: stale');
@@ -36,7 +36,7 @@ describe('agentic story [C-263]', () => {
     expect(t).toContain('STEP 5 · the gate: FAIL');
   });
 
-  it('[C-263] one trial is told call by call: the starting tokens, each MM3 call marked as a sample call, the stop and the verdict', () => {
+  it('[C-263] one trial is reported call by call: the starting tokens, each MM3 call marked as a sample call, the stop and the verdict', () => {
     const t = tellRun([started, finished()], 'CER-0007', 'S1/mcp/sonnet/1', load(body)).join('\n');
     expect(t).toContain('digest matches the ledger');
     expect(t).toContain('no live call, no spend');
