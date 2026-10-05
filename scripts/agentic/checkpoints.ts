@@ -11,6 +11,7 @@ export interface Evidence {
   ledger: string; // .mm3/log.jsonl, or ''
   promise: number; // verb requests allowed per agent before a verdict
   helpers: number; // helper agents the scenario expects (0: the lead does the work)
+  read: (rel: string) => string | undefined; // a file in the project the agent worked in, as it ended up
 }
 
 export interface Checkpoint {
@@ -31,7 +32,109 @@ const isMm3 = (c: ClaudeCall): boolean => c.tool.includes('mm3') || (c.tool === 
 const groups = (e: Evidence): ReturnType<typeof attemptsByAgent> => attemptsByAgent(e.calls);
 const expectedAgents = (e: Evidence): number => Math.max(e.helpers, 1);
 
+
+const configRecords = (ledger: string): Array<{ settings?: { budget?: { usd?: number; runs?: number } } }> =>
+  ledger.split('\n').filter((l) => l.includes('"kind":"config"')).flatMap((l) => {
+    try {
+      return [JSON.parse(l) as { settings?: { budget?: { usd?: number; runs?: number } } }];
+    } catch {
+      return [];
+    }
+  });
+const mm3Calls = (e: Evidence): ClaudeCall[] => e.calls.filter(isMm3);
+const verdict = (c: ClaudeCall): boolean => /\bgate: (pass|fail|unsure)/u.test(c.result);
+
 export const CHECKPOINTS: Record<string, Checkpoint> = {
+  'config-file-has-cap': {
+    id: 'config-file-has-cap',
+    short: 'g',
+    label: 'cap in config file',
+    fix: "Make the first-run note and `mm3 config` say where settings live and how to change one.",
+    text: "The project's config file holds the new spend cap (budget usd 3)",
+    means: "the agent did not change the setting in .mm3/config.yaml",
+    check: (e) => /^\s*usd:\s*3(\.0+)?\s*(#.*)?$/mu.test(e.read('.mm3/config.yaml') ?? ''),
+  },
+  'config-receipt-shows-cap': {
+    id: 'config-receipt-shows-cap',
+    short: 'p',
+    label: 'receipt shows cap',
+    fix: "Make `mm3 config` and the file's own header say that `mm3 config --load` is what records a change.",
+    text: "The ledger holds a config receipt whose settings show the new cap",
+    means: "the agent changed the file but never loaded it, so nothing was recorded",
+    check: (e) => configRecords(e.ledger).some((r) => r.settings?.budget?.usd === 3),
+  },
+  'answer-states-the-change': {
+    id: 'answer-states-the-change',
+    short: 'a',
+    label: 'says what changed',
+    fix: "Have `mm3 config --load` print the receipt (what changed and that it is recorded) so there is something to quote.",
+    text: "The answer says what was recorded: the cap, its new value, and that the ledger holds it",
+    means: "the agent did not tell the developer what MM3 recorded",
+    check: (e) => /usd|dollar|spend cap|\$\s*3/iu.test(e.answer) && /\b3\b/u.test(e.answer) && /receipt|recorded|ledger/iu.test(e.answer),
+  },
+  'budget-stop-seen': {
+    id: 'budget-stop-seen',
+    short: 'b',
+    label: 'hit the cap',
+    fix: "Check the scenario: the second request must be a new question, because a repeated one is reused for free.",
+    text: "MM3 stopped the agent at the cap with the budget message",
+    means: "the agent never ran into the cap (it did not ask for a second, different check)",
+    check: (e) => mm3Calls(e).some((c) => c.result.includes('✖ budget: cap reached')),
+  },
+  'cap-raised-in-config': {
+    id: 'cap-raised-in-config',
+    short: 'u',
+    label: 'raised in config',
+    fix: "Make the budget stop name the exact line to change and end with `mm3 config --load`.",
+    text: "The agent raised the run cap in the config file and loaded it (the ledger holds a receipt for the new cap)",
+    means: "the agent did not raise the cap the way the stop says (edit budget.runs, then mm3 config --load)",
+    check: (e) => Number(/^\s*runs:\s*(\d+)/mu.exec(e.read('.mm3/config.yaml') ?? '')?.[1] ?? 0) > 1 && configRecords(e.ledger).some((r) => (r.settings?.budget?.runs ?? 0) > 1),
+  },
+  'continued-after-stop': {
+    id: 'continued-after-stop',
+    short: 'n',
+    label: 'carried on',
+    fix: "End the budget stop with the one command to run next.",
+    text: "After the budget stop, a later MM3 request got a verdict",
+    means: "the agent stopped at the cap and did not carry on once it was lifted",
+    check: (e) => { const m = mm3Calls(e); const i = m.findIndex((c) => c.result.includes('✖ budget: cap reached')); return i >= 0 && m.slice(i + 1).some(verdict); },
+  },
+  'doctor-versions-seen': {
+    id: 'doctor-versions-seen',
+    short: 'w',
+    label: 'saw the warning',
+    fix: "Make 'is my install healthy' lead to `mm3 doctor` in the guidance and the first-run note.",
+    text: "The agent ran doctor and its versions line warned about the mismatch",
+    means: "the agent did not run doctor, or doctor did not show the mismatch",
+    check: (e) => mm3Calls(e).some((c) => /versions:/u.test(c.result) && /⚠/u.test(c.result)),
+  },
+  'right-fix-reported': {
+    id: 'right-fix-reported',
+    short: 'k',
+    label: 'right fix, no downgrade',
+    fix: "Keep the doctor fix text specific: `/plugin update`, or `npm install -g @mvpscale/mm3@nightly` for a nightly copy.",
+    text: "The answer gives the right fix for the older copy and never advises @latest",
+    means: "the agent gave a fix that would downgrade a nightly copy, or none",
+    check: (e) => /\/plugin update|@nightly/u.test(e.answer) && !/@latest/u.test(e.answer),
+  },
+  'agents-block-written': {
+    id: 'agents-block-written',
+    short: 'm',
+    label: 'AGENTS.md block',
+    fix: "Make `mm3 doctor`'s agents line and the first-run note name `mm3 init --agents --yes` exactly.",
+    text: "AGENTS.md now carries the MM3 block",
+    means: "the agent did not set the project up (no `mm3 init --agents --yes`)",
+    check: (e) => (e.read('AGENTS.md') ?? '').includes('<!-- mm3:agents -->'),
+  },
+  'claude-md-imports': {
+    id: 'claude-md-imports',
+    short: 'i',
+    label: 'CLAUDE.md import',
+    fix: "Keep `init --agents` creating the CLAUDE.md import, and say so in its output.",
+    text: "A CLAUDE.md imports AGENTS.md, so Claude Code actually reads the block",
+    means: "the project was left with a block no agent reads",
+    check: (e) => /^@AGENTS\.md$/mu.test(e.read('CLAUDE.md') ?? '') || /^@\.\.\/AGENTS\.md$/mu.test(e.read('.claude/CLAUDE.md') ?? ''),
+  },
   'stays-on-mm3': {
     id: 'stays-on-mm3',
     severity: 'exception',

@@ -34,7 +34,7 @@ const lines = [
   `JOB      ${(s as FullScenario & { title?: string }).title ?? s.id}: ${(s as FullScenario & { story?: string }).story ?? s.goal}`,
   `SUCCESS  ${(s as FullScenario & { success?: string }).success ?? s.goal}`,
   `PROMISE  ${s.promise} verb request${s.promise === 1 ? '' : 's'} per agent to a verdict (discovery calls such as agent, template, help, probe, doctor do not count)`, '',
-  'PRECONDITIONS', ...spec.preconditions.map((p) => `  - ${p}`), '',
+  'PRECONDITIONS', ...spec.preconditions.map((p) => `  - ${p}`), ...((s as FullScenario & { setupNote?: string }).setupNote ? [`  - ${(s as FullScenario & { setupNote?: string }).setupNote}`] : []), '',
   'SETUP (paste)', ...setup.map((c) => `  ${c}`), '',
   'LAUNCH (paste; no key needed)', `  ${launch}`, '',
   'AT THE PROMPT, type exactly this and nothing else', ...s.prompt.split('\n').map((l) => `  | ${l}`), '',

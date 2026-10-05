@@ -18,6 +18,8 @@ export interface SpecScenario {
   title?: string; // what a person would call this job
   story?: string; // the situation, in plain words
   success?: string; // what success means, in plain words
+  setup?: string; // the state the job starts from
+  setupNote?: string; // that state, in words
   matters?: string; // what a failure means for a release
   goal: string;
   prompt: string;
@@ -52,7 +54,7 @@ export interface Definition {
   preconditions: string[];
   fixture: { tag: string; sha: string };
   context: SpecContext[];
-  scenarios: Array<{ id: string; title?: string; story?: string; success?: string; matters?: string; goal: string; prompt: string; model: string; routes: string[]; helpers: number; promise: number; checkpoints: Array<{ id: string; text: string }> }>;
+  scenarios: Array<{ id: string; title?: string; story?: string; success?: string; matters?: string; setup?: string; setupNote?: string; goal: string; prompt: string; model: string; routes: string[]; helpers: number; promise: number; checkpoints: Array<{ id: string; text: string }> }>;
 }
 
 export interface StartedRecord {
@@ -109,7 +111,7 @@ export function plainDefinition(d: Pick<Definition, 'scenarios' | 'rules' | 'fix
 
 /** Success as the scenario file, the checkpoint registry and the fixture pin state it now. The hash covers all of it: a changed prompt, model, route, checkpoint, rule or pin changes the hash. */
 export function definitionOf(spec: Spec, fixture: { tag: string; sha: string } = { tag: '?', sha: '?' }): Definition {
-  const scenarios = spec.full.map((s) => ({ id: s.id, ...(s.title ? { title: s.title } : {}), ...(s.story ? { story: s.story } : {}), ...(s.success ? { success: s.success } : {}), ...(s.matters ? { matters: s.matters } : {}), goal: s.goal, prompt: s.prompt, model: s.model, routes: s.routes, helpers: s.helpers ?? 0, promise: s.promise, checkpoints: s.checkpoints.map((c) => ({ id: c, text: CHECKPOINTS[c]?.text ?? `UNKNOWN ${c}` })) }));
+  const scenarios = spec.full.map((s) => ({ id: s.id, ...(s.title ? { title: s.title } : {}), ...(s.story ? { story: s.story } : {}), ...(s.success ? { success: s.success } : {}), ...(s.matters ? { matters: s.matters } : {}), ...(s.setup ? { setup: s.setup } : {}), ...(s.setupNote ? { setupNote: s.setupNote } : {}), goal: s.goal, prompt: s.prompt, model: s.model, routes: s.routes, helpers: s.helpers ?? 0, promise: s.promise, checkpoints: s.checkpoints.map((c) => ({ id: c, text: CHECKPOINTS[c]?.text ?? `UNKNOWN ${c}` })) }));
   const body = { ...(spec.purpose ? { purpose: spec.purpose } : {}), ...(spec.notTested ? { notTested: spec.notTested } : {}), scenarios, rules: spec.rules, preconditions: spec.preconditions ?? [], fixture, context: spec.context ?? [] };
   return { hash: sha(JSON.stringify(body)), plain: plainDefinition({ scenarios, rules: spec.rules, fixture }), ...body };
 }

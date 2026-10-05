@@ -56,6 +56,16 @@ export const THEMES_OF: Record<string, string[]> = {
   'answer-cites-run-id': ['guidance-citing'],
   'run-id-in-ledger': ['guidance-citing'],
   'first-request-rate': ['guidance-template-first', 'stop-next-command'],
+  'config-file-has-cap': ['tool-discovery'],
+  'config-receipt-shows-cap': ['tool-discovery', 'card-content'],
+  'answer-states-the-change': ['guidance-citing'],
+  'budget-stop-seen': ['scenario-design'],
+  'cap-raised-in-config': ['stop-names-the-edit', 'stop-next-command'],
+  'continued-after-stop': ['recovery-leaves-mm3', 'stop-next-command'],
+  'doctor-versions-seen': ['tool-discovery'],
+  'right-fix-reported': ['card-content', 'stop-wrong-pointer'],
+  'agents-block-written': ['tool-discovery'],
+  'claude-md-imports': ['tool-discovery', 'stop-names-the-edit'],
   'lower-tier-models': ['lower-tier-models', 'guidance-length'],
 };
 

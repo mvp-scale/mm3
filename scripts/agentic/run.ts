@@ -21,6 +21,7 @@ export interface FullScenario {
   routes: Array<'cli' | 'mcp'>;
   helpers?: number;
   promise: number;
+  setup?: 'config-runs-1' | 'plugin-record-mismatch'; // what the project (or the environment) is set up with before the agent starts
   checkpoints: string[];
 }
 
@@ -90,9 +91,29 @@ export function installPackage(version: string): string {
   return path.join(prefix, 'node_modules', '.bin');
 }
 
+/** The state a job starts from, written before the agent runs. Returns any extra environment it needs. Plain files, nothing hidden from the agent. */
+export function applySetup(setup: FullScenario['setup'], project: string): Record<string, string> {
+  if (setup === 'config-runs-1') {
+    mkdirSync(path.join(project, '.mm3'), { recursive: true });
+    writeFileSync(path.join(project, '.mm3', 'config.yaml'), 'budget:\n  runs: 1\n');
+    return {};
+  }
+  if (setup === 'plugin-record-mismatch') {
+    // Claude's own record of an installed mm3 plugin, at an older commit than the copy under test
+    const claude = path.join(project, '.claude-fake');
+    const install = path.join(claude, 'plugins', 'cache', 'mm3', 'mm3', 'f337f612ebb4');
+    mkdirSync(install, { recursive: true });
+    writeFileSync(path.join(install, 'package.json'), JSON.stringify({ name: '@mvpscale/mm3', version: '0.1.1' }));
+    writeFileSync(path.join(claude, 'plugins', 'installed_plugins.json'), JSON.stringify({ version: 2, plugins: { 'mm3@mvp-scale': [{ scope: 'user', installPath: install, version: 'f337f612ebb4', gitCommitSha: 'f337f612ebb4deadbeefdeadbeefdeadbeefdead', lastUpdated: '2026-10-01T00:00:00.000Z' }] } }));
+    return { CLAUDE_CONFIG_DIR: claude };
+  }
+  return {};
+}
+
 export function grade(s: FullScenario, run: ClaudeRun, project: string, route: 'cli' | 'mcp', model: string, trial: number): FullRow {
   const log = path.join(project, '.mm3', 'log.jsonl');
-  const ev = { calls: run.calls, answer: run.answer, ledger: existsSync(log) ? readFileSync(log, 'utf8') : '', promise: s.promise, helpers: s.helpers ?? 0 };
+  const read = (rel: string): string | undefined => (existsSync(path.join(project, rel)) ? readFileSync(path.join(project, rel), 'utf8') : undefined);
+  const ev = { calls: run.calls, answer: run.answer, ledger: existsSync(log) ? readFileSync(log, 'utf8') : '', promise: s.promise, helpers: s.helpers ?? 0, read };
   const checks = evaluate(s.checkpoints, ev);
   const m = metrics(ev);
   const problems = checks.filter((c) => !c.pass).map((c) => `${c.id}: ${c.means}`);
@@ -113,7 +134,7 @@ export function runFull(scenarios: FullScenario[], version: string, rules: Rules
   ]));
   for (const { s, route, model, trial } of plan) {
     const project = prepareProject();
-    const isolated = { MM3_PROVIDER: 'fake', TYPESAFE_API_KEY: '', AI_GATEWAY_API_KEY: '', XDG_CONFIG_HOME: path.join(project, '.no-config'), MM3_ACTOR: 'agentic' };
+    const isolated = { MM3_PROVIDER: 'fake', TYPESAFE_API_KEY: '', AI_GATEWAY_API_KEY: '', XDG_CONFIG_HOME: path.join(project, '.no-config'), MM3_ACTOR: 'agentic', ...applySetup(s.setup, project) };
     const base = ['Read', 'Glob', 'Grep'];
     const shell = ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)', 'Bash(command -v *)', 'Bash(which *)', 'Bash(cat *)', 'Bash(echo *)', 'Bash(printf *)', 'Bash(ls *)', 'Bash(pwd)', 'Bash(grep *)', 'Bash(find *)'];
     const run = route === 'cli'
