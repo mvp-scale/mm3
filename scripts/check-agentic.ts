@@ -4,7 +4,7 @@
 // changed, or a scenario, checkpoint or rule has, the result is stale and the ceremony must be run again.
 import { readFileSync } from 'node:fs';
 import { collectSurfaces, manifestOf } from '../test/helpers/guidance-surfaces.ts';
-import { definitionOf, lastFormal, readLedger, type FinishedRecord, type StartedRecord } from './agentic/ledger.ts';
+import { chainProblem, definitionOf, lastFormal, readLedger, type FinishedRecord, type Spec, type StartedRecord } from './agentic/ledger.ts';
 
 export interface Current {
   fingerprint: string;
@@ -22,9 +22,10 @@ export function agenticProblem(current: Current, last: { started: StartedRecord;
 }
 
 if (process.argv[1]?.endsWith('check-agentic.ts')) {
-  const spec = JSON.parse(readFileSync('test/agentic/scenarios/baseline.json', 'utf8')) as Parameters<typeof definitionOf>[0];
+  const spec = JSON.parse(readFileSync('test/agentic/scenarios/baseline.json', 'utf8')) as Spec;
+  const fixture = JSON.parse(readFileSync('test/agentic/fixture.json', 'utf8')) as { tag: string; sha: string };
   const last = lastFormal(readLedger());
-  const problem = agenticProblem({ fingerprint: manifestOf(collectSurfaces()).fingerprint, definitionHash: definitionOf(spec).hash }, last);
+  const problem = chainProblem() ?? agenticProblem({ fingerprint: manifestOf(collectSurfaces()).fingerprint, definitionHash: definitionOf(spec, fixture).hash }, last);
   if (problem) {
     console.error(problem);
     process.exit(1);

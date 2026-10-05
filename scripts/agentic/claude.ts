@@ -15,6 +15,7 @@ export interface ClaudeRun {
   calls: ClaudeCall[];
   answer: string;
   costUsd: number;
+  model: string | null; // the model id the run actually used (the alias `sonnet` or `haiku` resolves to one)
   plugins: string[];
   mcp: string[];
   ok: boolean;
@@ -69,6 +70,7 @@ export function runClaude(o: ClaudeOptions): ClaudeRun {
     calls,
     answer: String(final?.result ?? ''),
     costUsd: Number(final?.total_cost_usd ?? 0),
+    model: typeof init?.model === 'string' ? init.model : null,
     plugins: (init?.plugins ?? []).map((p: { name: string }) => p.name),
     mcp: (init?.mcp_servers ?? []).map((m: { name: string; status: string }) => `${m.name}:${m.status}`),
     ok: final !== undefined && final.is_error !== true,

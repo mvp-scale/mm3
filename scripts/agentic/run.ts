@@ -5,6 +5,7 @@
 // red checkpoint says where to look. The gate model runs several trials and must pass most of them; the floor model runs
 // once and is reported, not gated. The sample provider is used throughout, so no checkpoint depends on a key.
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -26,6 +27,7 @@ export interface FullRow {
   id: string;
   route: 'cli' | 'mcp';
   model: string;
+  resolvedModel: string | null;
   trial: number;
   pass: boolean;
   checks: Array<{ id: string; text: string; means: string; pass: boolean }>;
@@ -34,6 +36,8 @@ export interface FullRow {
   mm3Calls: number;
   problems: string[];
   costUsd: number;
+  transcript?: string; // file name under lab/archive/agentic
+  transcriptSha256?: string; // digest of that file, so the record can say which transcript it means
 }
 
 export interface Rules {
@@ -91,7 +95,7 @@ export function grade(s: FullScenario, run: ClaudeRun, project: string, route: '
   const problems = checks.filter((c) => !c.pass).map((c) => `${c.id}: ${c.means}`);
   if (!run.ok) problems.unshift(`the run did not finish${run.error ? ` (${run.error})` : ''}`);
   const attempts = attemptsByAgent(run.calls).map((g) => g.outcomes.indexOf(true) + 1);
-  return { id: s.id, route, model, trial, pass: run.ok && checks.every((c) => c.pass), checks, attempts, firstRequestAccepted: m.firstRequestAccepted, mm3Calls: m.mm3Calls, problems, costUsd: run.costUsd };
+  return { id: s.id, route, model, resolvedModel: run.model, trial, pass: run.ok && checks.every((c) => c.pass), checks, attempts, firstRequestAccepted: m.firstRequestAccepted, mm3Calls: m.mm3Calls, problems, costUsd: run.costUsd };
 }
 
 /** Gate rows (the gate model, several trials) and floor rows (the other model, once). */
@@ -116,7 +120,11 @@ export function runFull(scenarios: FullScenario[], version: string, rules: Rules
     rows.push(row);
     // every transcript is kept (gitignored lab/archive) so a red row can be read, not guessed at
     mkdirSync('lab/archive/agentic', { recursive: true });
-    writeFileSync(`lab/archive/agentic/${version}-${s.id}-${route}-${model}-${trial}.json`, JSON.stringify({ row, answer: run.answer, plugins: run.plugins, mcp: run.mcp, calls: run.calls }, null, 1));
+    const file = `${version}-${s.id}-${route}-${model}-${trial}.json`;
+    const body = JSON.stringify({ row, answer: run.answer, plugins: run.plugins, mcp: run.mcp, calls: run.calls }, null, 1);
+    writeFileSync(`lab/archive/agentic/${file}`, body);
+    row.transcript = file;
+    row.transcriptSha256 = createHash('sha256').update(body).digest('hex');
     log(`  ${row.pass ? '✔' : '✖'} ${s.id} · ${route} · ${model} · trial ${trial}: attempts ${JSON.stringify(row.attempts)}${row.problems.length ? ` — ${row.problems.join(' | ')}` : ''}`);
   }
   return rows;

@@ -6,10 +6,11 @@
 // recorded too, marked not formal, with the reason. It uses the sample provider: no key, no TypeSafe spend. A paid mode
 // does not exist yet and will need explicit approval on the command line.
 import { spawnSync } from 'node:child_process';
+import os from 'node:os';
 import { readFileSync } from 'node:fs';
 import { collectSurfaces, manifestOf } from '../test/helpers/guidance-surfaces.ts';
 import { byLevel, LEVELS, runContext, type ContextRow } from './agentic/context.ts';
-import { append, definitionOf, nextId, readLedger, type FinishedRecord, type StartedRecord } from './agentic/ledger.ts';
+import { append, chainProblem, definitionOf, nextId, readLedger, type FinishedRecord, type Spec, type StartedRecord } from './agentic/ledger.ts';
 import { cells, commitOf, level3Passes, runFull, type FullRow, type FullScenario, type Rules } from './agentic/run.ts';
 
 const args = process.argv.slice(2);
@@ -28,12 +29,19 @@ const run = (cmd: string, a: string[]): { ok: boolean; text: string } => {
 const grab = (text: string, re: RegExp): string => re.exec(text)?.[1] ?? '?';
 
 // 1. identify, and state success BEFORE anything runs
-const spec = JSON.parse(readFileSync('test/agentic/scenarios/baseline.json', 'utf8')) as { full: FullScenario[]; rules: Rules };
+const spec = JSON.parse(readFileSync('test/agentic/scenarios/baseline.json', 'utf8')) as Spec & { full: FullScenario[]; rules: Rules };
+const fixture = JSON.parse(readFileSync('test/agentic/fixture.json', 'utf8')) as { tag: string; sha: string };
+const broken = chainProblem();
+if (broken) throw new Error(broken);
 const rules = spec.rules;
 const versionCommit = commitOf(version) ?? null;
 const head = run('git', ['rev-parse', 'HEAD']).text.trim();
 const dirty = run('git', ['status', '--porcelain']).text.trim() !== '';
 const fingerprint = manifestOf(collectSurfaces()).fingerprint;
+// which bits are being tested: the published tarball's own integrity hash, and the commit the plugin route checks out
+const npmView = run('npm', ['view', `@mvpscale/mm3@${version}`, 'dist.integrity', 'dist.shasum', '--json']);
+let npmInfo: { 'dist.integrity'?: string; 'dist.shasum'?: string } = {};
+try { npmInfo = JSON.parse(npmView.text) as typeof npmInfo; } catch { /* not published, or offline: recorded as null with a note */ }
 const reasons = [
   ...(versionCommit === null ? ['the version names no commit'] : head.startsWith(versionCommit) ? [] : [`this checkout (${head.slice(0, 7)}) is not the commit ${version} was built from (${versionCommit})`]),
   ...(dirty ? ['uncommitted changes'] : []),
@@ -41,17 +49,21 @@ const reasons = [
 ];
 const formal = reasons.length === 0;
 const records = readLedger();
+const env = { node: process.version, vitest: grab(readFileSync('package.json', 'utf8'), /"vitest": "([^"]+)"/u), claude: run('claude', ['--version']).text.trim(), os: `${os.type()} ${os.release()} ${os.arch()}` };
+const definition = definitionOf(spec, fixture);
 const started: StartedRecord = {
   kind: 'ceremony', phase: 'started', id: nextId(records), ts: new Date().toISOString(), version, versionCommit, head: head.slice(0, 12), dirty, fingerprint,
-  definition: definitionOf(spec), mode: 'free', trialsOverride: trialsOverride ?? null, formal, formalReason: formal ? 'this checkout is the clean commit the version was built from, at the rules\' full trial count' : reasons.join('; '),
+  guidance: { surfaces: Object.keys(collectSurfaces()).length, snapshot: 'test/golden/guidance/surfaces.txt' },
+  definition, environment: env,
+  artifact: { npmIntegrity: npmInfo['dist.integrity'] ?? null, npmShasum: npmInfo['dist.shasum'] ?? null, pluginCommit: versionCommit, ...(npmInfo['dist.integrity'] ? {} : { note: `npm view found no published ${version} (offline, or not published)` }) },
+  mode: 'free', trialsOverride: trialsOverride ?? null, formal, formalReason: formal ? 'this checkout is the clean commit the version was built from, at the rules\' full trial count' : reasons.join('; '),
 };
 append(started);
-const env = { node: process.version, vitest: grab(readFileSync('package.json', 'utf8'), /"vitest": "([^"]+)"/u), claude: run('claude', ['--version']).text.trim() };
 out(`AGENTIC CEREMONY ${started.id} · ${version} · free path (sample provider, no key)`);
 out(`\n1. IDENTIFY AND STATE SUCCESS (recorded in test/agentic/ledger.jsonl before anything runs)`);
-out(`   version ${version}\n   commit ${head.slice(0, 7)}${dirty ? ' (dirty)' : ''} · guidance fingerprint ${fingerprint.slice(0, 16)} · definition of success ${started.definition.hash.slice(0, 16)}`);
+out(`   ${definition.plain}\n   version ${version}\n   commit ${head.slice(0, 7)}${dirty ? ' (dirty)' : ''} · guidance fingerprint ${fingerprint.slice(0, 16)} · definition of success ${definition.hash.slice(0, 16)}`);
 out(`   this run is ${formal ? 'FORMAL: it counts toward the release gate' : `NOT FORMAL (recorded, not counted): ${reasons.join('; ')}`}`);
-out(`   node ${env.node} · vitest ${env.vitest} · ${env.claude}`);
+out(`   node ${env.node} · vitest ${env.vitest} · ${env.claude} · ${env.os}\n   tested artifact: npm integrity ${(started.artifact?.npmIntegrity ?? 'not found').slice(0, 24)}… · plugin commit ${versionCommit ?? 'none'}`);
 for (const s of started.definition.scenarios) out(`   ${s.id}: ${s.goal}\n      checkpoints: ${s.checkpoints.map((c) => c.id).join(', ')} (promise ${s.promise})`);
 
 let finishedWritten = false;
@@ -99,7 +111,7 @@ try {
     phase: 'finished', passed,
     level1: l1,
     level2: l2.map((r) => ({ id: r.id, level: r.level, pass: r.pass })),
-    level3: l3.map((r) => ({ id: r.id, route: r.route, model: r.model, trial: r.trial, pass: r.pass, failed: r.checks.filter((c) => !c.pass).map((c) => c.id), attempts: r.attempts, firstRequestAccepted: r.firstRequestAccepted, mm3Calls: r.mm3Calls, transcript: `${version}-${r.id}-${r.route}-${r.model}-${r.trial}.json` })),
+    level3: l3.map((r) => ({ id: r.id, route: r.route, model: r.model, resolvedModel: r.resolvedModel, trial: r.trial, pass: r.pass, failed: r.checks.filter((c) => !c.pass).map((c) => c.id), attempts: r.attempts, firstRequestAccepted: r.firstRequestAccepted, mm3Calls: r.mm3Calls, transcript: r.transcript ?? '', ...(r.transcriptSha256 ? { transcriptSha256: r.transcriptSha256 } : {}) })),
     firstRequestAcceptedRate: Number(first.toFixed(2)),
     notionalCostUsd: Number(cost.toFixed(2)),
   });
