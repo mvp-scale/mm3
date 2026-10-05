@@ -42,6 +42,7 @@ export interface FullRow {
   economics: Economics; // where the tokens went, by kind of call
   recovery: Recovery; // after each stop: did the agent stay on MM3, and did its next MM3 request fix it
   spentUsd?: number; // paid trials: the real TypeSafe dollars this run spent
+  adapters?: Record<string, number>; // which providers answered this run's MM3 requests, read from the project ledger
   transcript?: string; // file name under lab/archive/agentic
   transcriptSha256?: string; // digest of that file, so the record can say which transcript it means
 }
@@ -195,7 +196,8 @@ export function runFull(scenarios: FullScenario[], version: string, rules: Rules
     const setupEnv = applySetup(s.setup, project);
     if (opts.paid) setCap(project, opts.paid.approvedUsd - spent);
     // free: the sample provider and no key. paid: the owner's own key and settings, never read or printed here; MM3's budget holds the cap.
-    const env: Record<string, string> = opts.paid ? { MM3_ACTOR: 'agentic', ...setupEnv } : { MM3_PROVIDER: 'fake', TYPESAFE_API_KEY: '', AI_GATEWAY_API_KEY: '', XDG_CONFIG_HOME: path.join(project, '.no-config'), MM3_ACTOR: 'agentic', ...setupEnv };
+    // paid is forced onto the live provider: with no key MM3 stops instead of answering from the sample provider, so paid and fake cannot coexist
+    const env: Record<string, string> = opts.paid ? { MM3_ACTOR: 'agentic', MM3_PROVIDER: 'typesafe', ...setupEnv } : { MM3_PROVIDER: 'fake', TYPESAFE_API_KEY: '', AI_GATEWAY_API_KEY: '', XDG_CONFIG_HOME: path.join(project, '.no-config'), MM3_ACTOR: 'agentic', ...setupEnv };
     const strict = opts.paid !== undefined; // paid runs deny anything not pre-approved, so the approved list is the real boundary (a strict free run also blocks harmless piping, which real agents do)
     const base = ['Read', 'Glob', 'Grep'];
     // a paid run gets only the mm3 command in the shell: nothing that could print a stored key
@@ -209,8 +211,9 @@ export function runFull(scenarios: FullScenario[], version: string, rules: Rules
       : runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Edit', 'Agent'], allowedTools: [...base, 'Write', 'Edit', 'Agent', 'mcp__plugin_mm3_mm3__mm3'], pluginDir: plugin, env, budgetUsd: 2, strict }); // both routes get the file tools a Claude Code user has: some jobs change a setting in the project's own files
     const row = grade(s, run, project, route, model, trial);
     const logFile = path.join(project, '.mm3', 'log.jsonl');
+    const ledgerText = existsSync(logFile) ? readFileSync(logFile, 'utf8') : '';
+    row.adapters = adapters(ledgerText);
     if (opts.paid) {
-      const ledgerText = existsSync(logFile) ? readFileSync(logFile, 'utf8') : '';
       row.spentUsd = spentUsd(ledgerText);
       spent += row.spentUsd;
       if ((adapters(ledgerText).fake ?? 0) > 0) {

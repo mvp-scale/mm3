@@ -8,7 +8,7 @@ const [ida, idb] = process.argv.slice(2);
 const pick = (id: string | undefined, fallback: StartedRecord | undefined): { started: StartedRecord; finished?: FinishedRecord } => {
   const started = id ? starts.find((s) => s.id === id) : fallback;
   if (!started) throw new Error(id ? `no run ${id} in the ledger` : 'need two runs in the ledger to compare');
-  const finished = records.find((r): r is FinishedRecord => r.phase !== 'started' && r.startedId === started.id && r.phase === 'finished');
+  const finished = records.find((r): r is FinishedRecord => (r.phase === 'finished' || r.phase === 'aborted') && r.startedId === started.id && r.phase === 'finished');
   return finished ? { started, finished } : { started };
 };
 console.log(compareRuns(pick(ida, starts[starts.length - 2]), pick(idb, starts[starts.length - 1])).join('\n'));

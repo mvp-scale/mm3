@@ -10,7 +10,7 @@ import os from 'node:os';
 import { readFileSync } from 'node:fs';
 import { collectSurfaces, manifestOf } from '../test/helpers/guidance-surfaces.ts';
 import { byLevel, LEVELS, runContext, type ContextRow } from './agentic/context.ts';
-import { decide } from './agentic/decision.ts';
+import { decide, providerContradiction } from './agentic/decision.ts';
 import { toLedgerRows } from './agentic/record.ts';
 import { append, chainProblem, definitionOf, nextId, readLedger, type FinishedRecord, type Spec, type StartedRecord } from './agentic/ledger.ts';
 import { addUsage, noUsage } from './agentic/claude.ts';
@@ -111,7 +111,7 @@ try {
   out(`   → first request accepted in ${(first * 100).toFixed(0)}% of gate trials (target ${(rules.firstAttemptTarget * 100).toFixed(0)}%, reported)`);
 
   // 5. gate and record
-  const passed = l1.every((r) => r.ok) && level3Passes(l3, rules);
+  const passed = l1.every((r) => r.ok) && level3Passes(l3, rules) && !providerContradiction(started, l3);
   const usage = [...l2.map((r) => r.usage), ...l3.map((r) => r.usage)].reduce(addUsage, noUsage());
   const calls = l2.length + l3.length;
   const record: Omit<FinishedRecord, 'kind' | 'startedId' | 'ts'> = {

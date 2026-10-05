@@ -6,7 +6,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import type { ClaudeCall, TurnUsage } from './claude.ts';
-import { chainProblem, readLedger, recordGaps, type FinishedRecord, type LedgerRecord, type StartedRecord } from './ledger.ts';
+import { chainProblem, invalidReason, readLedger, recordGaps, type FinishedRecord, type LedgerRecord, type StartedRecord } from './ledger.ts';
 import { CHECKPOINTS } from './checkpoints.ts';
 import { decide } from './decision.ts';
 import { addRecovery, approxTokens, economicsLine, kindOf, recoveryOf, type Recovery } from './trace.ts';
@@ -90,7 +90,7 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
   const starts = records.filter((r): r is StartedRecord => r.phase === 'started');
   const started = id ? starts.find((s) => s.id === id) : starts[starts.length - 1];
   if (!started) return [id ? `✖ release report: no run ${id} in the ledger → npm run agentic:runs lists them` : '✖ release report: the ledger has no runs yet → npm run ceremony -- --version <exact version>'];
-  const end = records.find((r): r is FinishedRecord => r.phase !== 'started' && r.startedId === started.id);
+  const end = records.find((r): r is FinishedRecord => (r.phase === 'finished' || r.phase === 'aborted') && r.startedId === started.id);
   if (rowKey) {
     const [sid, route, model, trial] = rowKey.split('/');
     const row = end?.level3?.find((r) => r.id === sid && r.route === route && r.model === model && String(r.trial) === trial);
@@ -108,12 +108,13 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
     const parts = rows.map((r) => r.recovery ?? (load(r.transcript) ? recoveryOf(load(r.transcript)!.calls) : undefined));
     return parts.length && parts.every((p) => p) ? (parts as Recovery[]).reduce(addRecovery, { stops: 0, onTrack: 0, fixedNext: 0 }) : undefined;
   };
-  const decision = decide(started, end, { chainOk: !chainProblem(), gaps, ...(recOf(gate) ? { gateRecovery: recOf(gate)! } : {}) });
+  const invalid = invalidReason(records, started.id);
+  const decision = decide(started, end, { chainOk: !chainProblem(), gaps, ...(recOf(gate) ? { gateRecovery: recOf(gate)! } : {}), ...(invalid ? { invalid } : {}) });
   const sum = (rows: Row[]): string => `${rows.filter((r) => r.pass).length}/${rows.length}`;
   const h = (sc: StartedRecord['definition']['scenarios'][number]) => ({ title: sc.title ?? names?.scenarios[sc.id]?.title ?? sc.id, story: sc.story ?? names?.scenarios[sc.id]?.story, success: sc.success ?? names?.scenarios[sc.id]?.success, matters: sc.matters ?? names?.scenarios[sc.id]?.matters });
   const purpose = started.definition.purpose ?? names?.purpose;
   const notTested = started.definition.notTested ?? names?.notTested ?? [];
-  const status = end ? (end.phase === 'aborted' ? `ABORTED (${end.reason})` : end.passed ? 'PASSED' : 'FAILED') : 'INCOMPLETE';
+  const status = decision.verdict === 'INVALID' ? 'INVALID (disqualified: not a result)' : end ? (end.phase === 'aborted' ? `ABORTED (${end.reason})` : end.passed ? 'PASSED' : 'FAILED') : 'INCOMPLETE';
   const out: string[] = [
     `${started.kind === 'trial' ? 'AGENTIC FEATURE TRIAL REPORT' : 'AGENTIC RELEASE REPORT'} · ${started.id} · MM3 ${started.version}`,
     `RESULT  ${status}${started.formal ? '' : started.kind === 'trial' ? ' · a TRIAL of one job on a local build: recorded, and it never counts toward the release gate' : ' · a REHEARSAL: recorded, but it does not count toward the release gate'}${started.mode === 'paid' ? ` · PAID run: $${end?.spentUsd ?? 0} of an approved $${started.paid?.approvedUsd ?? '?'} real TypeSafe spend` : ''}`,
@@ -187,10 +188,13 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
   return out;
 }
 
+/** The run id on the command line: a ceremony (CER-####) or a trial (TRL-####). Anything else is not an id. */
+export const runIdArg = (args: string[]): string | undefined => args.find((a) => /^(CER|TRL)-\d{4,}$/u.test(a));
+
 if (process.argv[1]?.endsWith('release-report.ts')) {
   const args = process.argv.slice(2);
   const rowAt = args.indexOf('--row');
-  const id = args.find((a) => /^CER-\d+$/u.test(a));
+  const id = runIdArg(args);
   const broken = chainProblem();
   if (broken) console.log(broken);
   const load = (file: string): Transcript | undefined => {

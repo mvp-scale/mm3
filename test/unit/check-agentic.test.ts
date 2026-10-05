@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { agenticProblem } from '../../scripts/check-agentic.ts';
-import { append, chainProblem, compareRuns, definitionOf, incomplete, lastFormal, nextId, recordGaps, type FinishedRecord, type LedgerRecord, type Spec, type StartedRecord } from '../../scripts/agentic/ledger.ts';
+import { append, chainProblem, compareRuns, definitionOf, incomplete, invalidReason, lastFormal, nextId, recordGaps, type FinishedRecord, type LedgerRecord, type Spec, type StartedRecord } from '../../scripts/agentic/ledger.ts';
 
 const RULES = { gateModel: 'sonnet', floorModel: 'haiku', mustPassTrials: 2, trialsPerScenario: 3, firstAttemptTarget: 0.8 };
 const FIX = { tag: 'v1.0.0', sha: 'a'.repeat(40) };
@@ -107,5 +107,14 @@ describe('agentic ledger and gate [C-260]', () => {
 
   it('[C-260] the gate fails on a formal run whose record is incomplete, naming what is missing', () => {
     expect(agenticProblem(cur, { started: started(), finished: finished({ level3: [{ ...ROW, usage: undefined }] }) })).toMatch(/the record of CER-0001 is incomplete \(S1\/mcp\/sonnet\/1: tokens\)/u);
+  });
+
+  it('[C-260] a run disqualified by a later line never feeds the gate, and the reason can be read back', () => {
+    const inv = { kind: 'ceremony' as const, phase: 'invalidated' as const, startedId: 'CER-0001', ts: 't', passed: false as const, reason: 'answered by the wrong provider' };
+    const records: LedgerRecord[] = [started({ id: 'CER-0001' }), finished({ startedId: 'CER-0001' }), inv];
+    expect(lastFormal(records)).toBeUndefined();
+    expect(invalidReason(records, 'CER-0001')).toBe('answered by the wrong provider');
+    expect(invalidReason(records, 'CER-0002')).toBeUndefined();
+    expect(incomplete(records)).toEqual([]); // a disqualified run is not an unfinished one
   });
 });

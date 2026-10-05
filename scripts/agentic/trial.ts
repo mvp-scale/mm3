@@ -10,7 +10,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { collectSurfaces, manifestOf } from '../../test/helpers/guidance-surfaces.ts';
-import { decide } from './decision.ts';
+import { decide, providerContradiction } from './decision.ts';
 import { append, chainProblem, definitionOf, nextId, readLedger, type FinishedRecord, type Spec, type StartedRecord } from './ledger.ts';
 import { toLedgerRows } from './record.ts';
 import { runFull, type FullScenario, type Rules } from './run.ts';
@@ -121,13 +121,13 @@ if (process.argv[1]?.endsWith('trial.ts')) {
     const usage = rows.map((r) => r.usage).reduce(addUsage, noUsage());
     const spent = rows.reduce((t, r) => t + (r.spentUsd ?? 0), 0);
     const record: Omit<FinishedRecord, 'kind' | 'startedId' | 'ts'> = {
-      phase: 'finished', passed: rows.length > 0 && rows.every((r) => r.pass), level3: toLedgerRows(rows), firstRequestAcceptedRate: Number(rate.toFixed(2)),
+      phase: 'finished', passed: rows.length > 0 && rows.every((r) => r.pass) && !providerContradiction(started, rows), level3: toLedgerRows(rows), firstRequestAcceptedRate: Number(rate.toFixed(2)),
       usage: { ...usage, claudeRuns: rows.length, mm3Calls: rows.reduce((t, r) => t + r.mm3Calls, 0) }, ...(a.paid ? { spentUsd: Number(spent.toFixed(6)) } : {}),
     };
     const d = decide(started, { kind: 'trial', startedId: started.id, ts: '', ...record }, { chainOk: true, gaps: [] });
     append({ kind: 'trial', startedId: started.id, ts: new Date().toISOString(), ...record, decision: { verdict: d.verdict, formal: false, blockers: d.blockers, exceptions: d.exceptions, improvements: d.improvements } });
     closed = true;
-    console.log(`\n${rows.filter((r) => r.pass).length} of ${rows.length} trial(s) met every blocking criterion · ${d.headline}${a.paid ? ` · spent $${spent.toFixed(4)} of the approved $${a.paid.approvedUsd}` : ''}`);
+    console.log(`\n${d.verdict === 'INVALID' ? '' : `${rows.filter((r) => r.pass).length} of ${rows.length} trial(s) met every blocking criterion · `}${d.headline}${a.paid ? ` · spent $${spent.toFixed(4)} of the approved $${a.paid.approvedUsd}` : ''}`);
     console.log(`  recorded as ${started.id}: read it with  npm run agentic:release-report -- ${started.id}`);
   } catch (e) {
     if (!closed) append({ kind: 'trial', phase: 'aborted', startedId: started.id, ts: new Date().toISOString(), passed: false, reason: e instanceof Error ? e.message.slice(0, 300) : String(e).slice(0, 300) });

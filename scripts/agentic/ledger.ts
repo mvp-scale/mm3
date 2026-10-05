@@ -93,7 +93,7 @@ export interface FinishedRecord {
   reason?: string; // aborted: why
   level1?: Array<{ name: string; ok: boolean; detail: string }>;
   level2?: Array<{ id: string; level: string; pass: boolean }>;
-  level3?: Array<{ id: string; route: string; model: string; resolvedModel?: string | null; trial: number; pass: boolean; failed: string[]; attempts: number[]; firstRequestAccepted: boolean; mm3Calls: number; usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; turns: number }; economics?: Economics; recovery?: Recovery; transcript: string; transcriptSha256?: string }>;
+  level3?: Array<{ id: string; route: string; model: string; resolvedModel?: string | null; trial: number; pass: boolean; failed: string[]; attempts: number[]; firstRequestAccepted: boolean; mm3Calls: number; usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; turns: number }; economics?: Economics; recovery?: Recovery; adapters?: Record<string, number>; transcript: string; transcriptSha256?: string }>;
   firstRequestAcceptedRate?: number;
   spentUsd?: number; // paid trials only: the real TypeSafe spend, read from the project's own ledger
   decision?: Pick<Decision, 'verdict' | 'formal' | 'blockers' | 'exceptions' | 'improvements'>; // what the release report concluded, with every improvement it saw
@@ -101,7 +101,19 @@ export interface FinishedRecord {
   notionalCostUsd?: number; // legacy: the first two lines recorded a dollar figure; a subscription has no per-call price, so new lines record usage instead
 }
 
-export type LedgerRecord = StartedRecord | FinishedRecord;
+/** A run disqualified after the fact. The ledger is append-only, so a wrong record is corrected the way accounts are: a later line says it does not count, and why. */
+export interface InvalidatedRecord {
+  kind: 'ceremony' | 'trial';
+  phase: 'invalidated';
+  schema?: number;
+  prev?: string;
+  startedId: string;
+  ts: string;
+  passed: false;
+  reason: string;
+}
+
+export type LedgerRecord = StartedRecord | FinishedRecord | InvalidatedRecord;
 
 export const sha = (s: string): string => createHash('sha256').update(s).digest('hex');
 
@@ -186,7 +198,8 @@ export function recordGaps(started: StartedRecord, finished?: FinishedRecord): s
 export function lastFormal(records: LedgerRecord[]): { started: StartedRecord; finished: FinishedRecord } | undefined {
   const starts = records.filter((r): r is StartedRecord => r.phase === 'started' && r.formal && r.kind === 'ceremony');
   for (const started of starts.reverse()) {
-    const finished = records.find((r): r is FinishedRecord => r.phase !== 'started' && r.startedId === started.id && r.phase === 'finished');
+    const finished = records.find((r): r is FinishedRecord => r.phase === 'finished' && r.startedId === started.id);
+    if (invalidReason(records, started.id)) continue; // a disqualified run never feeds the gate
     if (finished) return { started, finished };
   }
   return undefined;
@@ -195,6 +208,9 @@ export function lastFormal(records: LedgerRecord[]): { started: StartedRecord; f
 /** Runs that began and never closed. */
 export const incomplete = (records: LedgerRecord[]): StartedRecord[] =>
   records.filter((r): r is StartedRecord => r.phase === 'started').filter((s) => !records.some((r) => r.phase !== 'started' && r.startedId === s.id));
+
+/** Why a run was disqualified, if a later line says so. */
+export const invalidReason = (records: LedgerRecord[], id: string): string | undefined => records.find((r): r is InvalidatedRecord => r.phase === 'invalidated' && r.startedId === id)?.reason;
 
 /** What changed between two runs, in words: the build, the guidance, the definition of success, and the results. */
 export function compareRuns(a: { started: StartedRecord; finished?: FinishedRecord }, b: { started: StartedRecord; finished?: FinishedRecord }): string[] {

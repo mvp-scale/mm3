@@ -17,7 +17,7 @@ export interface Improvement {
 }
 
 export interface Decision {
-  verdict: 'SHIP' | 'SHIP WITH EXCEPTIONS' | 'DO NOT SHIP';
+  verdict: 'SHIP' | 'SHIP WITH EXCEPTIONS' | 'DO NOT SHIP' | 'INVALID'; // INVALID: not a result at all, so neither a pass nor a fail
   formal: boolean;
   headline: string;
   blockers: string[]; // why not, when it is DO NOT SHIP
@@ -27,10 +27,21 @@ export interface Decision {
 
 type Row = NonNullable<FinishedRecord['level3']>[number];
 
-export function decide(started: StartedRecord, end: FinishedRecord | undefined, o: { chainOk: boolean; gaps: string[]; gateRecovery?: Recovery }): Decision {
+/** A run whose own record contradicts itself is disqualified, not graded: a paid trial answered by the sample provider, or a free one that reached the live classifier. */
+export function providerContradiction(started: StartedRecord, rows: Array<{ adapters?: Record<string, number> }>): string | undefined {
+  const seen = rows.reduce<Record<string, number>>((a, r) => { for (const [k, v] of Object.entries(r.adapters ?? {})) a[k] = (a[k] ?? 0) + v; return a; }, {});
+  if (started.mode === 'paid' && (seen.fake ?? 0) > 0) return `a paid run was answered by the sample provider (adapter fake, ${seen.fake} run(s)): paid and fake cannot both be true, so nothing here is a result`;
+  const live = Object.entries(seen).filter(([k]) => k !== 'fake').reduce((n, [, v]) => n + v, 0);
+  if (started.mode === 'free' && live > 0) return `a free run reached the live classifier (${live} run(s)): free and live cannot both be true, and real spend was not approved`;
+  return undefined;
+}
+
+export function decide(started: StartedRecord, end: FinishedRecord | undefined, o: { chainOk: boolean; gaps: string[]; gateRecovery?: Recovery; invalid?: string }): Decision {
   const rules = started.definition.rules as { gateModel?: string; floorModel?: string; firstAttemptTarget?: number };
   const target = rules.firstAttemptTarget ?? 0.8;
   const rows: Row[] = end?.level3 ?? [];
+  const invalid = o.invalid ?? providerContradiction(started, rows);
+  if (invalid) return { verdict: 'INVALID', formal: started.formal, headline: `INVALID, not a result: ${invalid}`, blockers: [invalid], exceptions: [], improvements: [] };
   const gate = rows.filter((r) => r.model === rules.gateModel);
   const floor = rows.filter((r) => r.model !== rules.gateModel);
   const title = (id: string): string => started.definition.scenarios.find((s) => s.id === id)?.title ?? id;
