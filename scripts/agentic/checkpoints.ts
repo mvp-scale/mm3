@@ -3,7 +3,7 @@
 // no TypeSafe key: the sample provider answers with canned verdicts, so nothing here judges whether a verdict is RIGHT,
 // only whether an agent could get a well-formed verdict recorded. Verdict correctness is a separate, keyed, capped live suite.
 import { attemptsByAgent, type ClaudeCall } from './claude.ts';
-import { recoveryOf } from './trace.ts';
+import { isStop, isVerbRequest, isVerdict, kindOf, recoveryOf } from './trace.ts';
 
 export interface Evidence {
   calls: ClaudeCall[];
@@ -43,6 +43,12 @@ const configRecords = (ledger: string): Array<{ settings?: { budget?: { usd?: nu
   });
 const mm3Calls = (e: Evidence): ClaudeCall[] => e.calls.filter(isMm3);
 const verdict = (c: ClaudeCall): boolean => /\bgate: (pass|fail|unsure)/u.test(c.result);
+/** Each call that came back saying which field it ignored, with what the same agent did after it. */
+const ignoredStops = (e: Evidence): Array<{ after: ClaudeCall[] }> =>
+  [...new Set(e.calls.map((c) => c.parent ?? 'lead'))].flatMap((a) => {
+    const mine = e.calls.filter((c) => (c.parent ?? 'lead') === a);
+    return mine.flatMap((c, i) => (c.result.includes('✖ arguments: ignored') ? [{ after: mine.slice(i + 1) }] : []));
+  });
 
 export const CHECKPOINTS: Record<string, Checkpoint> = {
   'config-file-has-cap': {
@@ -134,6 +140,27 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
     text: "A CLAUDE.md imports AGENTS.md, so Claude Code actually reads the block",
     means: "the project was left with a block no agent reads",
     check: (e) => /^@AGENTS\.md$/mu.test(e.read('CLAUDE.md') ?? '') || /^@\.\.\/AGENTS\.md$/mu.test(e.read('.claude/CLAUDE.md') ?? ''),
+  },
+  'ignored-stop-met': {
+    id: 'ignored-stop-met',
+    short: 'o',
+    label: 'stop was met',
+    fix: "If agents never meet it, the job does not exercise the feature: change the job's wording, not the stop.",
+    text: 'A call that sent the request under a field the tool ignores was stopped with a line saying what it ignored',
+    means: 'the stop never happened in this run, so the feature was NOT EXERCISED (it says nothing about MM3; the agent used "stdin" at once)',
+    check: (e) => ignoredStops(e).length > 0,
+  },
+  'ignored-stop-fixed': {
+    id: 'ignored-stop-fixed',
+    short: 'j',
+    label: 'next call fixed it',
+    fix: 'Keep the ignored-field stop naming the field to use ("stdin") and an example of the args.',
+    text: 'After that stop, the agent\'s very next call was MM3 again, and its next verb request got a verdict',
+    means: 'the agent met the stop and did not recover from it in one call (the stop wording did not say enough)',
+    check: (e) => ignoredStops(e).every(({ after }) => {
+      const verb = after.find(isVerbRequest);
+      return after[0] !== undefined && kindOf(after[0]) === 'mm3' && !isStop(after[0]) && verb !== undefined && isVerdict(verb);
+    }), // with no such stop this is true and says nothing: "stop was met" is the box that reports the job did not exercise the feature
   },
   'stays-on-mm3': {
     id: 'stays-on-mm3',

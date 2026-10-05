@@ -8,6 +8,7 @@ import type { ClaudeCall } from '../../../scripts/agentic/claude.ts';
 import { evaluate, type Evidence } from '../../../scripts/agentic/checkpoints.ts';
 import { applySetup, type FullScenario } from '../../../scripts/agentic/run.ts';
 import { mm3 } from '../../helpers/cli.ts';
+import { overMcp } from '../../helpers/mcp.ts';
 import { gitInit, tempProject, USER_TS } from '../../helpers/project.ts';
 
 const spec = JSON.parse(readFileSync('test/agentic/scenarios/baseline.json', 'utf8')) as { full: FullScenario[] };
@@ -22,8 +23,14 @@ function sh(root: string, calls: ClaudeCall[], args: string[], o: { input?: stri
   calls.push({ tool: 'Bash', input: { command: `mm3 ${args.join(' ')}` }, parent: null, id: String(calls.length), result: text, turn: calls.length + 1 });
   return text;
 }
+/** Runs calls through the real plugin tool (one `mm3 mcp` process) and records each as the call the checkpoints read; `extra` is any further field the agent put in its call. */
+async function viaTool(root: string, calls: ClaudeCall[], list: Array<{ args: string[]; stdin?: string; extra?: Record<string, unknown> }>): Promise<string[]> {
+  const { texts } = await overMcp(root, list);
+  list.forEach((c, i) => calls.push({ tool: 'mcp__plugin_mm3_mm3__mm3', input: { args: c.args, ...(c.stdin === undefined ? {} : { stdin: c.stdin }), ...(c.extra ?? {}) }, parent: null, id: String(calls.length), result: texts[i]!, turn: calls.length + 1 }));
+  return texts;
+}
 const evidence = (root: string, calls: ClaudeCall[], answer: string, s: FullScenario): Evidence => ({
-  calls, answer, promise: s.promise, helpers: 0,
+  calls, answer, promise: s.promise, helpers: s.helpers ?? 0,
   ledger: existsSync(path.join(root, '.mm3', 'log.jsonl')) ? readFileSync(path.join(root, '.mm3', 'log.jsonl'), 'utf8') : '',
   read: (rel) => (existsSync(path.join(root, rel)) ? readFileSync(path.join(root, rel), 'utf8') : undefined),
 });
@@ -78,5 +85,23 @@ describe('the feature jobs can be passed [C-266]', () => {
     expect(first).toContain('--yes'); // without --yes it only shows the lines and says to re-run
     sh(root, calls, ['init', '--agents', '--yes']);
     expect(failed(s, evidence(root, calls, 'Done: AGENTS.md has the MM3 block and CLAUDE.md imports it.', s))).toEqual([]);
+  });
+
+  it('[C-266] F5, the wrong field: the request under "request" is stopped with what was ignored, and the next call with "stdin" gets a verdict', async () => {
+    const { root } = tempProject({ ...FILES, 'routes/login.ts': USER_TS });
+    const calls: ClaudeCall[] = [];
+    const s = job('F5-ignored-field');
+    const yaml = s.prompt.slice(s.prompt.indexOf('mak:')); // the very request the agent is handed
+    const [stopped, accepted] = await viaTool(root, calls, [{ args: ['class', '-'], extra: { request: yaml } }, { args: ['class', '-'], stdin: yaml }]);
+    expect(stopped).toContain('✖ arguments: ignored "request"');
+    const id = /id: (MM3-\d+)/u.exec(accepted ?? '')?.[1];
+    expect(id).toBeDefined();
+    expect(failed(s, evidence(root, calls, `The first call was stopped: the tool ignored "request" and wants the YAML in "stdin". The second was accepted: run ${id}, gate fail.`, s))).toEqual([]);
+    // an agent that used "stdin" first never exercised the stop, and the job says so instead of passing
+    const { root: other } = tempProject({ ...FILES, 'routes/login.ts': USER_TS });
+    const direct: ClaudeCall[] = [];
+    const [only] = await viaTool(other, direct, [{ args: ['class', '-'], stdin: yaml }]);
+    const idOnly = /id: (MM3-\d+)/u.exec(only ?? '')?.[1];
+    expect(failed(s, evidence(other, direct, `Run ${idOnly}.`, s))).toEqual(['ignored-stop-met']);
   });
 });

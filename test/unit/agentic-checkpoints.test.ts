@@ -100,4 +100,15 @@ describe('feature job checkpoints [C-266]', () => {
     expect(run(['claude-md-imports'], ev([], { read: files({ '.claude/CLAUDE.md': '# c\n@../AGENTS.md\n' }) }))['claude-md-imports']).toBe(true);
     expect(run(['agents-block-written', 'claude-md-imports'], ev([], { read: files({ 'AGENTS.md': block }) }))).toEqual({ 'agents-block-written': true, 'claude-md-imports': false });
   });
+
+  it('[C-266] the wrong field: the stop must be met, and the very next call must be MM3 and fix it; not meeting it is reported, not passed', () => {
+    const IGNORED = `✖ request: empty → start with "mak:"\n✖ arguments: ignored "request" → the tool takes only args, stdin and project: the request YAML goes in "stdin" (args: ["class","-"])`;
+    const both = ['ignored-stop-met', 'ignored-stop-fixed'];
+    expect(run(both, ev([mm3(['class', '-'], IGNORED), mm3(['class', '-'], OK)]))).toEqual({ 'ignored-stop-met': true, 'ignored-stop-fixed': true });
+    expect(run(both, ev([mm3(['class', '-'], OK)]))['ignored-stop-met']).toBe(false); // never met: the feature was not exercised
+    const wandered: ClaudeCall = { tool: 'Read', input: { file_path: 'x' }, parent: null, id: 'r', result: 'text' };
+    expect(run(both, ev([mm3(['class', '-'], IGNORED), wandered, mm3(['class', '-'], OK)]))).toEqual({ 'ignored-stop-met': true, 'ignored-stop-fixed': false }); // left MM3 after the stop
+    expect(run(both, ev([mm3(['class', '-'], IGNORED), mm3(['class', '-'], IGNORED)]))['ignored-stop-fixed']).toBe(false);
+    expect(run(both, ev([mm3(['class', '-'], IGNORED), mm3(['template', 'class'], 'skeleton'), mm3(['class', '-'], OK)]))['ignored-stop-fixed']).toBe(true); // one discovery call in between, then a verdict
+  });
 });
