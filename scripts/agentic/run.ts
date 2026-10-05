@@ -23,6 +23,7 @@ export interface FullScenario {
   promise: number;
   setup?: 'config-runs-1' | 'plugin-record-mismatch'; // what the project (or the environment) is set up with before the agent starts
   shell?: 'mm3-only'; // the agent's shell may run only mm3: for a job about asking MM3 itself, so it cannot read the machine around it
+  terminal?: boolean; // on the MCP route, the agent also gets a shell with the `mm3` command: for a job that compares the terminal with the plugin
   checkpoints: string[];
 }
 
@@ -189,7 +190,7 @@ export interface RunOptions {
 export function runFull(scenarios: FullScenario[], version: string, rules: Rules, log: (s: string) => void = () => undefined, trialsOverride?: number, opts: RunOptions = {}): FullRow[] {
   const commit = commitOf(version);
   const rows: FullRow[] = [];
-  const bin = opts.build?.bin ?? (scenarios.some((s) => s.routes.includes('cli')) ? installPackage(version) : '');
+  const bin = opts.build?.bin ?? (scenarios.some((s) => s.routes.includes('cli') || s.terminal) ? installPackage(version) : '');
   const plugin = opts.build?.plugin ?? (scenarios.some((s) => s.routes.includes('mcp')) ? (commit ? checkoutPlugin(commit) : (() => { throw new Error(`cannot find the commit in version ${version}; the MCP route needs it`); })()) : '');
   const trials = opts.trials ?? trialsOverride ?? rules.trialsPerScenario;
   const plan = scenarios.flatMap((s) => s.routes.flatMap((route) => opts.models
@@ -217,7 +218,7 @@ export function runFull(scenarios: FullScenario[], version: string, rules: Rules
     if (shim) delete env.CLAUDE_CONFIG_DIR;
     const run = route === 'cli'
       ? runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Edit', 'Bash'], allowedTools: [...base, 'Write', 'Edit', ...shell], env: { ...env, PATH: `${shim ? `${shim}:` : ''}${bin}:${process.env.PATH}` }, budgetUsd: 2, strict })
-      : runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Edit', 'Agent'], allowedTools: [...base, 'Write', 'Edit', 'Agent', 'mcp__plugin_mm3_mm3__mm3'], pluginDir: plugin, env, budgetUsd: 2, strict }); // both routes get the file tools a Claude Code user has: some jobs change a setting in the project's own files
+      : runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Edit', 'Agent', ...(s.terminal ? ['Bash'] : [])], allowedTools: [...base, 'Write', 'Edit', 'Agent', ...(s.terminal ? shell : []), 'mcp__plugin_mm3_mm3__mm3'], pluginDir: plugin, env: s.terminal ? { ...env, PATH: `${bin}:${process.env.PATH}` } : env, budgetUsd: 2, strict }); // both routes get the file tools a Claude Code user has: some jobs change a setting in the project's own files
     const row = grade(s, run, project, route, model, trial);
     const logFile = path.join(project, '.mm3', 'log.jsonl');
     const ledgerText = existsSync(logFile) ? readFileSync(logFile, 'utf8') : '';

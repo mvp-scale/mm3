@@ -20,14 +20,13 @@ const isolation = `--model ${model} --setting-sources "" --disable-slash-command
 const approvals = '"Read" "Glob" "Grep" "Write" "Bash(mm3 *)" "Bash(*/.bin/mm3 *)" "Bash(command -v *)" "Bash(which *)" "Bash(cat *)" "Bash(echo *)" "Bash(printf *)" "Bash(ls *)" "Bash(pwd)" "Bash(grep *)" "Bash(find *)"';
 const setup = [
   `rm -rf ${proj} && cp -r ${fx.defaultCheckout} ${proj} && rm -rf ${proj}/.mm3`,
-  ...(route === 'cli'
-    ? [`npm install --prefix /tmp/mm3-manual --no-audit --no-fund --silent @mvpscale/mm3@${version}`]
-    : [`rm -rf /tmp/mm3-plugin && git clone -q --shared ${process.cwd()} /tmp/mm3-plugin && git -C /tmp/mm3-plugin checkout -q ${commit ?? '<commit>'}`]),
+  ...(route === 'cli' || s.terminal ? [`npm install --prefix /tmp/mm3-manual --no-audit --no-fund --silent @mvpscale/mm3@${version}`] : []),
+  ...(route === 'mcp' ? [`rm -rf /tmp/mm3-plugin && git clone -q --shared ${process.cwd()} /tmp/mm3-plugin && git -C /tmp/mm3-plugin checkout -q ${commit ?? '<commit>'}`] : []),
   `cd ${proj}`,
 ];
 const launch = route === 'cli'
   ? `PATH=/tmp/mm3-manual/node_modules/.bin:$PATH MM3_PROVIDER=fake XDG_CONFIG_HOME=/tmp/mm3-no-config claude ${isolation} --strict-mcp-config --tools "Read,Glob,Grep,Write,Bash" --allowedTools ${approvals}`
-  : `MM3_PROVIDER=fake XDG_CONFIG_HOME=/tmp/mm3-no-config claude ${isolation} --plugin-dir /tmp/mm3-plugin --tools "Read,Glob,Grep,Agent" --allowedTools "Read" "Glob" "Grep" "Agent" "mcp__plugin_mm3_mm3__mm3"`;
+  : `${s.terminal ? 'PATH=/tmp/mm3-manual/node_modules/.bin:$PATH ' : ''}MM3_PROVIDER=fake XDG_CONFIG_HOME=/tmp/mm3-no-config claude ${isolation} --plugin-dir /tmp/mm3-plugin --tools "Read,Glob,Grep,Agent${s.terminal ? ',Bash' : ''}" --allowedTools "Read" "Glob" "Grep" "Agent" ${s.terminal ? `${approvals} ` : ''}"mcp__plugin_mm3_mm3__mm3"`;
 
 const lines = [
   `MANUAL TEST SHEET · ${id} · ${route} route · ${model} · version ${version}`, '',

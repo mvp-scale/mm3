@@ -114,7 +114,7 @@ if (process.argv[1]?.endsWith('trial.ts')) {
   console.log(`  build: ${label} (the working tree)\n  success, stated before the run: ${(job as { success?: string }).success ?? job.goal}`);
   let closed = false;
   try {
-    const build = buildLocal(scoped.routes.includes('cli'));
+    const build = buildLocal(scoped.routes.includes('cli') || scoped.terminal === true);
     const rows = runFull([scoped], label, spec.rules, (l) => console.log(l), undefined, { build, models: [a.model], trials: a.trials, ...(a.paid ? { paid: a.paid } : {}) });
     const asked = rows.filter((r) => r.attempts.length > 0);
     const rate = asked.length ? asked.filter((r) => r.firstRequestAccepted).length / asked.length : 0;
