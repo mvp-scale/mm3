@@ -179,7 +179,10 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
   if (!decision.blockers.length && !decision.exceptions.length) out.push('  Nothing blocks it and nothing is accepted as an exception.');
   out.push('', 'SELF-IMPROVEMENT   (recorded in the ledger whether or not it is accepted; npm run agentic:patterns shows what repeats)');
   if (!decision.improvements.length) out.push('  none seen in this run');
-  decision.improvements.forEach((x, i) => out.push(...wrap(`  ${i + 1}. `, `${x.id} · ${x.models.join(', ')}: ${x.saw}`, 100), ...wrap('     try: ', x.fix, 100)));
+  decision.improvements.forEach((x, i) => out.push(...wrap(`  ${i + 1}. `, `[${x.themes.join(' · ')}] ${x.id} · ${x.models.join(', ')}: ${x.saw}`, 100), ...wrap('     try: ', x.fix, 100)));
+  const byTheme = new Map<string, number>();
+  for (const x of decision.improvements) for (const t of x.themes) byTheme.set(t, (byTheme.get(t) ?? 0) + 1);
+  if (byTheme.size) out.push('', ...wrap('  GROUPED BY THEME: ', [...byTheme].sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t} ×${n}`).join(' · '), 100));
   return out;
 }
 

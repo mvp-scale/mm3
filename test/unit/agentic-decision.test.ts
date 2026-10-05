@@ -66,7 +66,7 @@ describe('the decision [C-264]', () => {
     const d = decide(started(), end([row({ pass: false, failed: ['engaged'] })]), ok);
     expect(d.verdict).toBe('DO NOT SHIP');
     expect(d.blockers).toEqual(['sonnet missed "engaged" in: Ask a plain question']);
-    expect(d.improvements[0]).toMatchObject({ id: 'engaged', models: ['sonnet'] });
+    expect(d.improvements[0]).toMatchObject({ id: 'engaged', models: ['sonnet'], themes: ['guidance-start-here'] }); // tagged so it groups with others
   });
   it('[C-264] a smaller model\'s misses never block: they are recorded as improvements and a lower-tier pattern', () => {
     const d = decide(started(), end([row(), row({ model: 'haiku', pass: false, failed: ['engaged'] })]), ok);

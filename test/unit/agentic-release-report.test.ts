@@ -46,6 +46,8 @@ describe('agentic release report [C-263]', () => {
     expect(t).toContain('sonnet missed "cites run id"');
     expect(t).toMatch(/SELF-IMPROVEMENT\s+\(recorded in the ledger whether or not it is accepted/u);
     expect(t.lastIndexOf('SELF-IMPROVEMENT')).toBeGreaterThan(t.indexOf('THE DATA')); // decision and improvements come last
+    expect(t).toMatch(/\[guidance-citing\]/u); // each improvement carries its theme tags
+    expect(t).toContain('GROUPED BY THEME: guidance-citing');
     expect(t).toContain('one trial, call by call: npm run agentic:release-report -- CER-0007 --row S1/mcp/sonnet/1');
     expect(t.indexOf('WHAT THIS TESTS')).toBeLessThan(t.indexOf('THE DATA')); // the point comes before the numbers
   });
