@@ -63,7 +63,8 @@ export function runClaude(o: ClaudeOptions): ClaudeRun {
       if (b.type === 'tool_use') calls.push({ tool: b.name, input: b.input ?? {}, parent: e.parent_tool_use_id ?? null, id: b.id, result: results[b.id] ?? '' });
     }
   }
-  const final = events.find((e) => e.type === 'result');
+  // the LAST result: a lead that starts background helpers answers once before they report, then answers again when they do
+  const final = [...events].reverse().find((e) => e.type === 'result');
   return {
     calls,
     answer: String(final?.result ?? ''),

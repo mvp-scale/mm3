@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { collectSurfaces, manifestOf } from '../test/helpers/guidance-surfaces.ts';
 import { byLevel, LEVELS, runContext, type ContextRow } from './agentic/context.ts';
-import { commitOf, runFull, type FullRow, type FullScenario } from './agentic/run.ts';
+import { cells, commitOf, level3Passes, runFull, type FullRow, type FullScenario, type Rules } from './agentic/run.ts';
 import type { AgenticRun } from './check-agentic.ts';
 
 const args = process.argv.slice(2);
@@ -59,22 +59,25 @@ const lv = byLevel(l2);
 out(`   → none ${lv.none.pass}/${lv.none.total} · some ${lv.some.pass}/${lv.some.total} · detailed ${lv.detailed.pass}/${lv.detailed.total} (recorded; does not gate)`);
 
 // 4. level 3
-out('\n4. LEVEL 3 · full agentic baseline (real agents, real tool, the pinned project)');
-const full = (JSON.parse(readFileSync('test/agentic/scenarios/baseline.json', 'utf8')) as { full: FullScenario[] }).full;
-const l3: FullRow[] = runFull(full, version, (s) => out(s.replace(/^ {2}/u, '   ')));
-const agents = l3.flatMap((r) => r.attempts);
-const first = agents.length ? agents.filter((a) => a === 1).length / agents.length : 0;
-out(`   → ${l3.filter((r) => r.pass).length}/${l3.length} scenarios passed · first-attempt rate ${(first * 100).toFixed(0)}% (target 80%, reported) · attempts per agent ${JSON.stringify(agents)}`);
+out('\n4. LEVEL 3 · full agentic baseline (real agents, real tool, the pinned project, the sample provider: no key)');
+const spec = JSON.parse(readFileSync('test/agentic/scenarios/baseline.json', 'utf8')) as { full: FullScenario[]; rules: Rules };
+const rules = spec.rules;
+out(`   gate: ${rules.gateModel} passes at least ${rules.mustPassTrials} of ${rules.trialsPerScenario} trials of every scenario on every route; ${rules.floorModel} runs once and is reported, not gated`);
+const l3: FullRow[] = runFull(spec.full, version, rules, (s) => out(s.replace(/^ {2}/u, '   ')));
+const gateRows = l3.filter((r) => r.model === rules.gateModel);
+const first = gateRows.length ? gateRows.filter((r) => r.firstRequestAccepted).length / gateRows.length : 0;
+for (const c of cells(l3)) out(`   ${c.id} · ${c.route} · ${c.model}: ${c.passed}/${c.trials}${c.model === rules.gateModel ? '' : ' (floor, not gating)'}`);
+out(`   → first request accepted in ${(first * 100).toFixed(0)}% of gate trials (target ${(rules.firstAttemptTarget * 100).toFixed(0)}%, reported)`);
 
 // 5. gate and record
-const passed = l1.every((r) => r.ok) && l3.every((r) => r.pass);
+const passed = l1.every((r) => r.ok) && level3Passes(l3, rules);
 const cost = l2.reduce((a, r) => a + r.costUsd, 0) + l3.reduce((a, r) => a + r.costUsd, 0);
-out(`\n5. GATE · ${passed ? 'PASS' : 'FAIL'} (level 1 all green and every level 3 scenario within three attempts) · notional cost $${cost.toFixed(2)}`);
+out(`\n5. GATE · ${passed ? 'PASS' : 'FAIL'} (level 1 all green, and the level 3 gate above) · notional cost $${cost.toFixed(2)}`);
 if (dry) {
   out('   dry run: nothing written');
   process.exit(passed ? 0 : 1);
 }
-const record: AgenticRun = { version, fingerprint, date: env.date, passed, firstAttempt: Number(first.toFixed(2)), summary: `level 1 ${l1.filter((r) => r.ok).length}/${l1.length}; level 2 ${LEVELS.map((l) => `${l} ${lv[l].pass}/${lv[l].total}`).join(', ')}; level 3 ${l3.filter((r) => r.pass).length}/${l3.length}` };
+const record: AgenticRun = { version, fingerprint, date: env.date, passed, firstAttempt: Number(first.toFixed(2)), summary: `level 1 ${l1.filter((r) => r.ok).length}/${l1.length}; level 2 ${LEVELS.map((l) => `${l} ${lv[l].pass}/${lv[l].total}`).join(', ')}; level 3 gate model ${gateRows.filter((r) => r.pass).length}/${gateRows.length} trials` };
 writeFileSync('test/agentic/last-run.json', `${JSON.stringify(record, null, 2)}\n`);
 const md = [
   '# Agentic ceremony record', '',
@@ -83,8 +86,9 @@ const md = [
   '## Level 1 · free checks', '', '| Check | Result | Detail |', '|---|---|---|', ...l1.map((r) => `| ${r.name} | ${r.ok ? 'pass' : 'FAIL'} | ${r.detail} |`), '',
   '## Level 2 · context test (Haiku, no tools)', '', `none ${lv.none.pass}/${lv.none.total} · some ${lv.some.pass}/${lv.some.total} · detailed ${lv.detailed.pass}/${lv.detailed.total}. Recorded, not gating.`, '',
   '| Scenario | none | some | detailed |', '|---|---|---|---|', ...[...new Set(l2.map((r) => r.id))].map((id) => `| ${id} | ${LEVELS.map((l) => (l2.find((r) => r.id === id && r.level === l)?.pass ? 'pass' : 'miss')).join(' | ')} |`), '',
-  '## Level 3 · full agentic baseline', '', `The promise: a verdict within three attempts for every agent that tried. First-attempt rate ${(first * 100).toFixed(0)}% (target 80%, reported).`, '',
-  '| Scenario | Route | Model | Attempts per agent | Result | Problems |', '|---|---|---|---|---|---|', ...l3.map((r) => `| ${r.id} | ${r.route} | ${r.model} | ${JSON.stringify(r.attempts)} | ${r.pass ? 'pass' : 'FAIL'} | ${r.problems.join('; ') || '-'} |`), '',
+  '## Level 3 · full agentic baseline', '', `Sample provider throughout (no key, $0 of TypeSafe spend): nothing here grades whether a verdict is right, only whether an agent could get a well-formed verdict recorded. Gate: ${rules.gateModel} passes at least ${rules.mustPassTrials} of ${rules.trialsPerScenario} trials of every scenario on every route; ${rules.floorModel} is reported, not gated. First request accepted in ${(first * 100).toFixed(0)}% of gate trials (target ${(rules.firstAttemptTarget * 100).toFixed(0)}%, reported).`, '',
+  '| Scenario | Route | Model | Trials passed | Failed checkpoints (what each points at) |', '|---|---|---|---|---|',
+  ...cells(l3).map((c) => `| ${c.id} | ${c.route} | ${c.model} | ${c.passed}/${c.trials} | ${[...new Set(l3.filter((r) => r.id === c.id && r.route === c.route && r.model === c.model).flatMap((r) => r.problems))].join('; ') || '-'} |`), '',
   `Notional cost of the run: $${cost.toFixed(2)} (Claude subscription quota; MM3 itself used the sample provider, so $0 of TypeSafe spend).`, '',
 ];
 writeFileSync('docs/evidence/agentic.md', md.join('\n'));
