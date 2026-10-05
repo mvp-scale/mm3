@@ -270,11 +270,11 @@
     {
       "id": "F7-terminal-and-plugin",
       "title": "Ask the terminal and the plugin the same thing",
-      "story": "A developer asks: \"Run `mm3 agent` in the terminal, then run the same command through the MM3 plugin tool, and tell me whether the two answers agree.\" The agent has both a shell with the mm3 command and the plugin's mm3 tool.",
+      "story": "A developer asks: \"Run `mm3 agent delegate` in the terminal, then run the same command through the MM3 plugin tool, and tell me whether the two answers agree.\" The agent has both a shell with the mm3 command and the plugin's mm3 tool.",
       "success": "The agent ran the same command both ways, the two answers really were the same text, and the agent told the developer they agree.",
       "matters": "MM3 promises one contract: the same arguments give the same answer in the terminal and in the plugin. An agent that switches between them must not be able to get two different answers, or a wrong report that they match.",
       "goal": "An agent runs one free command through the terminal and through the plugin and reports whether the two answers agree, consistent with what each returned.",
-      "prompt": "Run `mm3 agent` in the terminal, then run the same command through the MM3 plugin tool, and tell me whether the two answers agree.",
+      "prompt": "Run `mm3 agent delegate` in the terminal, then run the same command through the MM3 plugin tool, and tell me whether the two answers agree.",
       "setupNote": "Before the agent starts, nothing is set up. The agent gets the plugin's mm3 tool and a shell that may run the mm3 command, so both ways in exist in one run; the terminal copy and the plugin are the same build. The command is free: it needs no key and writes nothing to the ledger, so the ledger has no part in this job.",
       "model": "sonnet",
       "routes": [

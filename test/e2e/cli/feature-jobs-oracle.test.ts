@@ -124,16 +124,16 @@ describe('the feature jobs can be passed [C-266]', () => {
     expect(failed(s, evidence(other, lone, `Run ${/id: (MM3-\d+)/u.exec(mine)?.[1]}.`, s))).toEqual(expect.arrayContaining(['helpers-spawned', 'helper-made-the-call']));
   });
 
-  it('[C-266] F7, terminal and plugin: `mm3 agent` in a shell and through the real plugin tool is the same text, and saying so passes', async () => {
+  it('[C-266] F7, terminal and plugin: `mm3 agent delegate` in a shell and through the real plugin tool is the same text, and saying so passes', async () => {
     const { root } = tempProject(FILES);
     const calls: ClaudeCall[] = [];
     const s = job('F7-terminal-and-plugin');
-    sh(root, calls, ['agent']);
-    await viaTool(root, calls, [{ args: ['agent'] }]);
+    sh(root, calls, ['agent', 'delegate']);
+    await viaTool(root, calls, [{ args: ['agent', 'delegate'] }]);
     expect(failed(s, evidence(root, calls, 'Both gave the same card: the two answers agree word for word.', s))).toEqual([]);
     // an agent that used only the terminal compared nothing
     const one: ClaudeCall[] = [];
-    sh(root, one, ['agent']);
+    sh(root, one, ['agent', 'delegate']);
     expect(failed(s, evidence(root, one, 'The card says to start from a template.', s))).toEqual(['terminal-and-plugin-both-used', 'routes-agree-and-said-so']);
   });
 });
