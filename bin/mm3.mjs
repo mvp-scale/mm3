@@ -7450,7 +7450,8 @@ var package_default = {
     "agentic:context": "tsx scripts/agentic/context.ts",
     "agentic:run": "tsx scripts/agentic/run.ts",
     ceremony: "tsx scripts/ceremony.ts",
-    "agentic:sheet": "tsx scripts/agentic/sheet.ts"
+    "agentic:sheet": "tsx scripts/agentic/sheet.ts",
+    "agentic:report": "tsx scripts/agentic/report.ts"
   },
   devDependencies: {
     "@types-floor/node": "npm:@types/node@22.19.18",
