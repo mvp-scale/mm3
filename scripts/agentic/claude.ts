@@ -9,6 +9,17 @@ export interface ClaudeCall {
   parent: string | null; // null: the lead; otherwise the tool_use id of the Agent call that spawned this helper
   id: string;
   result: string;
+  turn?: number; // which model turn (in the order the stream shows them) asked for this call
+}
+
+/** One model turn, from the stream: what that turn read and wrote. Approximate (the stream reports it as it goes); the run's totals come from modelUsage and are exact. */
+export interface TurnUsage {
+  turn: number;
+  agent: string; // 'lead' or the Agent call a helper belongs to
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
 }
 
 /** What a run used. A subscription has no per-call price, so the record counts tokens and model turns instead. */
@@ -27,6 +38,7 @@ export interface ClaudeRun {
   calls: ClaudeCall[];
   answer: string;
   usage: Usage;
+  turns: TurnUsage[];
   model: string | null; // the model id the run actually used (the alias `sonnet` or `haiku` resolves to one)
   plugins: string[];
   mcp: string[];
@@ -70,10 +82,18 @@ export function runClaude(o: ClaudeOptions): ClaudeRun {
     }
   }
   const calls: ClaudeCall[] = [];
+  const turns: TurnUsage[] = [];
+  const seen = new Map<string, number>(); // message id → turn number: the stream repeats a message once per content block
   for (const e of events) {
     if (e.type !== 'assistant') continue;
+    const id = String(e.message.id ?? `${turns.length}`);
+    if (!seen.has(id)) {
+      const u = (e.message.usage ?? {}) as Record<string, number>;
+      seen.set(id, turns.length + 1);
+      turns.push({ turn: turns.length + 1, agent: e.parent_tool_use_id ?? 'lead', inputTokens: u.input_tokens ?? 0, outputTokens: u.output_tokens ?? 0, cacheReadTokens: u.cache_read_input_tokens ?? 0, cacheCreationTokens: u.cache_creation_input_tokens ?? 0 });
+    }
     for (const b of e.message.content as Array<Record<string, any>>) {
-      if (b.type === 'tool_use') calls.push({ tool: b.name, input: b.input ?? {}, parent: e.parent_tool_use_id ?? null, id: b.id, result: results[b.id] ?? '' });
+      if (b.type === 'tool_use') calls.push({ tool: b.name, input: b.input ?? {}, parent: e.parent_tool_use_id ?? null, id: b.id, result: results[b.id] ?? '', turn: seen.get(id)! });
     }
   }
   // the LAST result: a lead that starts background helpers answers once before they report, then answers again when they do
@@ -82,6 +102,7 @@ export function runClaude(o: ClaudeOptions): ClaudeRun {
     calls,
     answer: String(final?.result ?? ''),
     usage: usageOf(final),
+    turns,
     model: typeof init?.model === 'string' ? init.model : null,
     plugins: (init?.plugins ?? []).map((p: { name: string }) => p.name),
     mcp: (init?.mcp_servers ?? []).map((m: { name: string; status: string }) => `${m.name}:${m.status}`),

@@ -10,6 +10,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import os from 'node:os';
 import path from 'node:path';
 import { addUsage, attemptsByAgent, noUsage, runClaude, type ClaudeRun, type Usage } from './claude.ts';
+import { economics, type Economics } from './trace.ts';
 import { evaluate, metrics } from './checkpoints.ts';
 
 export interface FullScenario {
@@ -36,6 +37,7 @@ export interface FullRow {
   mm3Calls: number;
   problems: string[];
   usage: Usage;
+  economics: Economics; // where the tokens went, by kind of call
   transcript?: string; // file name under lab/archive/agentic
   transcriptSha256?: string; // digest of that file, so the record can say which transcript it means
 }
@@ -95,7 +97,7 @@ export function grade(s: FullScenario, run: ClaudeRun, project: string, route: '
   const problems = checks.filter((c) => !c.pass).map((c) => `${c.id}: ${c.means}`);
   if (!run.ok) problems.unshift(`the run did not finish${run.error ? ` (${run.error})` : ''}`);
   const attempts = attemptsByAgent(run.calls).map((g) => g.outcomes.indexOf(true) + 1);
-  return { id: s.id, route, model, resolvedModel: run.model, trial, pass: run.ok && checks.every((c) => c.pass), checks, attempts, firstRequestAccepted: m.firstRequestAccepted, mm3Calls: m.mm3Calls, problems, usage: run.usage };
+  return { id: s.id, route, model, resolvedModel: run.model, trial, pass: run.ok && checks.every((c) => c.pass), checks, attempts, firstRequestAccepted: m.firstRequestAccepted, mm3Calls: m.mm3Calls, problems, usage: run.usage, economics: economics(run.calls) };
 }
 
 /** Gate rows (the gate model, several trials) and floor rows (the other model, once). */
@@ -121,7 +123,7 @@ export function runFull(scenarios: FullScenario[], version: string, rules: Rules
     // every transcript is kept (gitignored lab/archive) so a red row can be read, not guessed at
     mkdirSync('lab/archive/agentic', { recursive: true });
     const file = `${version}-${s.id}-${route}-${model}-${trial}.json`;
-    const body = JSON.stringify({ row, answer: run.answer, plugins: run.plugins, mcp: run.mcp, calls: run.calls }, null, 1);
+    const body = JSON.stringify({ row, answer: run.answer, plugins: run.plugins, mcp: run.mcp, turns: run.turns, calls: run.calls }, null, 1);
     writeFileSync(`lab/archive/agentic/${file}`, body);
     row.transcript = file;
     row.transcriptSha256 = createHash('sha256').update(body).digest('hex');

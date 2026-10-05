@@ -7,6 +7,7 @@
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { CHECKPOINTS } from './checkpoints.ts';
+import { addEconomics, emptyEconomics, KINDS, type Economics } from './trace.ts';
 
 export const LEDGER = 'test/agentic/ledger.jsonl';
 export const SCHEMA = 1;
@@ -78,7 +79,7 @@ export interface FinishedRecord {
   reason?: string; // aborted: why
   level1?: Array<{ name: string; ok: boolean; detail: string }>;
   level2?: Array<{ id: string; level: string; pass: boolean }>;
-  level3?: Array<{ id: string; route: string; model: string; resolvedModel?: string | null; trial: number; pass: boolean; failed: string[]; attempts: number[]; firstRequestAccepted: boolean; mm3Calls: number; transcript: string; transcriptSha256?: string }>;
+  level3?: Array<{ id: string; route: string; model: string; resolvedModel?: string | null; trial: number; pass: boolean; failed: string[]; attempts: number[]; firstRequestAccepted: boolean; mm3Calls: number; usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; turns: number }; economics?: Economics; transcript: string; transcriptSha256?: string }>;
   firstRequestAcceptedRate?: number;
   usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; turns: number; claudeRuns: number; mm3Calls: number }; // what the run asked of the model
   notionalCostUsd?: number; // legacy: the first two lines recorded a dollar figure; a subscription has no per-call price, so new lines record usage instead
@@ -170,6 +171,16 @@ export function compareRuns(a: { started: StartedRecord; finished?: FinishedReco
   const tok = (r: { finished?: FinishedRecord }): string => (r.finished?.usage ? `${r.finished.usage.inputTokens + r.finished.usage.cacheReadTokens + r.finished.usage.cacheCreationTokens} in / ${r.finished.usage.outputTokens} out, ${r.finished.usage.turns} turns, ${r.finished.usage.mm3Calls} MM3 calls` : 'not recorded');
   out.push(`usage: ${tok(a)} → ${tok(b)}`);
   out.push(`level 2 context test passed: ${l2(a)} → ${l2(b)}`);
+  const eco = (r: { finished?: FinishedRecord }): Economics | undefined => (r.finished?.level3?.some((x) => x.economics) ? r.finished.level3.reduce((acc, x) => (x.economics ? addEconomics(acc, x.economics) : acc), emptyEconomics()) : undefined);
+  const ea = eco(a);
+  const eb = eco(b);
+  if (ea || eb) {
+    for (const k of KINDS) {
+      const x = ea?.[k];
+      const y = eb?.[k];
+      if ((x?.calls ?? 0) + (y?.calls ?? 0) > 0) out.push(`  ${k} calls: ${x ? `${x.calls} calls, ≈${x.resultTokens} tokens back` : 'not recorded'} → ${y ? `${y.calls} calls, ≈${y.resultTokens} tokens back` : 'not recorded'}`);
+    }
+  }
   const cells = (r: { finished?: FinishedRecord }): Map<string, string> => {
     const m = new Map<string, { p: number; t: number }>();
     for (const x of r.finished?.level3 ?? []) {

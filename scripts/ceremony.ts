@@ -12,6 +12,7 @@ import { collectSurfaces, manifestOf } from '../test/helpers/guidance-surfaces.t
 import { byLevel, LEVELS, runContext, type ContextRow } from './agentic/context.ts';
 import { append, chainProblem, definitionOf, nextId, readLedger, type FinishedRecord, type Spec, type StartedRecord } from './agentic/ledger.ts';
 import { addUsage, noUsage } from './agentic/claude.ts';
+import { addEconomics, economicsLine, emptyEconomics } from './agentic/trace.ts';
 import { cells, commitOf, level3Passes, runFull, usageLine, type FullRow, type FullScenario, type Rules } from './agentic/run.ts';
 
 const args = process.argv.slice(2);
@@ -113,11 +114,11 @@ try {
     phase: 'finished', passed,
     level1: l1,
     level2: l2.map((r) => ({ id: r.id, level: r.level, pass: r.pass })),
-    level3: l3.map((r) => ({ id: r.id, route: r.route, model: r.model, resolvedModel: r.resolvedModel, trial: r.trial, pass: r.pass, failed: r.checks.filter((c) => !c.pass).map((c) => c.id), attempts: r.attempts, firstRequestAccepted: r.firstRequestAccepted, mm3Calls: r.mm3Calls, transcript: r.transcript ?? '', ...(r.transcriptSha256 ? { transcriptSha256: r.transcriptSha256 } : {}) })),
+    level3: l3.map((r) => ({ id: r.id, route: r.route, model: r.model, resolvedModel: r.resolvedModel, trial: r.trial, pass: r.pass, failed: r.checks.filter((c) => !c.pass).map((c) => c.id), attempts: r.attempts, firstRequestAccepted: r.firstRequestAccepted, mm3Calls: r.mm3Calls, usage: { inputTokens: r.usage.inputTokens, outputTokens: r.usage.outputTokens, cacheReadTokens: r.usage.cacheReadTokens, cacheCreationTokens: r.usage.cacheCreationTokens, turns: r.usage.turns }, economics: r.economics, transcript: r.transcript ?? '', ...(r.transcriptSha256 ? { transcriptSha256: r.transcriptSha256 } : {}) })),
     firstRequestAcceptedRate: Number(first.toFixed(2)),
     usage: { ...usage, claudeRuns: calls, mm3Calls: l3.reduce((a, r) => a + r.mm3Calls, 0) },
   });
-  out(`\n5. GATE · ${passed ? 'PASS' : 'FAIL'} (level 1 all green, and the level 3 gate above) · ${formal ? 'FORMAL' : 'not formal'}\n   usage: ${usageLine(usage, calls)} · ${l3.reduce((a, r) => a + r.mm3Calls, 0)} MM3 calls`);
+  out(`\n5. GATE · ${passed ? 'PASS' : 'FAIL'} (level 1 all green, and the level 3 gate above) · ${formal ? 'FORMAL' : 'not formal'}\n   usage: ${usageLine(usage, calls)} · ${l3.reduce((a, r) => a + r.mm3Calls, 0)} MM3 calls\n   where it went (level 3, by kind of call; ≈ is characters ÷ 4): ${economicsLine(l3.reduce((acc, r) => addEconomics(acc, r.economics), emptyEconomics()))}`);
   out(`   recorded: ${started.id} closed in test/agentic/ledger.jsonl`);
   process.exit(passed ? 0 : 1);
 } catch (e) {
