@@ -80,7 +80,8 @@ export interface FinishedRecord {
   level2?: Array<{ id: string; level: string; pass: boolean }>;
   level3?: Array<{ id: string; route: string; model: string; resolvedModel?: string | null; trial: number; pass: boolean; failed: string[]; attempts: number[]; firstRequestAccepted: boolean; mm3Calls: number; transcript: string; transcriptSha256?: string }>;
   firstRequestAcceptedRate?: number;
-  notionalCostUsd?: number;
+  usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; turns: number; claudeRuns: number; mm3Calls: number }; // what the run asked of the model
+  notionalCostUsd?: number; // legacy: the first two lines recorded a dollar figure; a subscription has no per-call price, so new lines record usage instead
 }
 
 export type LedgerRecord = StartedRecord | FinishedRecord;
@@ -166,6 +167,8 @@ export function compareRuns(a: { started: StartedRecord; finished?: FinishedReco
   const fr = (r: { finished?: FinishedRecord }): string => (r.finished?.firstRequestAcceptedRate === undefined ? '-' : `${Math.round(r.finished.firstRequestAcceptedRate * 100)}%`);
   out.push(`first request accepted: ${fr(a)} → ${fr(b)}`);
   const l2 = (r: { finished?: FinishedRecord }): string => (r.finished?.level2 ? `${r.finished.level2.filter((x) => x.pass).length}/${r.finished.level2.length}` : '-');
+  const tok = (r: { finished?: FinishedRecord }): string => (r.finished?.usage ? `${r.finished.usage.inputTokens + r.finished.usage.cacheReadTokens + r.finished.usage.cacheCreationTokens} in / ${r.finished.usage.outputTokens} out, ${r.finished.usage.turns} turns, ${r.finished.usage.mm3Calls} MM3 calls` : 'not recorded');
+  out.push(`usage: ${tok(a)} → ${tok(b)}`);
   out.push(`level 2 context test passed: ${l2(a)} → ${l2(b)}`);
   const cells = (r: { finished?: FinishedRecord }): Map<string, string> => {
     const m = new Map<string, { p: number; t: number }>();

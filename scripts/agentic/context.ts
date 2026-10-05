@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { runAgent } from '../../src/help/agent.ts';
 import { MM3_GUIDANCE } from '../../src/help/guidance.ts';
-import { runClaude } from './claude.ts';
+import { addUsage, noUsage, runClaude, type Usage } from './claude.ts';
 
 export type Level = 'none' | 'some' | 'detailed';
 export const LEVELS: readonly Level[] = ['none', 'some', 'detailed'];
@@ -23,7 +23,7 @@ export interface ContextRow {
   level: Level;
   pass: boolean;
   answer: string;
-  costUsd: number;
+  usage: Usage;
 }
 
 const BASE = 'You are a coding agent in a project. A tool named `mm3` is available (an MCP tool taking `args`, an array of strings, and optional `stdin`).';
@@ -45,7 +45,7 @@ export function runContext(scenarios: ContextScenario[] = loadContextScenarios()
       const r = runClaude({ prompt: `${s.situation}\n\n${s.ask} Answer with the next step only, in at most three lines.`, model, cwd: process.cwd(), system: knowledge(level), budgetUsd: 0.25, timeoutMs: 120_000 });
       const answer = r.answer.trim();
       const pass = r.ok && s.expect.every((e) => answer.toLowerCase().includes(e.toLowerCase()));
-      rows.push({ id: s.id, level, pass, answer, costUsd: r.costUsd });
+      rows.push({ id: s.id, level, pass, answer, usage: r.usage });
       log(`  ${pass ? '✔' : '✖'} ${s.id} @ ${level}: ${answer.replace(/\s+/gu, ' ').slice(0, 110)}`);
     }
   }
@@ -59,5 +59,6 @@ export const byLevel = (rows: ContextRow[]): Record<Level, { pass: number; total
 if (process.argv[1]?.endsWith('context.ts')) {
   const rows = runContext(undefined, 'haiku', console.log);
   const t = byLevel(rows);
-  console.log(`\ncontext test: none ${t.none.pass}/${t.none.total} · some ${t.some.pass}/${t.some.total} · detailed ${t.detailed.pass}/${t.detailed.total} · notional cost $${rows.reduce((a, r) => a + r.costUsd, 0).toFixed(2)}`);
+  const used = rows.reduce((a, r) => addUsage(a, r.usage), noUsage());
+  console.log(`\ncontext test: none ${t.none.pass}/${t.none.total} · some ${t.some.pass}/${t.some.total} · detailed ${t.detailed.pass}/${t.detailed.total} · ${used.turns} model turns · ${used.inputTokens + used.cacheReadTokens + used.cacheCreationTokens} tokens in, ${used.outputTokens} out`);
 }

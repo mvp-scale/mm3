@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { attemptsByAgent, runClaude, type ClaudeRun } from './claude.ts';
+import { addUsage, attemptsByAgent, noUsage, runClaude, type ClaudeRun, type Usage } from './claude.ts';
 import { evaluate, metrics } from './checkpoints.ts';
 
 export interface FullScenario {
@@ -35,7 +35,7 @@ export interface FullRow {
   firstRequestAccepted: boolean;
   mm3Calls: number;
   problems: string[];
-  costUsd: number;
+  usage: Usage;
   transcript?: string; // file name under lab/archive/agentic
   transcriptSha256?: string; // digest of that file, so the record can say which transcript it means
 }
@@ -95,7 +95,7 @@ export function grade(s: FullScenario, run: ClaudeRun, project: string, route: '
   const problems = checks.filter((c) => !c.pass).map((c) => `${c.id}: ${c.means}`);
   if (!run.ok) problems.unshift(`the run did not finish${run.error ? ` (${run.error})` : ''}`);
   const attempts = attemptsByAgent(run.calls).map((g) => g.outcomes.indexOf(true) + 1);
-  return { id: s.id, route, model, resolvedModel: run.model, trial, pass: run.ok && checks.every((c) => c.pass), checks, attempts, firstRequestAccepted: m.firstRequestAccepted, mm3Calls: m.mm3Calls, problems, costUsd: run.costUsd };
+  return { id: s.id, route, model, resolvedModel: run.model, trial, pass: run.ok && checks.every((c) => c.pass), checks, attempts, firstRequestAccepted: m.firstRequestAccepted, mm3Calls: m.mm3Calls, problems, usage: run.usage };
 }
 
 /** Gate rows (the gate model, several trials) and floor rows (the other model, once). */
@@ -130,6 +130,9 @@ export function runFull(scenarios: FullScenario[], version: string, rules: Rules
   return rows;
 }
 
+/** One line for a person: how much a run asked of the model. */
+export const usageLine = (u: Usage, runs: number): string => `${runs} runs · ${u.turns} model turns · ${u.inputTokens + u.cacheReadTokens + u.cacheCreationTokens} tokens in, ${u.outputTokens} out`;
+
 export interface Cell { id: string; route: string; model: string; passed: number; trials: number }
 
 /** Passes per scenario × route × model. */
@@ -155,5 +158,5 @@ if (process.argv[1]?.endsWith('run.ts')) {
   const t = process.argv.indexOf('--trials');
   const rows = runFull(only ? spec.full.filter((s) => s.id === only) : spec.full, version, spec.rules, console.log, t > 0 ? Number(process.argv[t + 1]) : undefined);
   for (const c of cells(rows)) console.log(`${c.id} · ${c.route} · ${c.model}: ${c.passed}/${c.trials}${c.model === spec.rules.gateModel ? '' : ' (floor, not gating)'}`);
-  console.log(`\nlevel 3 gate (${spec.rules.gateModel}, at least ${spec.rules.mustPassTrials} of ${spec.rules.trialsPerScenario}): ${level3Passes(rows, spec.rules) ? 'PASS' : 'FAIL'} · notional cost $${rows.reduce((a, r) => a + r.costUsd, 0).toFixed(2)}`);
+  console.log(`\nlevel 3 gate (${spec.rules.gateModel}, at least ${spec.rules.mustPassTrials} of ${spec.rules.trialsPerScenario}): ${level3Passes(rows, spec.rules) ? 'PASS' : 'FAIL'} · ${usageLine(rows.reduce((a, r) => addUsage(a, r.usage), noUsage()), rows.length)}`);
 }

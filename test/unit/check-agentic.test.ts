@@ -71,7 +71,7 @@ describe('agentic ledger and gate [C-260]', () => {
   });
 
   it('[C-260] comparing two runs says what changed: the code, the guidance, the definition, and the results', () => {
-    const a = { started: started({ id: 'CER-0001', head: 'aaaaaaa1111' }), finished: finished({ startedId: 'CER-0001', firstRequestAcceptedRate: 0.25, level3: [{ id: 'S1', route: 'mcp', model: 'sonnet', trial: 1, pass: false, failed: ['engaged'], attempts: [0], firstRequestAccepted: false, mm3Calls: 3, transcript: 'a.json' }] }) };
+    const a = { started: started({ id: 'CER-0001', head: 'aaaaaaa1111' }), finished: finished({ startedId: 'CER-0001', firstRequestAcceptedRate: 0.25, usage: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 900, cacheCreationTokens: 0, turns: 6, claudeRuns: 2, mm3Calls: 3 }, level3: [{ id: 'S1', route: 'mcp', model: 'sonnet', trial: 1, pass: false, failed: ['engaged'], attempts: [0], firstRequestAccepted: false, mm3Calls: 3, transcript: 'a.json' }] }) };
     const b = { started: started({ id: 'CER-0002', head: 'bbbbbbb2222', fingerprint: 'e'.repeat(64), definition: definitionOf(spec({ prompt: 'new prompt' }), FIX) }), finished: finished({ startedId: 'CER-0002', firstRequestAcceptedRate: 0.75, level3: [{ id: 'S1', route: 'mcp', model: 'sonnet', trial: 1, pass: true, failed: [], attempts: [1], firstRequestAccepted: true, mm3Calls: 2, transcript: 'b.json' }] }) };
     const text = compareRuns(a, b).join('\n');
     expect(text).toContain('code: aaaaaaa → bbbbbbb');
@@ -79,6 +79,7 @@ describe('agentic ledger and gate [C-260]', () => {
     expect(text).toContain('S1: prompt changed');
     expect(text).toContain('level 3 gate-model trials passed: 0/1 → 1/1');
     expect(text).toContain('first request accepted: 25% → 75%');
+    expect(text).toContain('usage: 1000 in / 50 out, 6 turns, 3 MM3 calls → not recorded'); // tokens and turns, never a dollar figure
     expect(text).toContain('S1 · mcp · sonnet: 0/1 → 1/1');
   });
 

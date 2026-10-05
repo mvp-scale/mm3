@@ -11,10 +11,22 @@ export interface ClaudeCall {
   result: string;
 }
 
+/** What a run used. A subscription has no per-call price, so the record counts tokens and model turns instead. */
+export interface Usage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  turns: number; // model turns the lead took
+}
+
+export const noUsage = (): Usage => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, turns: 0 });
+export const addUsage = (a: Usage, b: Usage): Usage => ({ inputTokens: a.inputTokens + b.inputTokens, outputTokens: a.outputTokens + b.outputTokens, cacheReadTokens: a.cacheReadTokens + b.cacheReadTokens, cacheCreationTokens: a.cacheCreationTokens + b.cacheCreationTokens, turns: a.turns + b.turns });
+
 export interface ClaudeRun {
   calls: ClaudeCall[];
   answer: string;
-  costUsd: number;
+  usage: Usage;
   model: string | null; // the model id the run actually used (the alias `sonnet` or `haiku` resolves to one)
   plugins: string[];
   mcp: string[];
@@ -69,13 +81,26 @@ export function runClaude(o: ClaudeOptions): ClaudeRun {
   return {
     calls,
     answer: String(final?.result ?? ''),
-    costUsd: Number(final?.total_cost_usd ?? 0),
+    usage: usageOf(final),
     model: typeof init?.model === 'string' ? init.model : null,
     plugins: (init?.plugins ?? []).map((p: { name: string }) => p.name),
     mcp: (init?.mcp_servers ?? []).map((m: { name: string; status: string }) => `${m.name}:${m.status}`),
     ok: final !== undefined && final.is_error !== true,
     ...(final === undefined ? { error: (r.stderr ?? '').slice(0, 300) || 'no result event' } : {}),
   };
+}
+
+/** Tokens across every model the run used (helpers included), from the result event's modelUsage. */
+function usageOf(final: Record<string, any> | undefined): Usage {
+  const u = noUsage();
+  for (const m of Object.values((final?.modelUsage ?? {}) as Record<string, Record<string, number>>)) {
+    u.inputTokens += m.inputTokens ?? 0;
+    u.outputTokens += m.outputTokens ?? 0;
+    u.cacheReadTokens += m.cacheReadInputTokens ?? 0;
+    u.cacheCreationTokens += m.cacheCreationInputTokens ?? 0;
+  }
+  u.turns = Number(final?.num_turns ?? 0);
+  return u;
 }
 
 const VERB_REQUESTS = new Set(['class', 'scan', 'drill', 'loop', 'view', 'replay']);
