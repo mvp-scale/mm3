@@ -11,7 +11,7 @@
  * So does StoreError: a filesystem failure under .mm3/ (not writable, a folder where a file should be),
  * turned into one clean line instead of a raw errno and a machine path.
  */
-import { closeSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeSync } from 'node:fs';
+import { closeSync, fstatSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeSync } from 'node:fs';
 import path from 'node:path';
 
 export class LockError extends Error {
@@ -65,18 +65,25 @@ const DEAD_PID_GRACE_MS = 2000;
 const ORPHAN_BREAK_MS = 2000;
 
 const errno = (e: unknown): string | undefined => (e as NodeJS.ErrnoException | undefined)?.code;
+
+/** True when a failed read means "no such file" (missing, or a parent that is not a folder): the one failure callers treat as an empty answer. */
+export const isAbsent = (e: unknown): boolean => errno(e) === 'ENOENT' || errno(e) === 'ENOTDIR';
 const notALock = (lockPath: string): StoreError => new StoreError(`✖ files: ${shownStore(lockPath)} is not a lock file → remove it`);
 
 /** The lock's pid text and age, or undefined when it is gone. Anything but a readable regular file is a StoreError. */
 function readLock(lockPath: string): { body: string; ageMs: number } | undefined {
+  let fd: number | undefined;
   try {
-    const st = statSync(lockPath);
+    fd = openSync(lockPath, 'r'); // open once, then look at that same file: no check-then-use gap
+    const st = fstatSync(fd);
     if (!st.isFile()) throw notALock(lockPath);
-    return { body: readFileSync(lockPath, 'utf8'), ageMs: Date.now() - st.mtimeMs };
+    return { body: readFileSync(fd, 'utf8'), ageMs: Date.now() - st.mtimeMs };
   } catch (e) {
     if (e instanceof StoreError) throw e;
     if (errno(e) === 'ENOENT') return undefined;
     throw notALock(lockPath);
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 

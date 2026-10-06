@@ -48,11 +48,11 @@
  *     are the genuinely new things to index here, since they live on each `Category`, not on `mdl`.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { closeSync, existsSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync } from 'node:fs';
+import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync, type Stats } from 'node:fs';
 import type { Category, Gate, Verb } from '../contract/types.ts';
 import { normalizeMdl } from '../contract/mdl-fields.ts';
 import { isContractRun, isRecord, LedgerError, notARecord, shownLog, type ConfigRecord, type ContractRun, type FailedRecord, type LedgerRecord, type OutcomeRecord, type RunRecord } from './log.ts';
-import { withLock } from './lock.ts';
+import { isAbsent, withLock } from './lock.ts';
 import { ensureDir, type Mm3Paths } from './paths.ts';
 import { MIN_NODE_LABEL } from '../util/node-version.ts';
 
@@ -362,6 +362,23 @@ function hashLogRange(logPath: string, from: number, to: number): string {
   }
 }
 
+/** Opens the log once and sizes that same open file (never a stat-then-open pair): the open descriptor and its stat, or undefined when there is no log yet. The caller closes the descriptor. */
+function openLog(logPath: string): { fd: number; st: Stats } | undefined {
+  let fd: number;
+  try {
+    fd = openSync(logPath, 'r');
+  } catch (e) {
+    if (isAbsent(e)) return undefined;
+    throw e;
+  }
+  try {
+    return { fd, st: fstatSync(fd) };
+  } catch (e) {
+    closeSync(fd);
+    throw e;
+  }
+}
+
 /**
  * Reads one line of log.jsonl starting at `offset` (to the next \n, or EOF) and parses it, or returns undefined
  * if it can't: `offset` at or past the log's current size, or the bytes there don't parse as JSON. Never an
@@ -378,7 +395,7 @@ export function readRecordAt(logPath: string, offset: number): LedgerRecord | un
     return undefined;
   }
   try {
-    const size = statSync(logPath).size;
+    const size = fstatSync(fd).size;
     if (offset >= size) return undefined; // a stale offset: the log is shorter than the index claims
     let chunkSize = Math.min(4096, size - offset);
     for (;;) {
@@ -612,25 +629,24 @@ function handleFromMemory(state: MemoryState): IndexHandle {
 let memoryCache: { logPath: string; size: number; mtimeMs: number; state: MemoryState } | undefined;
 
 function buildMemoryHandle(paths: Mm3Paths): IndexHandle {
-  const st = existsSync(paths.log) ? statSync(paths.log) : undefined;
-  const size = st?.size ?? 0;
-  const mtimeMs = st ? Math.round(st.mtimeMs) : 0;
-  if (memoryCache && memoryCache.logPath === paths.log && memoryCache.size === size && memoryCache.mtimeMs === mtimeMs) {
-    return handleFromMemory(memoryCache.state);
-  }
-  const state = emptyMemoryState();
-  if (size > 0) {
-    const fd = openSync(paths.log, 'r');
-    try {
-      const result = scanRange(fd, 0, size, memorySink(state), shownLog(paths), 0, 0);
+  const log = openLog(paths.log);
+  try {
+    const size = log?.st.size ?? 0;
+    const mtimeMs = log ? Math.round(log.st.mtimeMs) : 0;
+    if (memoryCache && memoryCache.logPath === paths.log && memoryCache.size === size && memoryCache.mtimeMs === mtimeMs) {
+      return handleFromMemory(memoryCache.state);
+    }
+    const state = emptyMemoryState();
+    if (log && size > 0) {
+      const result = scanRange(log.fd, 0, size, memorySink(state), shownLog(paths), 0, 0);
       state.upto = result.upto;
       state.lineCount = result.lineCount;
-    } finally {
-      closeSync(fd);
     }
+    memoryCache = { logPath: paths.log, size, mtimeMs, state };
+    return handleFromMemory(state);
+  } finally {
+    if (log) closeSync(log.fd);
   }
-  memoryCache = { logPath: paths.log, size, mtimeMs, state };
-  return handleFromMemory(state);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1111,18 +1127,13 @@ function rebuildToDisk(paths: Mm3Paths, Db: DatabaseSyncCtor): SqliteDb {
     db.exec('PRAGMA journal_mode = WAL');
     db.exec(SCHEMA_SQL);
     const stmts = prepStatements(db);
-    const size = existsSync(paths.log) ? statSync(paths.log).size : 0;
-    db.exec('BEGIN');
+    const log = openLog(paths.log);
     let result: ScanResult;
-    if (size > 0) {
-      const fd = openSync(paths.log, 'r');
-      try {
-        result = scanRange(fd, 0, size, sqlSink(stmts), shownLog(paths), 0, 0);
-      } finally {
-        closeSync(fd);
-      }
-    } else {
-      result = { upto: 0, lineCount: 0, runsSeen: 0, lastLineStart: 0, lastLineRaw: '' };
+    try {
+      db.exec('BEGIN');
+      result = log && log.st.size > 0 ? scanRange(log.fd, 0, log.st.size, sqlSink(stmts), shownLog(paths), 0, 0) : { upto: 0, lineCount: 0, runsSeen: 0, lastLineStart: 0, lastLineRaw: '' };
+    } finally {
+      if (log) closeSync(log.fd);
     }
     setMeta(db, 'schema_version', String(SCHEMA_VERSION));
     writeMetaStateFull(db, paths.log, result);
@@ -1155,22 +1166,22 @@ function rebuildToDisk(paths: Mm3Paths, Db: DatabaseSyncCtor): SqliteDb {
 function catchUpInPlace(db: SqliteDb, paths: Mm3Paths): void {
   const stmts = prepStatements(db);
   const before = readMetaState(db);
-  const size = existsSync(paths.log) ? statSync(paths.log).size : 0;
-  if (size <= before.upto) return; // caught up already (another process got there first), or nothing new
-  db.exec('BEGIN');
+  const log = openLog(paths.log);
+  if (!log) return; // no log: nothing new
   try {
-    const fd = openSync(paths.log, 'r');
-    let result: ScanResult;
+    const size = log.st.size;
+    if (size <= before.upto) return; // caught up already (another process got there first), or nothing new
+    db.exec('BEGIN');
     try {
-      result = scanRange(fd, before.upto, size, sqlSink(stmts), shownLog(paths), before.upto, before.lineCount);
-    } finally {
-      closeSync(fd);
+      const result = scanRange(log.fd, before.upto, size, sqlSink(stmts), shownLog(paths), before.upto, before.lineCount);
+      writeMetaStateCatchUp(db, paths.log, before, result);
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
     }
-    writeMetaStateCatchUp(db, paths.log, before, result);
-    db.exec('COMMIT');
-  } catch (e) {
-    db.exec('ROLLBACK');
-    throw e;
+  } finally {
+    closeSync(log.fd);
   }
 }
 

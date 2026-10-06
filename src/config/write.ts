@@ -6,9 +6,9 @@
  * rather than a plain stringify-the-whole-object round trip — the same idiom src/verbs/template.ts uses for
  * --goal/--where overlays).
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { isScalar, parseDocument } from 'yaml';
-import { onStore } from '../ledger/lock.ts';
+import { isAbsent, onStore } from '../ledger/lock.ts';
 import { ensureDir, type Mm3Paths } from '../ledger/paths.ts';
 import type { Mm3Config } from './defaults.ts';
 
@@ -54,7 +54,12 @@ export function writeConfigOverride(paths: Mm3Paths, patch: DeepPartial<Mm3Confi
   // never an unwrapped errno reaching the agent. The file is the config, so the write is live at once.
   onStore(paths.config, 'write', () => {
     ensureDir(paths);
-    const text = existsSync(paths.config) ? readFileSync(paths.config, 'utf8') : '';
+    let text = '';
+    try {
+      text = readFileSync(paths.config, 'utf8');
+    } catch (e) {
+      if (!isAbsent(e)) throw e; // no config file yet: start one
+    }
     const doc = parseDocument(text, { version: '1.2', schema: 'core' });
     setDeep(doc, [], patch);
     writeFileSync(paths.config, doc.toString());
