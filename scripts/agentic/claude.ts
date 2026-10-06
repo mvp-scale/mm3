@@ -64,7 +64,7 @@ export interface ClaudeOptions {
 /** The environment every agent run gets on top of the caller's: the account's claude.ai connectors (mail, drive, calendar, docs, ...) stay out, so the
  *  agent has MM3 and nothing else. Without this a plugin run loads whatever the logged-in account has, sometimes and not others, which changed the
  *  tools and the instructions an agent saw from one trial to the next. */
-export const isolatedEnv = (extra: Record<string, string> = {}): Record<string, string | undefined> => ({ ...process.env, ENABLE_CLAUDEAI_MCP_SERVERS: 'false', ...extra });
+export const isolatedEnv = (extra: Record<string, string> = {}): Record<string, string | undefined> => ({ ...process.env, ...extra, ENABLE_CLAUDEAI_MCP_SERVERS: 'false' });
 
 /** Any server the agent had besides the plugin under test (the run's `mcp` list, `name:status`). A run with one is not a result. */
 export const strayServers = (mcp: readonly string[]): string[] => mcp.filter((m) => !m.startsWith('plugin:mm3:'));
