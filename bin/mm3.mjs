@@ -7369,7 +7369,7 @@ var require_dist = __commonJS({
 
 // src/cli.ts
 var import_yaml6 = __toESM(require_dist(), 1);
-import { readFileSync as readFileSync23, realpathSync as realpathSync8, statSync as statSync9 } from "node:fs";
+import { readFileSync as readFileSync23, realpathSync as realpathSync8, statSync as statSync5 } from "node:fs";
 import os3 from "node:os";
 import path25 from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
@@ -7475,7 +7475,7 @@ var package_default = {
 };
 
 // src/budget/budget.ts
-import { existsSync as existsSync6, readFileSync as readFileSync6 } from "node:fs";
+import { existsSync as existsSync4, readFileSync as readFileSync6 } from "node:fs";
 
 // src/config/defaults.ts
 function deepFreeze(value) {
@@ -8091,10 +8091,10 @@ function classifierFileConfig(config) {
 
 // src/config/write.ts
 var import_yaml2 = __toESM(require_dist(), 1);
-import { existsSync as existsSync3, readFileSync as readFileSync3, writeFileSync as writeFileSync2 } from "node:fs";
+import { readFileSync as readFileSync3, writeFileSync as writeFileSync2 } from "node:fs";
 
 // src/ledger/lock.ts
-import { closeSync, mkdirSync, openSync, readFileSync as readFileSync2, statSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, fstatSync, mkdirSync, openSync, readFileSync as readFileSync2, statSync, unlinkSync, writeSync } from "node:fs";
 import path from "node:path";
 var LockError = class extends Error {
   constructor(message) {
@@ -8135,16 +8135,21 @@ function isAlive(pid) {
 var DEAD_PID_GRACE_MS = 2e3;
 var ORPHAN_BREAK_MS = 2e3;
 var errno = (e) => e?.code;
+var isAbsent = (e) => errno(e) === "ENOENT" || errno(e) === "ENOTDIR";
 var notALock = (lockPath) => new StoreError(`\u2716 files: ${shownStore(lockPath)} is not a lock file \u2192 remove it`);
 function readLock(lockPath) {
+  let fd;
   try {
-    const st = statSync(lockPath);
+    fd = openSync(lockPath, "r");
+    const st = fstatSync(fd);
     if (!st.isFile()) throw notALock(lockPath);
-    return { body: readFileSync2(lockPath, "utf8"), ageMs: Date.now() - st.mtimeMs };
+    return { body: readFileSync2(fd, "utf8"), ageMs: Date.now() - st.mtimeMs };
   } catch (e) {
     if (e instanceof StoreError) throw e;
     if (errno(e) === "ENOENT") return void 0;
     throw notALock(lockPath);
+  } finally {
+    if (fd !== void 0) closeSync(fd);
   }
 }
 function isStale(lock, staleMs) {
@@ -8243,7 +8248,11 @@ function pathsFor(root) {
 function ensureDir(paths) {
   mkdirSync2(paths.dir, { recursive: true });
   const gitignore = path2.join(paths.dir, ".gitignore");
-  if (!existsSync2(gitignore)) writeFileSync(gitignore, "*\n!config.yaml\n");
+  try {
+    writeFileSync(gitignore, "*\n!config.yaml\n", { flag: "wx" });
+  } catch (e) {
+    if (e.code !== "EEXIST") throw e;
+  }
 }
 function findRoot(cwd) {
   let dir = path2.resolve(cwd);
@@ -8285,7 +8294,12 @@ function setDeep(doc, prefix, value) {
 function writeConfigOverride(paths, patch) {
   onStore(paths.config, "write", () => {
     ensureDir(paths);
-    const text = existsSync3(paths.config) ? readFileSync3(paths.config, "utf8") : "";
+    let text = "";
+    try {
+      text = readFileSync3(paths.config, "utf8");
+    } catch (e) {
+      if (!isAbsent(e)) throw e;
+    }
     const doc = (0, import_yaml2.parseDocument)(text, { version: "1.2", schema: "core" });
     setDeep(doc, [], patch);
     writeFileSync2(paths.config, doc.toString());
@@ -8294,7 +8308,7 @@ function writeConfigOverride(paths, patch) {
 
 // src/ledger/index.ts
 import { createHash, randomBytes as randomBytes2 } from "node:crypto";
-import { closeSync as closeSync3, existsSync as existsSync5, openSync as openSync3, readFileSync as readFileSync5, readSync as readSync2, renameSync, rmSync, statSync as statSync3 } from "node:fs";
+import { closeSync as closeSync3, existsSync as existsSync3, fstatSync as fstatSync3, openSync as openSync3, readFileSync as readFileSync5, readSync as readSync2, renameSync, rmSync, statSync as statSync2 } from "node:fs";
 
 // src/contract/mdl-fields.ts
 var UNKNOWN_VALUE = "unknown";
@@ -8347,7 +8361,7 @@ function normalizeMdl(mdl2) {
 }
 
 // src/ledger/log.ts
-import { accessSync, appendFileSync, closeSync as closeSync2, constants, existsSync as existsSync4, openSync as openSync2, readFileSync as readFileSync4, readSync, statSync as statSync2 } from "node:fs";
+import { accessSync, appendFileSync, closeSync as closeSync2, constants, fstatSync as fstatSync2, openSync as openSync2, readFileSync as readFileSync4, readSync } from "node:fs";
 import path3 from "node:path";
 
 // src/ledger/ids.ts
@@ -8408,7 +8422,14 @@ function isRecord(v) {
 }
 var shownLog = (paths) => path3.relative(paths.root, paths.log).split(path3.sep).join("/");
 function readLedger(paths, opts = {}) {
-  const text = onStore(paths.log, "read", () => existsSync4(paths.log) ? readFileSync4(paths.log, "utf8") : "");
+  const text = onStore(paths.log, "read", () => {
+    try {
+      return readFileSync4(paths.log, "utf8");
+    } catch (e) {
+      if (isAbsent(e)) return "";
+      throw e;
+    }
+  });
   const shown2 = shownLog(paths);
   const records = [];
   const lines = text.split("\n");
@@ -8431,12 +8452,17 @@ function readLedger(paths, opts = {}) {
   return records;
 }
 function checkTail(paths, upto, lineCount) {
-  if (!existsSync4(paths.log)) return;
-  const size = statSync2(paths.log).size;
-  if (size <= upto) return;
-  const fd = openSync2(paths.log, "r");
+  let fd;
+  try {
+    fd = openSync2(paths.log, "r");
+  } catch (e) {
+    if (isAbsent(e)) return;
+    throw e;
+  }
   let raw;
   try {
+    const size = fstatSync2(fd).size;
+    if (size <= upto) return;
     const buf = Buffer.alloc(size - upto);
     let got = 0;
     while (got < buf.length) {
@@ -8465,19 +8491,26 @@ function checkLedger(paths) {
       const at = withIndex(paths, (h) => ({ upto: h.upto(), lineCount: h.lineCount() }));
       checkTail(paths, at.upto, at.lineCount);
     });
-    if (existsSync4(paths.log)) onStore(paths.log, "write", () => accessSync(paths.log, constants.W_OK));
+    onStore(paths.log, "write", () => {
+      try {
+        accessSync(paths.log, constants.W_OK);
+      } catch (e) {
+        if (!isAbsent(e)) throw e;
+      }
+    });
   });
 }
 function logEndsCleanly(logPath) {
-  let size;
+  let fd;
   try {
-    size = statSync2(logPath).size;
-  } catch {
-    return true;
+    fd = openSync2(logPath, "r");
+  } catch (e) {
+    if (isAbsent(e)) return true;
+    throw e;
   }
-  if (size === 0) return true;
-  const fd = openSync2(logPath, "r");
   try {
+    const size = fstatSync2(fd).size;
+    if (size === 0) return true;
     const buf = Buffer.alloc(1);
     const got = readSync(fd, buf, 0, 1, size - 1);
     return got === 1 && buf[0] === 10;
@@ -8737,6 +8770,21 @@ function hashLogRange(logPath, from, to) {
     closeSync3(fd);
   }
 }
+function openLog(logPath) {
+  let fd;
+  try {
+    fd = openSync3(logPath, "r");
+  } catch (e) {
+    if (isAbsent(e)) return void 0;
+    throw e;
+  }
+  try {
+    return { fd, st: fstatSync3(fd) };
+  } catch (e) {
+    closeSync3(fd);
+    throw e;
+  }
+}
 function readRecordAt(logPath, offset) {
   if (offset < 0) return void 0;
   let fd;
@@ -8746,7 +8794,7 @@ function readRecordAt(logPath, offset) {
     return void 0;
   }
   try {
-    const size = statSync3(logPath).size;
+    const size = fstatSync3(fd).size;
     if (offset >= size) return void 0;
     let chunkSize = Math.min(4096, size - offset);
     for (; ; ) {
@@ -8920,25 +8968,24 @@ function handleFromMemory(state) {
 }
 var memoryCache;
 function buildMemoryHandle(paths) {
-  const st = existsSync5(paths.log) ? statSync3(paths.log) : void 0;
-  const size = st?.size ?? 0;
-  const mtimeMs = st ? Math.round(st.mtimeMs) : 0;
-  if (memoryCache && memoryCache.logPath === paths.log && memoryCache.size === size && memoryCache.mtimeMs === mtimeMs) {
-    return handleFromMemory(memoryCache.state);
-  }
-  const state = emptyMemoryState();
-  if (size > 0) {
-    const fd = openSync3(paths.log, "r");
-    try {
-      const result = scanRange(fd, 0, size, memorySink(state), shownLog(paths), 0, 0);
+  const log = openLog(paths.log);
+  try {
+    const size = log?.st.size ?? 0;
+    const mtimeMs = log ? Math.round(log.st.mtimeMs) : 0;
+    if (memoryCache && memoryCache.logPath === paths.log && memoryCache.size === size && memoryCache.mtimeMs === mtimeMs) {
+      return handleFromMemory(memoryCache.state);
+    }
+    const state = emptyMemoryState();
+    if (log && size > 0) {
+      const result = scanRange(log.fd, 0, size, memorySink(state), shownLog(paths), 0, 0);
       state.upto = result.upto;
       state.lineCount = result.lineCount;
-    } finally {
-      closeSync3(fd);
     }
+    memoryCache = { logPath: paths.log, size, mtimeMs, state };
+    return handleFromMemory(state);
+  } finally {
+    if (log) closeSync3(log.fd);
   }
-  memoryCache = { logPath: paths.log, size, mtimeMs, state };
-  return handleFromMemory(state);
 }
 var SCHEMA_VERSION = 8;
 var SCHEMA_SQL = `
@@ -9237,12 +9284,12 @@ function tmpDbPath(dbPath) {
 }
 function rmDbFiles(dbPath) {
   for (const f of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
-    if (existsSync5(f)) rmSync(f, { force: true });
+    if (existsSync3(f)) rmSync(f, { force: true });
   }
 }
 function rmSiblingWalShm(dbPath) {
   for (const f of [`${dbPath}-wal`, `${dbPath}-shm`]) {
-    if (existsSync5(f)) rmSync(f, { force: true });
+    if (existsSync3(f)) rmSync(f, { force: true });
   }
 }
 function rebuildToDisk(paths, Db) {
@@ -9254,18 +9301,13 @@ function rebuildToDisk(paths, Db) {
     db.exec("PRAGMA journal_mode = WAL");
     db.exec(SCHEMA_SQL);
     const stmts = prepStatements(db);
-    const size = existsSync5(paths.log) ? statSync3(paths.log).size : 0;
-    db.exec("BEGIN");
+    const log = openLog(paths.log);
     let result;
-    if (size > 0) {
-      const fd = openSync3(paths.log, "r");
-      try {
-        result = scanRange(fd, 0, size, sqlSink(stmts), shownLog(paths), 0, 0);
-      } finally {
-        closeSync3(fd);
-      }
-    } else {
-      result = { upto: 0, lineCount: 0, runsSeen: 0, lastLineStart: 0, lastLineRaw: "" };
+    try {
+      db.exec("BEGIN");
+      result = log && log.st.size > 0 ? scanRange(log.fd, 0, log.st.size, sqlSink(stmts), shownLog(paths), 0, 0) : { upto: 0, lineCount: 0, runsSeen: 0, lastLineStart: 0, lastLineRaw: "" };
+    } finally {
+      if (log) closeSync3(log.fd);
     }
     setMeta(db, "schema_version", String(SCHEMA_VERSION));
     writeMetaStateFull(db, paths.log, result);
@@ -9276,9 +9318,9 @@ function rebuildToDisk(paths, Db) {
     throw e;
   }
   db.close();
-  if (existsSync5(paths.index)) {
+  if (existsSync3(paths.index)) {
     try {
-      if (statSync3(paths.index).isDirectory()) rmSync(paths.index, { recursive: true, force: true });
+      if (statSync2(paths.index).isDirectory()) rmSync(paths.index, { recursive: true, force: true });
     } catch {
     }
   }
@@ -9289,22 +9331,22 @@ function rebuildToDisk(paths, Db) {
 function catchUpInPlace(db, paths) {
   const stmts = prepStatements(db);
   const before = readMetaState(db);
-  const size = existsSync5(paths.log) ? statSync3(paths.log).size : 0;
-  if (size <= before.upto) return;
-  db.exec("BEGIN");
+  const log = openLog(paths.log);
+  if (!log) return;
   try {
-    const fd = openSync3(paths.log, "r");
-    let result;
+    const size = log.st.size;
+    if (size <= before.upto) return;
+    db.exec("BEGIN");
     try {
-      result = scanRange(fd, before.upto, size, sqlSink(stmts), shownLog(paths), before.upto, before.lineCount);
-    } finally {
-      closeSync3(fd);
+      const result = scanRange(log.fd, before.upto, size, sqlSink(stmts), shownLog(paths), before.upto, before.lineCount);
+      writeMetaStateCatchUp(db, paths.log, before, result);
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
     }
-    writeMetaStateCatchUp(db, paths.log, before, result);
-    db.exec("COMMIT");
-  } catch (e) {
-    db.exec("ROLLBACK");
-    throw e;
+  } finally {
+    closeSync3(log.fd);
   }
 }
 function sizeLooksSane(db, dbPath) {
@@ -9312,7 +9354,7 @@ function sizeLooksSane(db, dbPath) {
     const pageCount = Number(db.prepare("PRAGMA page_count").get()?.page_count ?? -1);
     const pageSize = Number(db.prepare("PRAGMA page_size").get()?.page_size ?? -1);
     if (!(pageCount >= 0) || !(pageSize > 0)) return false;
-    return pageCount * pageSize === statSync3(dbPath).size;
+    return pageCount * pageSize === statSync2(dbPath).size;
   } catch {
     return false;
   }
@@ -9326,7 +9368,7 @@ function quickCheckOk(db) {
   }
 }
 function tryOpenAndCheck(paths, Db) {
-  if (!existsSync5(paths.index)) return { ok: false };
+  if (!existsSync3(paths.index)) return { ok: false };
   let db;
   try {
     db = new Db(paths.index);
@@ -9337,7 +9379,7 @@ function tryOpenAndCheck(paths, Db) {
     if (!sizeLooksSane(db, paths.index) && !quickCheckOk(db)) return { ok: false, db };
     if (getMeta(db, "schema_version") !== String(SCHEMA_VERSION)) return { ok: false, db };
     const { upto } = readMetaState(db);
-    const size = existsSync5(paths.log) ? statSync3(paths.log).size : 0;
+    const size = existsSync3(paths.log) ? statSync2(paths.log).size : 0;
     if (size < upto) return { ok: false, db };
     const fpStart = Number(getMeta(db, "fp_start") ?? "0");
     const storedFp = getMeta(db, "fingerprint") ?? "";
@@ -9380,7 +9422,7 @@ function ensureFreshDb(paths, Db, opts) {
   return withLockIfNeeded(paths.lock, () => refreshUnderLock(paths, Db));
 }
 function withIndex(paths, fn, opts = {}) {
-  const logStat = existsSync5(paths.log) ? statSync3(paths.log) : void 0;
+  const logStat = existsSync3(paths.log) ? statSync2(paths.log) : void 0;
   if (!logStat || logStat.size === 0) return fn(handleFromMemory(emptyMemoryState()));
   return runSqlite(paths, fn, { forceRebuild: opts.forceRebuild ?? false, readOnly: opts.readOnly ?? false });
 }
@@ -9429,7 +9471,7 @@ function moneyLeft(left, cap, spent) {
 var EPOCH = iso2(0);
 var AGENT_POINTER = "\n\u2192 see: mm3 agent budget";
 function readLegacyBudgetJson(paths) {
-  if (!existsSync6(paths.budget)) return void 0;
+  if (!existsSync4(paths.budget)) return void 0;
   try {
     const v = JSON.parse(readFileSync6(paths.budget, "utf8"));
     const capUsd = v.capUsd;
@@ -10025,7 +10067,7 @@ function providerIdentity(env = process.env, deps = {}) {
 }
 
 // src/config/config.ts
-import { existsSync as existsSync8, readdirSync, readFileSync as readFileSync9, writeFileSync as writeFileSync4 } from "node:fs";
+import { existsSync as existsSync6, readdirSync, readFileSync as readFileSync9, writeFileSync as writeFileSync4 } from "node:fs";
 import path5 from "node:path";
 
 // src/contract/emit.ts
@@ -10075,11 +10117,11 @@ function emit(doc) {
 
 // src/config/receipt.ts
 import { createHash as createHash2 } from "node:crypto";
-import { existsSync as existsSync7, readFileSync as readFileSync8 } from "node:fs";
+import { existsSync as existsSync5, readFileSync as readFileSync8 } from "node:fs";
 var fingerprintOf = (text) => createHash2("sha256").update(text).digest("hex");
 function configStatus(paths) {
   let text;
-  if (paths && existsSync7(paths.config)) {
+  if (paths && existsSync5(paths.config)) {
     try {
       text = readFileSync8(paths.config, "utf8");
     } catch {
@@ -10217,7 +10259,7 @@ function formatConfig(resolved, projectLine2, extraNotes = []) {
 `;
 }
 function nearMissNotes(paths) {
-  if (!paths || existsSync8(paths.config)) return [];
+  if (!paths || existsSync6(paths.config)) return [];
   let names;
   try {
     names = readdirSync(paths.dir);
@@ -10367,7 +10409,7 @@ function runConfigWrite(paths, projectLine2) {
   const label = configFileLabel(projectLine2);
   const exists = { exit: 0, text: `config: ${label} already exists \u2192 not overwritten; edit it, then run mm3 config --load to activate the change
 ` };
-  if (existsSync8(paths.config)) return exists;
+  if (existsSync6(paths.config)) return exists;
   const wrote = onStore(paths.config, "write", () => {
     ensureDir(paths);
     try {
@@ -10424,7 +10466,7 @@ function loadAbsent(paths, now) {
 function runConfigLoad(paths, file, cwd, projectLine2, now = Date.now()) {
   if (!paths) return { exit: 2, text: "\u2716 config: no project here \u2192 run inside a project (a folder with .git or .mm3), or set MM3_HOME" };
   const label = configFileLabel(projectLine2);
-  if (file === void 0 && !existsSync8(paths.config)) return loadAbsent(paths, now);
+  if (file === void 0 && !existsSync6(paths.config)) return loadAbsent(paths, now);
   const source = file === void 0 ? paths.config : path5.resolve(cwd, file);
   let text;
   try {
@@ -10477,7 +10519,7 @@ not loaded: nothing was recorded
 import readline from "node:readline";
 
 // src/setup/plugin.ts
-import { existsSync as existsSync9, rmSync as rmSync2 } from "node:fs";
+import { existsSync as existsSync7, rmSync as rmSync2 } from "node:fs";
 import os from "node:os";
 import path6 from "node:path";
 var SCOPES = ["user", "project", "local"];
@@ -10521,7 +10563,7 @@ function pluginCacheDir(homeDir = os.homedir()) {
 }
 function removePluginCacheDir(homeDir = os.homedir()) {
   const dir = pluginCacheDir(homeDir);
-  if (!existsSync9(dir)) return false;
+  if (!existsSync7(dir)) return false;
   rmSync2(dir, { recursive: true, force: true });
   return true;
 }
@@ -11709,7 +11751,7 @@ function runMcpServer(io, runOne, serverVersion) {
 }
 
 // src/setup/env-file.ts
-import { chmodSync, existsSync as existsSync10, mkdirSync as mkdirSync4, readFileSync as readFileSync10, rmSync as rmSync3, statSync as statSync4, writeFileSync as writeFileSync5 } from "node:fs";
+import { chmodSync, closeSync as closeSync4, fchmodSync, fstatSync as fstatSync4, mkdirSync as mkdirSync4, openSync as openSync4, readFileSync as readFileSync10, rmSync as rmSync3, writeFileSync as writeFileSync5 } from "node:fs";
 import os2 from "node:os";
 import path7 from "node:path";
 var ALLOWED_NAMES = ["TYPESAFE_API_KEY", "AI_GATEWAY_API_KEY", "TYPESAFE_BASE_URL", "JEV_MODEL", "JEV_GATEWAY_MODEL", "MM3_PROVIDER"];
@@ -11723,14 +11765,17 @@ function envFilePath(env = process.env) {
   return path7.join(mm3ConfigDir(env), "env");
 }
 function readEnvFile(file) {
-  if (!existsSync10(file)) return void 0;
   let mode;
   let raw;
+  let fd;
   try {
-    mode = statSync4(file).mode & 511;
-    raw = readFileSync10(file, "utf8");
+    fd = openSync4(file, "r");
+    mode = fstatSync4(fd).mode & 511;
+    raw = readFileSync10(fd, "utf8");
   } catch {
     return void 0;
+  } finally {
+    if (fd !== void 0) closeSync4(fd);
   }
   const values = {};
   let ignoredLines = 0;
@@ -11747,12 +11792,29 @@ function readEnvFile(file) {
   return { values, mode, ignoredLines };
 }
 var canQuote = (value) => !value.includes("'");
+function readLines(file) {
+  try {
+    return readFileSync10(file, "utf8").split("\n");
+  } catch (e) {
+    if (isAbsent(e)) return void 0;
+    throw e;
+  }
+}
+function writeSecret(file, text) {
+  const fd = openSync4(file, "w", 384);
+  try {
+    fchmodSync(fd, 384);
+    writeFileSync5(fd, text);
+  } finally {
+    closeSync4(fd);
+  }
+}
 function setEnvFileValue(file, name, value) {
   if (!canQuote(value)) throw new Error(`env-file: "${name}"'s value contains a single quote, which this file format can't represent`);
   const dir = path7.dirname(file);
   mkdirSync4(dir, { recursive: true });
   chmodSync(dir, 448);
-  const existing = existsSync10(file) ? readFileSync10(file, "utf8").split("\n") : [];
+  const existing = readLines(file) ?? [];
   const newLine = `export ${name}='${value}'`;
   let replaced = false;
   const next = existing.map((line3) => {
@@ -11764,13 +11826,12 @@ function setEnvFileValue(file, name, value) {
     return line3;
   });
   if (!replaced) next.push(newLine);
-  writeFileSync5(file, `${next.join("\n").replace(/\n+$/u, "")}
+  writeSecret(file, `${next.join("\n").replace(/\n+$/u, "")}
 `);
-  chmodSync(file, 384);
 }
 function removeEnvFileValue(file, name) {
-  if (!existsSync10(file)) return "absent";
-  const lines = readFileSync10(file, "utf8").split("\n");
+  const lines = readLines(file);
+  if (lines === void 0) return "absent";
   let found = false;
   const next = lines.filter((line3) => {
     const m2 = EXPORT_LINE.exec(line3);
@@ -11785,9 +11846,8 @@ function removeEnvFileValue(file, name) {
     rmSync3(file, { force: true });
     return "file-removed";
   }
-  writeFileSync5(file, `${next.join("\n").replace(/\n+$/u, "")}
+  writeSecret(file, `${next.join("\n").replace(/\n+$/u, "")}
 `);
-  chmodSync(file, 384);
   return "removed";
 }
 function looseFileModeWarning(file, mode) {
@@ -11854,20 +11914,20 @@ function removeStoredKey(runner, platform, env) {
 }
 
 // src/setup/init.ts
-import { existsSync as existsSync15, mkdirSync as mkdirSync6, readFileSync as readFileSync16, realpathSync as realpathSync2, writeFileSync as writeFileSync7 } from "node:fs";
+import { existsSync as existsSync12, mkdirSync as mkdirSync6, readFileSync as readFileSync16, realpathSync as realpathSync2, writeFileSync as writeFileSync7 } from "node:fs";
 import path13 from "node:path";
 
 // src/verbs/doctor.ts
 var import_yaml4 = __toESM(require_dist(), 1);
-import { existsSync as existsSync14, readFileSync as readFileSync15, realpathSync } from "node:fs";
+import { existsSync as existsSync11, readFileSync as readFileSync15, realpathSync } from "node:fs";
 import path12 from "node:path";
 
 // src/setup/agents-status.ts
-import { existsSync as existsSync12, readFileSync as readFileSync12 } from "node:fs";
+import { existsSync as existsSync9, readFileSync as readFileSync12 } from "node:fs";
 import path9 from "node:path";
 
 // src/setup/agents-file.ts
-import { existsSync as existsSync11, readFileSync as readFileSync11 } from "node:fs";
+import { existsSync as existsSync8, readFileSync as readFileSync11 } from "node:fs";
 import path8 from "node:path";
 var AGENTS_OPEN = "<!-- mm3:agents -->";
 var AGENTS_CLOSE = "<!-- /mm3:agents -->";
@@ -11889,7 +11949,7 @@ function findBlock(text) {
 }
 var read = (root, rel) => {
   const p = path8.join(root, rel);
-  return existsSync11(p) ? readFileSync11(p, "utf8") : void 0;
+  return existsSync8(p) ? readFileSync11(p, "utf8") : void 0;
 };
 var endWithNewline = (s) => s === "" || s.endsWith("\n") ? s : `${s}
 `;
@@ -11928,7 +11988,7 @@ function planAgents(root) {
 }
 
 // src/setup/agents-status.ts
-var read2 = (file) => existsSync12(file) ? readFileSync12(file, "utf8") : void 0;
+var read2 = (file) => existsSync9(file) ? readFileSync12(file, "utf8") : void 0;
 function agentsState(root) {
   const agents = read2(path9.join(root, AGENTS_FILE));
   if (agents === void 0 || typeof findBlock(agents) === "string") return "no-block";
@@ -11951,7 +12011,7 @@ function agentsNote(paths) {
 }
 
 // src/setup/install-record.ts
-import { existsSync as existsSync13, mkdirSync as mkdirSync5, readFileSync as readFileSync13, rmSync as rmSync4, writeFileSync as writeFileSync6 } from "node:fs";
+import { existsSync as existsSync10, mkdirSync as mkdirSync5, readFileSync as readFileSync13, rmSync as rmSync4, writeFileSync as writeFileSync6 } from "node:fs";
 import path10 from "node:path";
 function installRecordPath(env = process.env) {
   return path10.join(mm3ConfigDir(env), "install.json");
@@ -11963,7 +12023,7 @@ function isInstallRecord(v) {
 }
 function readInstallRecord(env = process.env) {
   const file = installRecordPath(env);
-  if (!existsSync13(file)) return void 0;
+  if (!existsSync10(file)) return void 0;
   try {
     const parsed = JSON.parse(readFileSync13(file, "utf8"));
     return isInstallRecord(parsed) ? parsed : void 0;
@@ -11979,11 +12039,11 @@ function writeInstallRecord(env, record2) {
 }
 function clearInstallRecord(env = process.env) {
   const file = installRecordPath(env);
-  if (existsSync13(file)) rmSync4(file, { force: true });
+  if (existsSync10(file)) rmSync4(file, { force: true });
 }
 
 // src/setup/npm-info.ts
-import { accessSync as accessSync2, constants as constants2, readFileSync as readFileSync14, statSync as statSync5 } from "node:fs";
+import { accessSync as accessSync2, constants as constants2, readFileSync as readFileSync14, statSync as statSync3 } from "node:fs";
 import path11 from "node:path";
 function findOnPath(name, env = process.env, platform = process.platform) {
   const pathVar = env.PATH ?? env.Path ?? "";
@@ -11993,7 +12053,7 @@ function findOnPath(name, env = process.env, platform = process.platform) {
     for (const ext of exts) {
       const candidate = path11.join(dir, name + ext);
       try {
-        if (statSync5(candidate).isFile()) return candidate;
+        if (statSync3(candidate).isFile()) return candidate;
       } catch {
       }
     }
@@ -12630,7 +12690,7 @@ function versionOnPath(bin) {
     let dir = path12.dirname(realpathSync(bin));
     for (let i = 0; i < 6; i++) {
       const pj = path12.join(dir, "package.json");
-      if (existsSync14(pj)) {
+      if (existsSync11(pj)) {
         const meta = JSON.parse(readFileSync15(pj, "utf8"));
         return meta.name === "@mvpscale/mm3" ? meta.version : void 0;
       }
@@ -12830,13 +12890,13 @@ function failed(what, r, fallback) {
   if (missing) return `${what} failed (${missing} was not found on PATH) \u2192 install ${missing === "npm" ? "Node.js, which includes npm" : missing}, then re-run "mm3 init"`;
   return `${what} failed \u2192 ${firstLine(r.stderr) || fallback}`;
 }
-var insideGitProject = (cwd) => existsSync15(path13.join(cwd, ".git"));
+var insideGitProject = (cwd) => existsSync12(path13.join(cwd, ".git"));
 function isPackageBin(binPath, pkgName) {
   try {
     let dir = path13.dirname(realpathSync2(binPath));
     for (let i = 0; i < 6; i++) {
       const pj = path13.join(dir, "package.json");
-      if (existsSync15(pj)) {
+      if (existsSync12(pj)) {
         const meta = JSON.parse(readFileSync16(pj, "utf8"));
         return meta.name === pkgName;
       }
@@ -12850,7 +12910,7 @@ function isPackageBin(binPath, pkgName) {
   return false;
 }
 function defaultMode(cwd, prefixWritable) {
-  if (existsSync15(path13.join(cwd, "package.json"))) return "local";
+  if (existsSync12(path13.join(cwd, "package.json"))) return "local";
   return prefixWritable ? "global" : "user";
 }
 function isNpxCache(binPath) {
@@ -12942,7 +13002,7 @@ async function stepPlugin(flags, ctx) {
 }
 function stepProject(ctx) {
   const paths = pathsFor(ctx.cwd);
-  const already = existsSync15(paths.dir);
+  const already = existsSync12(paths.dir);
   ensureDir(paths);
   return [line(already ? "already" : "done", "project", `${already ? "already has" : "created"} .mm3/ (self-ignoring: .mm3/.gitignore)`)];
 }
@@ -13024,7 +13084,7 @@ var realRunner = (cmd, args2, opts = {}) => {
 };
 
 // src/setup/uninstall.ts
-import { existsSync as existsSync16, realpathSync as realpathSync3, rmSync as rmSync5 } from "node:fs";
+import { existsSync as existsSync13, realpathSync as realpathSync3, rmSync as rmSync5 } from "node:fs";
 import path14 from "node:path";
 var GLYPH2 = { done: "\u2714", already: "\xB7", skipped: "\u2013", problem: "\u2716" };
 var line2 = (status, label, text) => `${GLYPH2[status]} ${label}: ${text}`;
@@ -13052,7 +13112,7 @@ async function stepPlugin2(flags, ctx, manual) {
   const status = pluginStatus(ctx.runner);
   const scopesToRemove = flags.all ? status.scopes : status.scopes.filter((s) => s === "project");
   const marketplace = flags.all && marketplaceExists(ctx.runner);
-  const cacheDirExists = flags.all && existsSync16(pluginCacheDir(ctx.homeDir));
+  const cacheDirExists = flags.all && existsSync13(pluginCacheDir(ctx.homeDir));
   if (!scopesToRemove.length && !marketplace && !cacheDirExists) return [line2("already", "plugin", "nothing to remove here")];
   const manualCmds = [
     ...scopesToRemove.map((s) => `claude plugin uninstall mm3@mvp-scale --scope ${s}`),
@@ -13116,7 +13176,7 @@ async function stepKey2(flags, ctx, manual) {
 async function stepData(flags, ctx, manual) {
   if (flags.keepData) return [line2("skipped", "project", "skipped (--keep-data)")];
   const dir = `${ctx.cwd}/.mm3`;
-  if (!existsSync16(dir)) return [line2("already", "project", "no .mm3/ here")];
+  if (!existsSync13(dir)) return [line2("already", "project", "no .mm3/ here")];
   const remove = flags.yes ? false : await confirm("Remove this project's .mm3/ (your run history)? This cannot be undone.", false, ctx.io);
   if (!remove) {
     manual.push(`project data: rm -rf ${dir}`);
@@ -13126,7 +13186,7 @@ async function stepData(flags, ctx, manual) {
     rmSync5(dir, { recursive: true, force: true });
   } catch {
   }
-  if (existsSync16(dir)) {
+  if (existsSync13(dir)) {
     manual.push(`project data: rm -rf ${dir}`);
     return [line2("problem", "project", `could not remove ${dir} \u2192 remove it by hand: rm -rf ${dir}`)];
   }
@@ -13325,11 +13385,11 @@ function itemsState(items, notes, limits = ITEM_LIMITS) {
 
 // src/evidence/git.ts
 import { spawnSync } from "node:child_process";
-import { readFileSync as readFileSync18, realpathSync as realpathSync5, statSync as statSync7 } from "node:fs";
+import { closeSync as closeSync6, fstatSync as fstatSync6, openSync as openSync6, readFileSync as readFileSync18, realpathSync as realpathSync5 } from "node:fs";
 import path17 from "node:path";
 
 // src/evidence/code.ts
-import { readFileSync as readFileSync17, realpathSync as realpathSync4, statSync as statSync6 } from "node:fs";
+import { closeSync as closeSync5, fstatSync as fstatSync5, openSync as openSync5, readFileSync as readFileSync17, realpathSync as realpathSync4 } from "node:fs";
 import path16 from "node:path";
 
 // src/evidence/paths.ts
@@ -13374,19 +13434,23 @@ function readCodeEvidence(root, where, opts = {}) {
       continue;
     }
     let text;
+    let fd;
     try {
       if (isOutside(path16.relative(realpathSync4(root), realpathSync4(full)))) {
         errors.push(outside);
         continue;
       }
-      if (statSync6(full).isDirectory()) {
+      fd = openSync5(full, "r");
+      if (fstatSync5(fd).isDirectory()) {
         errors.push(`\u2716 mak.where: "${rawPath}" is a folder \u2192 name a file (scan covers folders)`);
         continue;
       }
-      text = readFileSync17(full, "utf8");
+      text = readFileSync17(fd, "utf8");
     } catch {
       errors.push(`\u2716 mak.where: cannot read "${rawPath}" \u2192 check the path`);
       continue;
+    } finally {
+      if (fd !== void 0) closeSync5(fd);
     }
     const shown2 = `${rel.split(path16.sep).join("/")}${lines ? `:${lines}` : ""}`;
     let body = redact(range ? text.split("\n").slice(range.start - 1, range.end).join("\n") : text);
@@ -13511,19 +13575,23 @@ function readGitEvidence(root, ref, field, paths, deps) {
     const shown2 = rel.split(path17.sep).join("/");
     if (ref === "worktree") {
       let text;
+      let fd;
       try {
         if (isOutside(path17.relative(realpathSync5(root), realpathSync5(full)))) {
           errors.push(outside);
           continue;
         }
-        if (statSync7(full).isDirectory()) {
+        fd = openSync6(full, "r");
+        if (fstatSync6(fd).isDirectory()) {
           errors.push(`\u2716 mak.compare.${field}: "${rawPath}" is a folder \u2192 name a file`);
           continue;
         }
-        text = readFileSync18(full, "utf8");
+        text = readFileSync18(fd, "utf8");
       } catch {
         errors.push(`\u2716 mak.compare.${field}: cannot read "${rawPath}" \u2192 check the path`);
         continue;
+      } finally {
+        if (fd !== void 0) closeSync6(fd);
       }
       read3 = true;
       const kept2 = keep(shown2, text, total, notes, caps);
@@ -15668,7 +15736,7 @@ async function runLoop(text, ctx) {
 }
 
 // src/ledger/graph.ts
-import { existsSync as existsSync17, readFileSync as readFileSync20, statSync as statSync8 } from "node:fs";
+import { existsSync as existsSync14, readFileSync as readFileSync20, statSync as statSync4 } from "node:fs";
 var GRAPH_SCHEMA_VERSION = "2";
 var GRAPH_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS nodes (
@@ -15880,7 +15948,7 @@ function scanCompleteLines(buf, from, to) {
   return { consumed: pos, lines };
 }
 function needsCatchUp(paths, logSize) {
-  if (!existsSync17(paths.index)) return true;
+  if (!existsSync14(paths.index)) return true;
   let db;
   try {
     db = openGraphDb(paths.index);
@@ -15904,7 +15972,7 @@ function catchUpGraph(paths, env) {
     db.exec(META_TABLE_SQL);
     if (getMeta2(db, "graph_schema_version") !== GRAPH_SCHEMA_VERSION) resetGraphSchema(db);
     const upto = Number(getMeta2(db, "graph_upto") ?? "0");
-    const size = existsSync17(paths.log) ? statSync8(paths.log).size : 0;
+    const size = existsSync14(paths.log) ? statSync4(paths.log).size : 0;
     if (upto >= size) return;
     const buf = readFileSync20(paths.log);
     const { consumed, lines } = scanCompleteLines(buf, upto, size);
@@ -15936,14 +16004,14 @@ function catchUpGraph(paths, env) {
   }
 }
 function refreshGraph(paths, env = process.env) {
-  const logStat = existsSync17(paths.log) ? statSync8(paths.log) : void 0;
+  const logStat = existsSync14(paths.log) ? statSync4(paths.log) : void 0;
   if (!logStat || logStat.size === 0) return;
   if (!needsCatchUp(paths, logStat.size)) return;
   withLock(paths.lock, () => catchUpGraph(paths, env));
 }
 var EMPTY_NEIGHBORHOOD = { nodes: [], edges: [] };
 function graphAround(paths, opts) {
-  if (!existsSync17(paths.index)) return EMPTY_NEIGHBORHOOD;
+  if (!existsSync14(paths.index)) return EMPTY_NEIGHBORHOOD;
   const db = openGraphDb(paths.index);
   try {
     const label = normalizeLabel(opts.kind, opts.label);
@@ -15986,7 +16054,7 @@ function graphAround(paths, opts) {
   }
 }
 function mdlRows(paths, opts = {}) {
-  if (!existsSync17(paths.index)) return [];
+  if (!existsSync14(paths.index)) return [];
   const db = openGraphDb(paths.index);
   try {
     const limit = Math.min(Math.max(opts.limit ?? 100, 1), 1e3);
@@ -16020,7 +16088,7 @@ function mdlRows(paths, opts = {}) {
   }
 }
 function problemCounts(paths, opts = {}) {
-  if (!existsSync17(paths.index)) return [];
+  if (!existsSync14(paths.index)) return [];
   const db = openGraphDb(paths.index);
   try {
     const limit = Math.min(Math.max(opts.limit ?? 20, 1), 500);
@@ -16044,7 +16112,7 @@ function problemCounts(paths, opts = {}) {
   }
 }
 function callStats(paths, opts = {}) {
-  if (!existsSync17(paths.index)) return [];
+  if (!existsSync14(paths.index)) return [];
   const since = opts.sinceIso ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3).toISOString();
   const limit = Math.min(Math.max(opts.limit ?? 500, 1), 5e3);
   let rows;
@@ -16090,7 +16158,7 @@ var MAX_UNDECLARED_KEYS = 50;
 var MAX_VALUES_PER_KEY = 200;
 var MAX_SAMPLES_PER_KEY = 5;
 function undeclaredFieldSamples(paths, opts) {
-  if (!existsSync17(paths.index)) return [];
+  if (!existsSync14(paths.index)) return [];
   const db = openGraphDb(paths.index);
   try {
     const known = new Set(opts.knownKeys);
@@ -17800,7 +17868,7 @@ var UsageStop = class extends Error {
 };
 var isFolder = (p) => {
   try {
-    return statSync9(p).isDirectory();
+    return statSync5(p).isDirectory();
   } catch {
     return false;
   }
@@ -17839,7 +17907,7 @@ function readRequest(file, stdinSource, maxBytes = DEFAULT_REQUEST_MAX_BYTES) {
   let bytes;
   try {
     if (file !== "-") {
-      const st = statSync9(file);
+      const st = statSync5(file);
       if (st.isDirectory()) return { stop: `\u2716 request: ${shown2} is a folder \u2192 pass a request file, or - to read stdin` };
       if (st.size > maxBytes) return { stop: tooBig(maxBytes) };
     }
