@@ -46,7 +46,7 @@ describe('agentic carry [C-267]', () => {
   });
   it('[C-267] a carry is refused when anything outside the harness, tests, docs and workflows changed since the source commit', () => {
     for (const p of ['src/verbs/class.ts', 'skills/mm3/SKILL.md', 'hooks/x.json', 'bin/mm3.mjs', '.claude-plugin/plugin.json', 'package.json', 'README.md']) {
-      expect(carryProblem(input({ changed: ['scripts/a.ts', p] }))).toMatch(new RegExp(`^✖ carry: ${p.replace(/[.]/gu, '\\.')} changed since CER-0001's commit abc1234, and an agent may run or read it → `, 'u'));
+      expect(carryProblem(input({ changed: ['scripts/a.ts', p] }))).toMatch(new RegExp(`^✖ carry: ${p.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')} changed since CER-0001's commit abc1234, and an agent may run or read it → `, 'u'));
     }
     expect(carryProblem(input({ changed: undefined }))).toMatch(/^✖ carry: cannot list what changed since abc1234 → /u);
   });
