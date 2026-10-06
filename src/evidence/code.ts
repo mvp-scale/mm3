@@ -10,7 +10,7 @@
  * item's own whole-file range — keeps the old truncate-with-a-note behavior, since there's no `where:` for
  * anyone to narrow.
  */
-import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { DEFAULT_CONFIG } from '../config/defaults.ts';
 import { redact } from '../ledger/redact.ts';
@@ -81,20 +81,24 @@ export function readCodeEvidence(root: string, where: readonly string[], opts: R
       continue;
     }
     let text: string;
+    let fd: number | undefined;
     try {
       // Resolve symlinks on both sides: a link inside the project that points outside it is still outside.
       if (isOutside(path.relative(realpathSync(root), realpathSync(full)))) {
         errors.push(outside);
         continue;
       }
-      if (statSync(full).isDirectory()) {
+      fd = openSync(full, 'r'); // open once, then look at that same file: no check-then-use gap
+      if (fstatSync(fd).isDirectory()) {
         errors.push(`✖ mak.where: "${rawPath}" is a folder → name a file (scan covers folders)`);
         continue;
       }
-      text = readFileSync(full, 'utf8');
+      text = readFileSync(fd, 'utf8');
     } catch {
       errors.push(`✖ mak.where: cannot read "${rawPath}" → check the path`);
       continue;
+    } finally {
+      if (fd !== undefined) closeSync(fd);
     }
     const shown = `${rel.split(path.sep).join('/')}${lines ? `:${lines}` : ''}`;
     let body = redact(range ? text.split('\n').slice(range.start - 1, range.end).join('\n') : text);
