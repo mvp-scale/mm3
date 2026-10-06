@@ -9,7 +9,7 @@ import type { ClaudeCall, TurnUsage } from './claude.ts';
 import { chainProblem, invalidReason, readLedger, recordGaps, type FinishedRecord, type LedgerRecord, type StartedRecord } from './ledger.ts';
 import { CHECKPOINTS } from './checkpoints.ts';
 import { decide } from './decision.ts';
-import { addRecovery, approxTokens, economicsLine, kindOf, recoveryOf, type Recovery } from './trace.ts';
+import { addRecovery, approxTokens, economicsLine, kindOf, recoveryOf, type Recovery, pathOf } from './trace.ts';
 
 type Row = NonNullable<FinishedRecord['level3']>[number];
 export interface Transcript {
@@ -43,7 +43,9 @@ export function tellRow(started: StartedRecord, row: Row, load: (file: string) =
     const stopped = /^✖|Exit code [1-9]|✖ /u.test(c.result.trimStart().slice(0, 200)) && isMm3;
     const got = isMm3 ? (/\bgate: (pass|fail|unsure)/u.test(c.result) ? `verdict ${/id: (MM3-\d+)/u.exec(c.result)?.[1] ?? ''} recorded` : stopped ? `a stop: ${c.result.replace(/\s+/gu, ' ').trim().slice(0, 70)}` : 'answered') : 'ok';
     out.push(`    ${String(n).padStart(2)}. ${c.parent ? 'helper' : 'lead  '} ${isMm3 ? 'MM3 call' : kindOf(c).padEnd(8)} ${verb(c).slice(0, 56).padEnd(56)} wrote ≈${approxTokens(JSON.stringify(c.input))}, ${got}, ≈${tok(approxTokens(c.result))} came back${ctx !== undefined ? ` · context then ${tok(ctx)}` : ''}`);
+    if (c.why) out.push(`        why, in the agent's words: "${c.why.slice(0, 110)}"`);
   }
+  out.push(`  decision path: ${pathOf(t.calls)}`);
   return [...out, ...totals(row), row.economics ? `  by kind: ${economicsLine(row.economics)}` : '  by kind: not recorded'];
 }
 

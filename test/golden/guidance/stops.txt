@@ -1,6 +1,8 @@
 === args-not-array-mcp
 ✖ args: must be an array of strings, got string → args: ["class","-"] and the request YAML as the separate field stdin
 → see: mm3 agent
+=== backtick-value
+✖ yaml: line 2 starts a value with a backtick → put the whole value in "quotes"
 === dash-missing
 ✖ args: missing arguments → mm3 class <request-file | -> [--dry-run]
 === empty-stdin
@@ -8,7 +10,7 @@
 === ignored-field-mcp
 ✖ arguments: ignored "request" → the tool takes only args, stdin and project: the request YAML goes in "stdin" (args: ["class","-"])
 === no-decisions
-✖ mak.ask.decisions: 0 categories → give 2–5 → see: mm3 agent probe
+✖ mak.ask.decisions: 0 categories → copy the decisions: section from mm3 template class (2–5 categories, a scale and a choice) → see: mm3 agent probe
 === unknown-verb
 ✖ args: "classs" is not a command → use view, class, replay, scan, drill, loop, template, help, agent, report, outcome, budget, doctor, config, init, uninstall or mcp (mm3 --help)
 === yaml-not-parsing

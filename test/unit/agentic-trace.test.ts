@@ -2,7 +2,7 @@
 // what came back into its context are summed, so a comparison can say where tokens went and whether a change added or saved them.
 import { describe, expect, it } from 'vitest';
 import type { ClaudeCall } from '../../scripts/agentic/claude.ts';
-import { addEconomics, approxTokens, economics, economicsLine, kindOf, traceTable } from '../../scripts/agentic/trace.ts';
+import { addEconomics, approxTokens, economics, economicsLine, kindOf, pathOf, traceTable } from '../../scripts/agentic/trace.ts';
 
 const call = (tool: string, input: Record<string, unknown>, result: string, parent: string | null = null): ClaudeCall => ({ tool, input, parent, id: 'x', result, turn: 1 });
 
@@ -41,5 +41,22 @@ describe('agentic token economics [C-262]', () => {
     expect(rows[1]).toMatch(/^1\s+1\s+lead\s+mm3\s+\d+\s+100\s+mm3 \["agent"\]/u);
     expect(rows[2]).toMatch(/^2\s+1\s+helper\s+files/u);
     expect(rows.join('\n')).toContain('1 model turns as the stream showed them (approximate): ≈110 tokens in, ≈5 out');
+  });
+});
+
+describe('the decision path of a run [C-275]', () => {
+  const mm3 = (args: string[], result: string): ClaudeCall => call('mcp__plugin_mm3_mm3__mm3', { args }, result);
+  it('[C-275] one line: cards, the stop and what it said, a dry run accepted, an edit, the verdict', () => {
+    const path = pathOf([
+      mm3(['class', '-'], '✖ mak.ask.decisions: 0 categories → give 2–5'),
+      mm3(['agent', 'class'], 'verb: class'),
+      call('Edit', { file_path: 'r.yaml' }, 'ok'),
+      mm3(['class', '-', '--dry-run'], 'plan:\n  calls: 1'),
+      mm3(['class', '-'], 'mak:\n  id: MM3-0001\n  gate: fail'),
+    ]);
+    expect(path).toBe('class✖[mak.ask.decisions: 0 categories] → card:class → Edit → class(dry)✔plan → class✔verdict');
+  });
+  it('[C-275] a shell command that runs mm3 is labelled by its verb', () => {
+    expect(pathOf([call('Bash', { command: 'mm3 class req.yaml --dry-run' }, 'plan:\n  calls: 1'), call('Bash', { command: 'mm3 template class' }, '# class')])).toBe('class(dry)✔plan → template');
   });
 });

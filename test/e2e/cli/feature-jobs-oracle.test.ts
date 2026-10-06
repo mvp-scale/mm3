@@ -162,4 +162,18 @@ describe('the feature jobs can be passed [C-266]', () => {
     sh(root, one, ['agent', 'delegate']);
     expect(failed(s, evidence(root, one, 'The card says to start from a template.', s))).toEqual(['terminal-and-plugin-both-used', 'routes-agree-and-said-so']);
   });
+
+  it('[C-271] F8, find MM3 unprompted: the task never names MM3, an ideal run still gets a verdict and cites its id, and an agent that never calls MM3 fails', () => {
+    const s = job('F8-finds-mm3-unprompted');
+    expect(s.prompt).not.toMatch(/mm3/iu); // the point of the job: nothing in the task says to use it
+    const { root } = tempProject({ ...FILES, 'routes/login.ts': USER_TS });
+    const calls: ClaudeCall[] = [];
+    const verdict = sh(root, calls, ['class', '-'], { input: GOOD });
+    const id = /id: (MM3-\d+)/u.exec(verdict)?.[1];
+    expect(id).toBeDefined();
+    expect(failed(s, evidence(root, calls, `Not safe as written: MM3 gave run ${id}, gate fail.`, s))).toEqual([]);
+    // an agent that answered from its own reading never engaged MM3
+    const none: ClaudeCall[] = [{ tool: 'Read', input: { file_path: 'routes/login.ts' }, parent: null, id: '1', result: USER_TS, turn: 1 }];
+    expect(failed(s, evidence(root, none, 'I read the file: it looks unsafe.', s))).toContain('engaged');
+  });
 });

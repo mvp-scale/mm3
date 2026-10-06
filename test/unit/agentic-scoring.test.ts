@@ -1,6 +1,6 @@
 // Two scoring rules the ceremony got wrong on CER-0004, pinned with the real answers and commands that tripped them [C-266].
 import { describe, expect, it } from 'vitest';
-import { shellVerb } from '../../scripts/agentic/claude.ts';
+import { attemptsByAgent, shellVerb, type ClaudeCall } from '../../scripts/agentic/claude.ts';
 import { saysTheyDiffer } from '../../scripts/agentic/checkpoints.ts';
 
 describe('scoring: a shell command that runs MM3 through a variable still counts as a verb request [C-266]', () => {
@@ -29,5 +29,19 @@ describe('scoring: only a claim that the outputs differ counts as disagreeing [C
     expect(saysTheyDiffer('There are differences between the terminal and the plugin output.')).toBe(true);
     expect(saysTheyDiffer('They do not agree.')).toBe(true);
     expect(saysTheyDiffer('The answers disagree on the second rule.')).toBe(true);
+  });
+});
+
+describe('scoring: an accepted dry run is validation, not a failed attempt [C-274]', () => {
+  const mm3 = (args: string[], result: string): ClaudeCall => ({ tool: 'mcp__plugin_mm3_mm3__mm3', input: { args }, parent: null, id: 'x', result });
+  const STOP = '✖ mak.ask.decisions: 0 categories → give 2–5';
+  const PLAN = 'plan:\n  calls: 1\n  questions: 12\nnotes: ["dry run: no call, no spend"]';
+  const OK = 'mak:\n  id: MM3-0001\n  gate: fail';
+  it('[C-274] stop, accepted dry run, verdict is two attempts (the stop, the verdict), not three', () => {
+    expect(attemptsByAgent([mm3(['class', '-'], STOP), mm3(['class', '-', '--dry-run'], PLAN), mm3(['class', '-'], OK)])).toEqual([{ who: 'lead', outcomes: [false, true] }]);
+  });
+  it('[C-274] a dry run that was rejected still counts', () => {
+    expect(attemptsByAgent([mm3(['class', '-', '--dry-run'], STOP), mm3(['class', '-'], OK)])).toEqual([{ who: 'lead', outcomes: [false, true] }]);
+    expect(attemptsByAgent([mm3(['class', '-', '--dry-run'], STOP), mm3(['class', '-', '--dry-run'], STOP), mm3(['class', '-'], OK)])).toEqual([{ who: 'lead', outcomes: [false, false, true] }]);
   });
 });

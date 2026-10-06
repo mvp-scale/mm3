@@ -6,10 +6,10 @@
 // once and is reported, not gated. The sample provider is used throughout, so no checkpoint depends on a key.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { addUsage, attemptsByAgent, noUsage, runClaude, type ClaudeRun, type Usage } from './claude.ts';
+import { addUsage, attemptsByAgent, noUsage, runClaude, strayServers, type ClaudeRun, type Usage } from './claude.ts';
 import { economics, recoveryOf, type Economics, type Recovery } from './trace.ts';
 import { CHECKPOINTS, evaluate, metrics } from './checkpoints.ts';
 
@@ -65,6 +65,19 @@ const sh = (cmd: string, args: string[], cwd?: string): string => {
 const expand = (p: string): string => p.replace(/^~/u, os.homedir());
 
 /** The pinned baseline checkout, verified, copied to a throwaway folder for one run. */
+/** Agents write their request files to a fixed place of their own choosing in the shared temp folder (`/tmp/mm3-req/login.yaml`). A file left by the
+ *  previous trial made the next agent's Write fail ("file has not been read yet"), and that agent gave up, so one trial's leftovers decided another's
+ *  result. Cleared before each trial; only folders whose names an agent would give its scratch requests, never the harness's own project folders. */
+export function clearAgentScratch(base = os.tmpdir()): string[] {
+  const gone: string[] = [];
+  for (const name of readdirSync(base)) {
+    if (!/^mm3[-_]?req/u.test(name)) continue;
+    rmSync(path.join(base, name), { recursive: true, force: true });
+    gone.push(name);
+  }
+  return gone;
+}
+
 export function prepareProject(fixtureFile = 'test/agentic/fixture.json', source = process.env.JUICE_SHOP): string {
   const fx = JSON.parse(readFileSync(fixtureFile, 'utf8')) as { sha: string; tag: string; defaultCheckout: string };
   const from = expand(source ?? fx.defaultCheckout);
@@ -130,8 +143,10 @@ export function grade(s: FullScenario, run: ClaudeRun, project: string, route: '
   const m = metrics(ev);
   const problems = checks.filter((c) => !c.pass).map((c) => `${c.id}: ${c.means}`);
   if (!run.ok) problems.unshift(`the run did not finish${run.error ? ` (${run.error})` : ''}`);
+  const stray = strayServers(run.mcp);
+  if (stray.length) problems.unshift(`the agent had servers besides the plugin under test (${stray.join(', ')}): this run is not a result`);
   const attempts = attemptsByAgent(run.calls).map((g) => g.outcomes.indexOf(true) + 1);
-  return { id: s.id, route, model, resolvedModel: run.model, trial, pass: run.ok && checks.every((c) => c.pass || CHECKPOINTS[c.id]?.severity === 'exception'), checks, attempts, firstRequestAccepted: m.firstRequestAccepted, mm3Calls: m.mm3Calls, problems, usage: run.usage, economics: economics(run.calls), recovery: recoveryOf(run.calls) };
+  return { id: s.id, route, model, resolvedModel: run.model, trial, pass: run.ok && stray.length === 0 && checks.every((c) => c.pass || CHECKPOINTS[c.id]?.severity === 'exception'), checks, attempts, firstRequestAccepted: m.firstRequestAccepted, mm3Calls: m.mm3Calls, problems, usage: run.usage, economics: economics(run.calls), recovery: recoveryOf(run.calls) };
 }
 
 /** The real TypeSafe dollars a project's own ledger recorded, summed over its runs. */
@@ -202,6 +217,7 @@ export function runFull(scenarios: FullScenario[], version: string, rules: Rules
       log(`  ■ stopped: the approved $${opts.paid.approvedUsd} is spent ($${spent.toFixed(4)}); ${plan.length - rows.length} planned run(s) not made`);
       break;
     }
+    clearAgentScratch();
     const project = prepareProject();
     const setupEnv = applySetup(s.setup, project);
     if (opts.paid) setCap(project, opts.paid.approvedUsd - spent);

@@ -56,6 +56,26 @@ export const isStop = (c: ClaudeCall): boolean => kindOf(c) === 'mm3' && /^(✖|
 export const isVerdict = (c: ClaudeCall): boolean => kindOf(c) === 'mm3' && /\bgate: (pass|fail|unsure)/u.test(c.result);
 export const isVerbRequest = (c: ClaudeCall): boolean => (Array.isArray(c.input.args) ? ['class', 'scan', 'drill', 'loop', 'view', 'replay'].includes(String(c.input.args[0])) : shellVerb(String(c.input.command ?? '')) !== undefined);
 
+/** One line for a whole run: each call as a short label, with how it came out, in order. It is the run's decision path: where the agent read, where it was stopped,
+ *  where it changed course. `card` is an `mm3 agent` card, `✖` a stop (and what it said), `✔` a verdict or an accepted request. */
+export function pathOf(calls: ClaudeCall[]): string {
+  return calls.map((c) => {
+    const args = Array.isArray(c.input.args) ? c.input.args.map(String) : undefined;
+    const cmd = c.tool === 'Bash' ? String(c.input.command ?? '') : '';
+    const verb = args ? args[0] : shellVerb(cmd) ?? (/mm3\S* +(agent|template)\b/u.exec(cmd)?.[1]);
+    const dry = /--dry-run\b/u.test(JSON.stringify(c.input));
+    const label = kindOf(c) !== 'mm3' ? c.tool : verb === 'agent' ? `card${args?.[1] ? `:${args[1]}` : ''}` : verb === 'template' ? 'template' : `${verb ?? 'mm3'}${dry ? '(dry)' : ''}`;
+    if (kindOf(c) !== 'mm3') return label;
+    if (isStop(c)) return `${label}✖[${/✖ ([^→\n]{1,32})/u.exec(c.result)?.[1]?.trim() ?? 'stop'}]`;
+    if (/\bgate: (pass|fail|unsure)/u.test(c.result)) return `${label}✔verdict`;
+    if (/^\s*plan:/mu.test(c.result)) return `${label}✔plan`;
+    return label;
+  }).join(' → ');
+}
+
+/** The calls that change a file: the way an agent fixes a request it keeps on disk. */
+const FILE_FIXES = new Set(['Edit', 'Write', 'MultiEdit']);
+
 export function recoveryOf(calls: ClaudeCall[]): Recovery {
   const r: Recovery = { stops: 0, onTrack: 0, fixedNext: 0 };
   const agents = [...new Set(calls.map((c) => c.parent ?? 'lead'))];
@@ -65,7 +85,9 @@ export function recoveryOf(calls: ClaudeCall[]): Recovery {
       if (!isStop(c)) return;
       r.stops += 1;
       const next = mine[i + 1];
-      if (next && kindOf(next) === 'mm3') r.onTrack += 1; // a stop that ends the agent's work is a stop it did not stay on
+      // a stop that ends the agent's work is a stop it did not stay on. Fixing the request file with Edit or Write and then calling MM3 again stays on it:
+      // on the terminal route the fix to a stopped request is an edit to the file the next command reads.
+      if (next && (kindOf(next) === 'mm3' || (FILE_FIXES.has(next.tool) && mine.slice(i + 2).some((x) => kindOf(x) === 'mm3')))) r.onTrack += 1;
       const nextVerb = mine.slice(i + 1).find(isVerbRequest);
       if (nextVerb && isVerdict(nextVerb)) r.fixedNext += 1;
     });

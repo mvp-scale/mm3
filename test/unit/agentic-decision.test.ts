@@ -27,6 +27,11 @@ describe('recovery after a stop [C-264]', () => {
     expect(recoveryOf([mm3(['class', '-'], STOP), read(), mm3(['class', '-'], OK)])).toEqual({ stops: 1, onTrack: 0, fixedNext: 1 });
     expect(recoveryOf([mm3(['class', '-'], STOP)])).toEqual({ stops: 1, onTrack: 0, fixedNext: 0 }); // the agent's work ended on the stop
   });
+  it('[C-264] a stop followed by an edit to the request file and then MM3 is on track; an edit with no MM3 call after it is not', () => {
+    const edit = (): ClaudeCall => ({ tool: 'Edit', input: { file_path: '.mm3/req.yaml' }, parent: null, id: 'e', result: 'ok' });
+    expect(recoveryOf([mm3(['class', '-'], STOP), edit(), mm3(['class', '-'], OK)])).toEqual({ stops: 1, onTrack: 1, fixedNext: 1 });
+    expect(recoveryOf([mm3(['class', '-'], STOP), edit()])).toEqual({ stops: 1, onTrack: 0, fixedNext: 0 });
+  });
   it('[C-264] agents are judged separately: a helper\'s stop is not rescued by the lead\'s next call', () => {
     const r = recoveryOf([mm3(['class', '-'], STOP, 'h1'), mm3(['agent'], 'card', null), mm3(['class', '-'], OK, 'h1')]);
     expect(r).toEqual({ stops: 1, onTrack: 1, fixedNext: 1 });

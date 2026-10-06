@@ -2,6 +2,20 @@
 
 What's next and what's parked. It lives on `nightly`. When something ships, delete its line.
 
+## v0.1.3 scope (branch `feat/v0.1.3`)
+
+Nothing else ships in 0.1.3. New ideas go below the fence, in the sections after this one. Each row is proven by the agentic framework (free path unless marked paid). State: 0 Defined, 1 Baselined, 2 Built, 3 Tested (its job meets the bar on this branch's build), 4 Gated (formal ceremony on the published nightly).
+
+| # | Enhancement | Job | Bar | State |
+|---|---|---|---|---|
+| E1 | Agents set a project up for agents (no new build). | F4 | 3 of 3 | 3 (TRL-0067, 3 of 3; 18 of 18 over six runs) |
+| E2 | Agents find MM3 without being told: job F8 (C-271); no startup hook needed. | F8 | 2 of 3 per run | 3 (TRL-0065, 5 of 5, clean room) |
+| E3 | Guard: no stop strands an agent. No-decisions stop now points at the template (C-270). | B3 | first fix works | 3 (TRL-0058 4 of 5, TRL-0066 2 of 3; was 2 of 5 twice) |
+| E4 | Send a request as one plain command; no `export MM3_HOME`; `view` and backtick fixes (C-269, C-195, C-272, C-276). | B1 | 5 of 6 | 3 (TRL-0064, 8 of 8) |
+| E5 | Haiku answers a plain question (stretch). | B1 haiku | 1 of 2 per run | 3 (TRL-0063, 5 of 6; was 0 of 2) |
+| E6 | The dollar cap holds on a live call (`test/live/dollar-cap.live.test.ts`), plus F2 paid. | F2 paid, live test | stops at the dollar cap | 3 (live test passes; F2 3 of 3, TRL-0062) |
+| E7 | Ceremony on the 0.1.3 nightly passes the gate. | ceremony | gate passes | 0 |
+
 ## Next: small and ready
 
 - **Default branch to `main`.** The plugin install and the README links resolve against the default branch, which is still `nightly`. Repo settings, maintainer only.

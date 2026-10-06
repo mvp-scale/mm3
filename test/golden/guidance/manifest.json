@@ -1,5 +1,5 @@
 {
-  "fingerprint": "3f44e6d04dc27b23be2ee55aa8f8e193bdbfd809657f587e215d8ca69d287208",
+  "fingerprint": "1779d8bebae5e47a2ca2967309f5fd23d4addccf23b6cd55b1184d046d47a577",
   "surfaces": {
     "mcp/instructions": {
       "sha256": "5b0182cb62918c854cb5fdd9ed9701d2a171644b24c52257833a35b780d0ef9d",
@@ -14,11 +14,11 @@
       "lines": 10
     },
     "agent/overview": {
-      "sha256": "7edf89dd479dc2ac6248911862b7e5624dc28415b1de9047ca8b7adee5533fe8",
-      "lines": 32
+      "sha256": "a3cfd49edc56abc90c8e8e4ab6773986feca92dbaaedf770ebb2ddc1bc9795fc",
+      "lines": 33
     },
     "help/overview": {
-      "sha256": "72d676b93f6c015df1026ebe55a3e989bf28a67a0b85325c52195ddc5cf78b16",
+      "sha256": "a41272a62ec81ab9d8d2e389162fba91061221cfa6f9d98782954af3e2433768",
       "lines": 44
     },
     "agent/view": {
@@ -62,7 +62,7 @@
       "lines": 14
     },
     "agent/probe": {
-      "sha256": "291de0a76dbe0f458bb691e0c3eae7ac7f54c67746c9e3b0729abf21346cd1f2",
+      "sha256": "f72b5ed311d7fe5c59f9618d7c3b9a05dfe9339124f6de65f1cb15da3f554ae7",
       "lines": 27
     },
     "agent/verdict": {
@@ -126,7 +126,7 @@
       "lines": 13
     },
     "help/probe": {
-      "sha256": "808d33fd4582ec16a6636360fb778aec51d8788d743b198d2cd91c48aadd25e8",
+      "sha256": "12587bc864339091593c53bd647a45af9d574a657faab4fd5e9399cac897d687",
       "lines": 42
     },
     "help/report": {

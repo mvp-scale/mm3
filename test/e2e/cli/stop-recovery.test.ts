@@ -15,7 +15,8 @@ const STOPS = 'test/golden/guidance/stops.txt';
 
 // What an agent actually sent, and what it should read back. `fix` is the words the stop must carry.
 const CASES: Array<{ id: string; args: string[]; stdin?: string; fix: RegExp }> = [
-  { id: 'no-decisions', args: ['class', '-'], stdin: GOOD.split('\n    decisions:')[0] + '\n', fix: /decisions: .* → give 2–5/u }, // the valid request with its decisions section cut off
+  { id: 'no-decisions', args: ['class', '-'], stdin: GOOD.split('\n    decisions:')[0] + '\n', fix: /decisions: 0 categories → copy the decisions: section from mm3 template class/u }, // the valid request with its decisions section cut off
+  { id: 'backtick-value', args: ['class', '-'], stdin: GOOD.replace(/goal: .*/u, 'goal: `src/user.ts` is safe to merge'), fix: /yaml: line \d+ starts a value with a backtick → put the whole value in "quotes"/u }, // the card says to name files in backticks; a goal that starts with one is not plain YAML [C-272]
   { id: 'yaml-not-parsing', args: ['class', '-'], stdin: 'mak:\n  goal: x: y\n', fix: /yaml: line \d+ does not parse → .*quotes/u },
   { id: 'empty-stdin', args: ['class', '-'], stdin: '', fix: /request: empty → start with "mak:"/u },
   { id: 'dash-missing', args: ['class'], fix: /missing arguments → mm3 class <request-file \| ->/u },

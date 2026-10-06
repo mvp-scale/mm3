@@ -48,7 +48,7 @@ IMPORTANT: work top-down. Ask a few high-leverage questions per layer and drill 
 - Delegating? Give helpers `mm3 agent delegate`, and check their reports against the ledger with `mm3 view MM3-####`: a helper can report work it did not do.
 === agent/overview
 verbs (pick by goal):
-- view: free; what's already known, before any paid call
+- view: free; what's already known for a request you wrote (mm3 view <request-file>), before any paid call
 - class: one decision on one thing (merge, choose, triage, check a fix)
 - replay: re-check a run's questions across two git refs: after a fix, or what changed between releases or commits
 - scan: sweep many files when the problem's location is unknown
@@ -66,7 +66,8 @@ rules:
 - a question (or the goal) is at most 160 characters, one line — longer text is rejected outright.
 - pass: yes clears at >= 0.70; pass: no clears at <= 0.30; in between is unsure.
 - questions are numbered 1…N across the whole request, decisions included.
-- where: resolves against the MCP `project` argument or `MM3_HOME` (CLI), never your session cwd — pass `project` (or set `MM3_HOME`) when you started elsewhere.
+- where: resolves against the MCP `project` argument or, in a terminal, the project folder (the nearest .mm3 or .git above where you run mm3): run mm3 from inside the project; a session cwd outside it needs `project` (MCP) or MM3_HOME (CLI) set in the environment, never typed as a prefix on the command.
+- sending a request: start from `mm3 template <verb>`, save it with your file-write tool (not a shell heredoc or a chain of commands), then run one plain `mm3 <verb> <file> --dry-run` and then `mm3 <verb> <file>`; through MCP the YAML goes in `stdin`.
 - open goal, in order: view (free reuse) → scan (find where) → drill (go deeper on a flagged item; follow next:) → loop (check the design) → replay (after a change).
 - what changed or drifted between releases or commits: replay a prior run with compare: {before: <ref>, after: <ref>} (no prior run: class or scan once at one ref first); git diff is not an mm3 check.
 - every number or claim you report comes from an mm3 answer (cite its id, e.g. MM3-0042) or is labelled your own estimate.
@@ -95,7 +96,7 @@ on PATH, else `npx --no-install mm3`; if neither works, tell the user to run
 | MAK³ — make: use what's proven     | view (free) | class (1 call) | replay (up to 2 calls) |
 | MDL³ — model: learn what's missing | scan (1 call) | drill (1 call) | loop (1 call/layer) |
 
-- view: free; what's already known, before any paid call
+- view: free; what's already known for a request you wrote (mm3 view <request-file>), before any paid call
 - class: one decision on one thing (merge, choose, triage, check a fix)
 - replay: re-check a run's questions across two git refs: after a fix, or what changed between releases or commits
 - scan: sweep many files when the problem's location is unknown
@@ -506,7 +507,7 @@ tool: probe
 rules:
 - One narrow judgment per question — break a complex or ill-defined question into separate questions that each evaluate one property.
 - The question carries its full meaning on its own — a question's number is a label for the response only; the model never sees it.
-- It's answerable from the code in where: — name the file in backticks when there's more than one, and send only the context the question needs.
+- It's answerable from the code in where: — name the file in backticks inside the sentence when there's more than one (a value that starts with a backtick must be in quotes), and send only the context the question needs.
 - Yes/no questions keep one polarity per category — phrase so "yes" is the affirmative you mean, not an inverted "is free of…".
 - Scale levels describe concrete situations, not relative points — every level is judged on its own; the model sees neither its number nor its neighbours.
 - Choice options include a "none fits" outcome for when nothing else matches.
@@ -1165,7 +1166,7 @@ source page cited.
 
 - One narrow judgment per question — break a complex or ill-defined question into separate questions that each evaluate one property. (TypeSafe: concepts/how-to-build-with-system-one.md)
 - The question carries its full meaning on its own — a question's number is a label for the response only; the model never sees it. (TypeSafe: concepts/how-to-build-with-system-one.md)
-- It's answerable from the code in where: — name the file in backticks when there's more than one, and send only the context the question needs. (TypeSafe: concepts/how-to-build-with-system-one.md)
+- It's answerable from the code in where: — name the file in backticks inside the sentence when there's more than one (a value that starts with a backtick must be in quotes), and send only the context the question needs. (TypeSafe: concepts/how-to-build-with-system-one.md)
 - Yes/no questions keep one polarity per category — phrase so "yes" is the affirmative you mean, not an inverted "is free of…". (TypeSafe: primitives/noul.md)
 - Scale levels describe concrete situations, not relative points — every level is judged on its own; the model sees neither its number nor its neighbours. (TypeSafe: primitives/score.md)
 - Choice options include a "none fits" outcome for when nothing else matches. (TypeSafe: primitives/choice.md)

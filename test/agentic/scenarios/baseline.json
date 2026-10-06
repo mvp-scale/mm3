@@ -23,7 +23,7 @@
     },
     {
       "id": "stop-decisions",
-      "situation": "You sent a class request. It answered: ✖ mak.ask.decisions: 0 categories → give 2–5 → see: mm3 agent probe",
+      "situation": "You sent a class request. It answered: ✖ mak.ask.decisions: 0 categories → copy the decisions: section from mm3 template class (2–5 categories, a scale and a choice) → see: mm3 agent probe",
       "ask": "What do you change in your request before resending? One or two sentences.",
       "expect": [
         "decision"
@@ -287,6 +287,28 @@
         "routes-agree-and-said-so",
         "stays-on-mm3"
       ]
+    },
+    {
+      "id": "F8-finds-mm3-unprompted",
+      "title": "Find MM3 without being told",
+      "story": "A developer asks their agent a plain question about shipping, and never mentions MM3: \"Is routes/login.ts in this project safe to ship?\" The MM3 plugin is installed and the project has not been set up for agents.",
+      "success": "The agent reaches for MM3 on its own, gets a recorded verdict within 3 tries, and tells the developer the run id, which really exists.",
+      "matters": "Most users will never type \"use MM3\". If the plugin's own startup guidance does not make an agent reach for MM3 before a judgment call, the product is invisible to them, and a startup hook (or more) is needed.",
+      "goal": "An agent asked a plain shipping question, with no mention of MM3, still uses MM3 and reports its run id.",
+      "prompt": "Is routes/login.ts in this project safe to ship?",
+      "setupNote": "Before the agent starts, nothing is set up: no .mm3/, and no MM3 guidance in the project's own files. The only way the agent can know about MM3 is what the plugin itself tells it when it starts.",
+      "model": "sonnet",
+      "routes": [
+        "mcp"
+      ],
+      "promise": 3,
+      "checkpoints": [
+        "engaged",
+        "verdict-in-promise",
+        "last-request-accepted",
+        "answer-cites-run-id",
+        "run-id-in-ledger"
+      ]
     }
   ],
   "rules": {
@@ -301,7 +323,7 @@
     "The provider is the sample (fake) one: no TypeSafe key, no spend. Verdicts are canned; nothing here grades whether a verdict is right.",
     "The project is a fresh copy of the pinned Juice Shop checkout with no .mm3/ in it.",
     "The agent gets only the task prompt below: no hints, no expected outcome. Only Read/Glob/Grep, Write and Edit (plus a shell on the CLI route, the Agent tool for delegation) exist.",
-    "Counted as a verb request: class, scan, drill, loop, view or replay. Calls to agent, template, help, probe or doctor are discovery, not attempts."
+    "Counted as a verb request: class, scan, drill, loop, view or replay. Calls to agent, template, help, probe or doctor are discovery, not attempts, and so is a `--dry-run` that was accepted (free validation, no verdict); a dry run that was rejected still counts."
   ],
   "purpose": "Can an agent get a useful answer out of MM3 on its own? A developer tells an agent to use MM3 to check some code. We watch whether the agent succeeds without a person stepping in, using only what MM3 itself gives it: its instructions, its help and its error messages. The project the agents look at (OWASP Juice Shop) is sample material; it is not what is being tested. Two kinds of job: the first three check that agents can use MM3 at all; the last seven check the features that are new since the last release.",
   "notTested": [
