@@ -1,6 +1,6 @@
 {
   "name": "@mvpscale/mm3",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "MM3, make and model for coding agents: MAK³ uses what is proven, MDL³ learns what is missing, with compact yes/no checklists, a calibrated consensus, and a log that learns where agents go wrong.",
   "license": "Apache-2.0",
   "type": "module",
