@@ -7451,6 +7451,7 @@ var package_default = {
     "agentic:context": "tsx scripts/agentic/context.ts",
     "agentic:run": "tsx scripts/agentic/run.ts",
     ceremony: "tsx scripts/ceremony.ts",
+    release: "tsx scripts/release.ts",
     "agentic:sheet": "tsx scripts/agentic/sheet.ts",
     "agentic:runs": "tsx scripts/agentic/runs.ts",
     "agentic:compare": "tsx scripts/agentic/compare.ts",
