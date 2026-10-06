@@ -153,7 +153,8 @@ export function attemptsByAgent(calls: ClaudeCall[]): Array<{ who: string; outco
     // `view MM3-####` looks up a run the agent already holds (a lead checking a helper's id): a check, not a request for a verdict
     if (verb === 'view' && (Array.isArray(c.input.args) ? /^MM3-\d+$/u.test(String(c.input.args[1] ?? '')) : /mm3[^ ]* +view +MM3-\d+\b/u.test(String(c.input.command ?? '')))) continue;
     // an accepted `--dry-run` is the free validation MM3's own cards recommend: the request was fine, it just made no verdict, so it is not an attempt that failed
-    if (/--dry-run\b/u.test(JSON.stringify(c.input)) && /^\s*plan:/mu.test(c.result)) continue;
+    // (a command that dry-runs and then runs for real, `mm3 class f --dry-run && mm3 class f`, also holds a verdict: that one is an attempt that succeeded)
+    if (/--dry-run\b/u.test(JSON.stringify(c.input)) && /^\s*plan:/mu.test(c.result) && !/\bgate: (pass|fail|unsure)|\bid: MM3-\d+/u.test(c.result)) continue;
     const accepted = /\bgate: (pass|fail|unsure)/u.test(c.result) || /\bid: MM3-\d+/u.test(c.result);
     const who = c.parent ?? 'lead';
     by.set(who, [...(by.get(who) ?? []), accepted]);

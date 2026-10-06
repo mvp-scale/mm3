@@ -40,6 +40,10 @@ describe('scoring: an accepted dry run is validation, not a failed attempt [C-27
   it('[C-274] stop, accepted dry run, verdict is two attempts (the stop, the verdict), not three', () => {
     expect(attemptsByAgent([mm3(['class', '-'], STOP), mm3(['class', '-', '--dry-run'], PLAN), mm3(['class', '-'], OK)])).toEqual([{ who: 'lead', outcomes: [false, true] }]);
   });
+  it('[C-274] one command that dry-runs and then runs for real is an accepted attempt, not skipped (CER-0006: three correct runs scored as no attempt)', () => {
+    const chained: ClaudeCall = { tool: 'Bash', input: { command: 'mm3 class req.yaml --dry-run && mm3 class req.yaml' }, parent: null, id: 'x', result: `${PLAN}\n${OK}` };
+    expect(attemptsByAgent([chained])).toEqual([{ who: 'lead', outcomes: [true] }]);
+  });
   it('[C-274] a dry run that was rejected still counts', () => {
     expect(attemptsByAgent([mm3(['class', '-', '--dry-run'], STOP), mm3(['class', '-'], OK)])).toEqual([{ who: 'lead', outcomes: [false, true] }]);
     expect(attemptsByAgent([mm3(['class', '-', '--dry-run'], STOP), mm3(['class', '-', '--dry-run'], STOP), mm3(['class', '-'], OK)])).toEqual([{ who: 'lead', outcomes: [false, false, true] }]);
