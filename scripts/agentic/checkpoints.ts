@@ -3,7 +3,7 @@
 // no TypeSafe key: the sample provider answers with canned verdicts, so nothing here judges whether a verdict is RIGHT,
 // only whether an agent could get a well-formed verdict recorded. Verdict correctness is a separate, keyed, capped live suite.
 import { attemptsByAgent, type ClaudeCall } from './claude.ts';
-import { recoveryOf } from './trace.ts';
+import { isStop, isVerbRequest, recoveryOf } from './trace.ts';
 
 export interface Evidence {
   calls: ClaudeCall[];
@@ -25,6 +25,8 @@ export interface Checkpoint {
   check: (e: Evidence) => boolean;
 }
 
+/** The fields the plugin's tool takes (src/mcp/protocol.ts); the oracle sends a real extra field through the real bundle, so a change there fails a test. */
+const TOOL_FIELDS = ['args', 'stdin', 'project'];
 const MM3_ID = /MM3-\d{4}/gu;
 const idsIn = (s: string): string[] => [...s.matchAll(MM3_ID)].map((m) => m[0]);
 const isMm3 = (c: ClaudeCall): boolean => c.tool.includes('mm3') || (c.tool === 'Bash' && /mm3/u.test(String(c.input.command ?? '')));
@@ -41,9 +43,31 @@ const configRecords = (ledger: string): Array<{ settings?: { budget?: { usd?: nu
       return [];
     }
   });
+/** What a call returned as plain text: over MCP the stream can hand back the tool's content as a JSON list of text parts. */
+const plain = (c: ClaudeCall): string => {
+  try {
+    const parts = JSON.parse(c.result) as unknown;
+    if (Array.isArray(parts) && parts.every((p) => typeof (p as { text?: unknown }).text === 'string')) return parts.map((p: { text: string }) => p.text).join('\n');
+  } catch {
+    /* plain text, not a list */
+  }
+  return c.result;
+};
+const squash = (s: string): string => s.replace(/\s+/gu, ' ').trim();
+/** The same mm3 arguments run in the shell and through the plugin tool: the text each returned. A stop on either side is not an answer. */
+const sameCommandBothWays = (e: Evidence): Array<{ terminal: string; plugin: string }> => {
+  const shell = e.calls.filter((c) => c.tool === 'Bash').flatMap((c) => {
+    const args = /(?:^|[;&|]\s*)(?:\S*\/)?mm3\s+([a-z][^|;&\n]*)/u.exec(String(c.input.command ?? ''))?.[1];
+    return args === undefined || isStop(c) ? [] : [{ key: args.trim().replace(/\s+/gu, ' '), text: squash(plain(c)) }];
+  });
+  return e.calls.filter((c) => c.tool.includes('mm3') && Array.isArray(c.input.args) && !isStop(c)).flatMap((c) => {
+    const key = (c.input.args as unknown[]).map(String).join(' ');
+    const t = shell.find((x) => x.key === key);
+    return t ? [{ terminal: t.text, plugin: squash(plain(c)) }] : [];
+  });
+};
 const mm3Calls = (e: Evidence): ClaudeCall[] => e.calls.filter(isMm3);
 const verdict = (c: ClaudeCall): boolean => /\bgate: (pass|fail|unsure)/u.test(c.result);
-
 export const CHECKPOINTS: Record<string, Checkpoint> = {
   'config-file-has-cap': {
     id: 'config-file-has-cap',
@@ -135,6 +159,36 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
     means: "the project was left with a block no agent reads",
     check: (e) => /^@AGENTS\.md$/mu.test(e.read('CLAUDE.md') ?? '') || /^@\.\.\/AGENTS\.md$/mu.test(e.read('.claude/CLAUDE.md') ?? ''),
   },
+  'ignored-stop-fixed': {
+    id: 'ignored-stop-fixed',
+    short: 'j',
+    label: 'first call fixed it',
+    fix: 'Keep the ignored-field stop naming the field to use ("stdin") and an example of the args.',
+    text: 'The agent was handed the wrong-field stop; its very first MM3 call put the request in "stdin" (and in no field the tool ignores) and was accepted',
+    means: 'the agent did not fix the call in one go from the stop text: it repeated the wrong field, got another stop, or went elsewhere first (the stop wording did not say enough)',
+    check: (e) => {
+      const first = mm3Calls(e)[0];
+      return first !== undefined && first.tool.includes('mm3') && isVerbRequest(first) && typeof first.input.stdin === 'string' && first.input.stdin.trim() !== '' && Object.keys(first.input).every((k) => TOOL_FIELDS.includes(k)) && !isStop(first) && !first.result.includes('ignored'); // the job starts the agent at the stop, so the stop is not in the trace: the first call is the one judged
+    },
+  },
+  'terminal-and-plugin-both-used': {
+    id: 'terminal-and-plugin-both-used',
+    short: 'q',
+    label: 'both ways used',
+    fix: "Say in `mm3 agent` and the tool description that the terminal and the plugin run the same command.",
+    text: 'The same mm3 command was run in the terminal and through the plugin tool, and both answered',
+    means: 'the agent used only one of the two, or ran different commands, so nothing was compared',
+    check: (e) => sameCommandBothWays(e).length > 0,
+  },
+  'routes-agree-and-said-so': {
+    id: 'routes-agree-and-said-so',
+    short: 'y',
+    label: 'agree, and said so',
+    fix: "If the two texts differ, that is a bug in one route: make the terminal and the plugin return the same text.",
+    text: 'The two answers were the same text, and the final answer says they agree',
+    means: 'the two routes returned different text for the same command (a real inconsistency), or the agent reported a difference that is not there, or no agreement at all',
+    check: (e) => sameCommandBothWays(e).some((p) => p.terminal === p.plugin && p.terminal !== '') && /\b(agree|same|identical|match)/iu.test(e.answer) && !/\b(differ|disagree|mismatch|inconsisten)|\b(not|n't|never)\s+(agree|match|identical|the same)/iu.test(e.answer),
+  },
   'stays-on-mm3': {
     id: 'stays-on-mm3',
     severity: 'exception',
@@ -198,9 +252,18 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
     fix: "Make `mm3 agent delegate` the first step of delegating: move its line up in the guidance and name it in the skill.",
     short: 'd',
     label: 'card in prompts',
-    text: "Every helper's prompt carries the `mm3 agent delegate` card",
-    means: 'the lead delegated without the card, so helpers start without MM3 guidance',
-    check: (e) => e.calls.filter((c) => c.tool === 'Agent').every((c) => /never read \.mm3\/log\.jsonl|MM3 run id with its gate/u.test(String(c.input.prompt ?? ''))) && e.calls.some((c) => c.tool === 'Agent'),
+    text: "Every helper's prompt carries the `mm3 agent delegate` card, or tells the helper to fetch it (a pointer works: the helper's own first call gets the same card)",
+    means: 'the lead delegated with neither the card nor a pointer to it, so helpers start without MM3 guidance',
+    check: (e) => e.calls.filter((c) => c.tool === 'Agent').every((c) => /never read \.mm3\/log\.jsonl|MM3 run id with its gate|["']agent["']\s*,\s*["']delegate["']|agent delegate/u.test(String(c.input.prompt ?? ''))) && e.calls.some((c) => c.tool === 'Agent'),
+  },
+  'helper-made-the-call': {
+    id: 'helper-made-the-call',
+    short: 'b',
+    label: 'helper made the call',
+    fix: "Make the delegate card say the helper makes the MM3 request itself; the lead hands over the card and the file, not the answer.",
+    text: 'A helper (not the lead) made its own MM3 request and got a verdict',
+    means: 'the lead did the MM3 work itself, or the helper never got a verdict (the hand-off did not carry the guidance)',
+    check: (e) => groups(e).filter((g) => g.who !== 'lead' && g.outcomes.includes(true)).length >= Math.max(e.helpers, 1),
   },
   'helpers-cite-ids': {
     id: 'helpers-cite-ids',

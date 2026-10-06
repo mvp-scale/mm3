@@ -52,6 +52,7 @@ export const THEMES_OF: Record<string, string[]> = {
   'stays-on-mm3': ['recovery-leaves-mm3', 'stop-next-command'],
   'helpers-spawned': ['guidance-delegation'],
   'delegate-card-in-prompts': ['guidance-delegation'],
+  'helper-made-the-call': ['guidance-delegation'],
   'helpers-cite-ids': ['guidance-citing', 'card-content'],
   'answer-cites-run-id': ['guidance-citing'],
   'run-id-in-ledger': ['guidance-citing'],
@@ -66,6 +67,9 @@ export const THEMES_OF: Record<string, string[]> = {
   'right-fix-reported': ['card-content', 'stop-wrong-pointer'],
   'agents-block-written': ['tool-discovery'],
   'claude-md-imports': ['tool-discovery', 'stop-names-the-edit'],
+  'terminal-and-plugin-both-used': ['tool-discovery'],
+  'routes-agree-and-said-so': ['tool-schema', 'harness-grader'],
+  'ignored-stop-fixed': ['tool-schema', 'stop-names-the-edit'],
   'lower-tier-models': ['lower-tier-models', 'guidance-length'],
 };
 

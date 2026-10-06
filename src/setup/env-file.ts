@@ -8,9 +8,10 @@
  * only, and must survive untouched by every function here). Writing updates one name's line in place —
  * replacing it if present, appending if not — and never rewrites any other line.
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, fchmodSync, fstatSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { isAbsent } from '../ledger/lock.ts';
 
 type Env = Record<string, string | undefined>;
 
@@ -41,14 +42,17 @@ export interface EnvFileRead {
 /** undefined only when the file doesn't exist or can't be read at all — a value that IS there but for a name
  *  outside the allowlist, or a malformed export line, is not an error: it's just ignored (and counted). */
 export function readEnvFile(file: string): EnvFileRead | undefined {
-  if (!existsSync(file)) return undefined;
   let mode: number;
   let raw: string;
+  let fd: number | undefined;
   try {
-    mode = statSync(file).mode & 0o777;
-    raw = readFileSync(file, 'utf8');
+    fd = openSync(file, 'r'); // open once; the mode and the text both come from that same open file
+    mode = fstatSync(fd).mode & 0o777;
+    raw = readFileSync(fd, 'utf8');
   } catch {
     return undefined;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
   const values: Partial<Record<EnvFileName, string>> = {};
   let ignoredLines = 0;
@@ -67,6 +71,27 @@ export function readEnvFile(file: string): EnvFileRead | undefined {
 
 export const canQuote = (value: string): boolean => !value.includes("'");
 
+/** The file's lines, or undefined when there is no such file: one read, no exists-then-read gap. */
+function readLines(file: string): string[] | undefined {
+  try {
+    return readFileSync(file, 'utf8').split('\n');
+  } catch (e) {
+    if (isAbsent(e)) return undefined;
+    throw e;
+  }
+}
+
+/** Writes the file at mode 0600: created that way, and set that way on the open file if it already existed, so it is never readable by others, not even briefly. */
+function writeSecret(file: string, text: string): void {
+  const fd = openSync(file, 'w', 0o600);
+  try {
+    fchmodSync(fd, 0o600);
+    writeFileSync(fd, text);
+  } finally {
+    closeSync(fd);
+  }
+}
+
 /** Sets `name` to `value`: replaces its existing `export NAME='...'` line if one is there, else appends a new
  *  one — every other line (comments, other names) is preserved byte for byte. Throws if `value` contains a `'`
  *  (the caller — init's key step — validates this up front so the user sees a clean ✖ line instead). */
@@ -75,7 +100,7 @@ export function setEnvFileValue(file: string, name: EnvFileName, value: string):
   const dir = path.dirname(file);
   mkdirSync(dir, { recursive: true });
   chmodSync(dir, 0o700);
-  const existing = existsSync(file) ? readFileSync(file, 'utf8').split('\n') : [];
+  const existing = readLines(file) ?? [];
   const newLine = `export ${name}='${value}'`;
   let replaced = false;
   const next = existing.map((line) => {
@@ -87,16 +112,15 @@ export function setEnvFileValue(file: string, name: EnvFileName, value: string):
     return line;
   });
   if (!replaced) next.push(newLine);
-  writeFileSync(file, `${next.join('\n').replace(/\n+$/u, '')}\n`);
-  chmodSync(file, 0o600);
+  writeSecret(file, `${next.join('\n').replace(/\n+$/u, '')}\n`);
 }
 
 /** Removes only `name`'s line, leaving comments and every other line untouched; removes the file itself only
  *  when nothing — not even a comment — is left, so a hand-written template never disappears out from under the
  *  user just because its one key line got cleared. 'absent' when there was no such line to begin with. */
 export function removeEnvFileValue(file: string, name: EnvFileName): 'removed' | 'file-removed' | 'absent' {
-  if (!existsSync(file)) return 'absent';
-  const lines = readFileSync(file, 'utf8').split('\n');
+  const lines = readLines(file);
+  if (lines === undefined) return 'absent';
   let found = false;
   const next = lines.filter((line) => {
     const m = EXPORT_LINE.exec(line);
@@ -111,8 +135,7 @@ export function removeEnvFileValue(file: string, name: EnvFileName): 'removed' |
     rmSync(file, { force: true });
     return 'file-removed';
   }
-  writeFileSync(file, `${next.join('\n').replace(/\n+$/u, '')}\n`);
-  chmodSync(file, 0o600);
+  writeSecret(file, `${next.join('\n').replace(/\n+$/u, '')}\n`);
   return 'removed';
 }
 

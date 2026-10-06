@@ -135,6 +135,8 @@ export function attemptsByAgent(calls: ClaudeCall[]): Array<{ who: string; outco
     const verb = Array.isArray(c.input.args) ? String(c.input.args[0]) : /mm3[^ ]*(?:@[^ ]+)? +([a-z]+)/u.exec(String(c.input.command ?? ''))?.[1];
     const isMm3 = c.tool.includes('mm3') || (c.tool === 'Bash' && /mm3/u.test(String(c.input.command ?? '')));
     if (!isMm3 || verb === undefined || !VERB_REQUESTS.has(verb)) continue;
+    // `view MM3-####` looks up a run the agent already holds (a lead checking a helper's id): a check, not a request for a verdict
+    if (verb === 'view' && (Array.isArray(c.input.args) ? /^MM3-\d+$/u.test(String(c.input.args[1] ?? '')) : /mm3[^ ]* +view +MM3-\d+\b/u.test(String(c.input.command ?? '')))) continue;
     const accepted = /\bgate: (pass|fail|unsure)/u.test(c.result) || /\bid: MM3-\d+/u.test(c.result);
     const who = c.parent ?? 'lead';
     by.set(who, [...(by.get(who) ?? []), accepted]);

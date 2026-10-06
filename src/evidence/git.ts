@@ -5,7 +5,7 @@
  * option. git is always spawned as an argv array, never through a shell.
  */
 import { spawnSync } from 'node:child_process';
-import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { redact } from '../ledger/redact.ts';
 import { EVIDENCE_LIMITS, type EvidenceCaps } from './code.ts';
@@ -159,20 +159,24 @@ export function readGitEvidence(root: string, ref: string, field: 'before' | 'af
 
     if (ref === 'worktree') {
       let text: string;
+      let fd: number | undefined;
       try {
         // Resolve symlinks on both sides: a link inside the project that points outside it is still outside.
         if (isOutside(path.relative(realpathSync(root), realpathSync(full)))) {
           errors.push(outside);
           continue;
         }
-        if (statSync(full).isDirectory()) {
+        fd = openSync(full, 'r'); // open once, then look at that same file: no check-then-use gap
+        if (fstatSync(fd).isDirectory()) {
           errors.push(`✖ mak.compare.${field}: "${rawPath}" is a folder → name a file`);
           continue;
         }
-        text = readFileSync(full, 'utf8');
+        text = readFileSync(fd, 'utf8');
       } catch {
         errors.push(`✖ mak.compare.${field}: cannot read "${rawPath}" → check the path`);
         continue;
+      } finally {
+        if (fd !== undefined) closeSync(fd);
       }
       read = true;
       const kept = keep(shown, text, total, notes, caps);

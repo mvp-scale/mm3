@@ -5,7 +5,7 @@
  * Two run shapes: contract runs (`v: 2`, written by every verb) and Plan 1's text-format runs (no `v`, read only).
  * Both count toward MM3 ids.
  */
-import { accessSync, appendFileSync, closeSync, constants, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
+import { accessSync, appendFileSync, closeSync, constants, fstatSync, openSync, readFileSync, readSync } from 'node:fs';
 import path from 'node:path';
 import type { ItemStatus } from '../contract/grade.ts';
 import type { UnitRef } from '../contract/layers.ts';
@@ -17,7 +17,7 @@ import { formatRunId, ulid } from './ids.ts';
 // never at module load time), and index.ts calls back into isRecord/LedgerError/shownLog the same way. Safe in
 // ESM as long as neither side touches the other's exports before both modules finish loading, which holds here.
 import { normalizeRecordMdl, readRecordAt, withIndex } from './index.ts';
-import { onStore, withLock } from './lock.ts';
+import { isAbsent, onStore, withLock } from './lock.ts';
 import { ensureDir, type Mm3Paths } from './paths.ts';
 import { redact, redactDeep, redactSecrets } from './redact.ts';
 
@@ -322,7 +322,14 @@ export const shownLog = (paths: Mm3Paths): string => path.relative(paths.root, p
  * since it may be an append in progress. Writers always read strictly, under the lock.
  */
 export function readLedger(paths: Mm3Paths, opts: { partialTail?: boolean } = {}): LedgerRecord[] {
-  const text = onStore(paths.log, 'read', () => (existsSync(paths.log) ? readFileSync(paths.log, 'utf8') : ''));
+  const text = onStore(paths.log, 'read', () => {
+    try {
+      return readFileSync(paths.log, 'utf8');
+    } catch (e) {
+      if (isAbsent(e)) return ''; // no ledger yet
+      throw e;
+    }
+  });
   const shown = shownLog(paths);
   const records: LedgerRecord[] = [];
   const lines = text.split('\n');
@@ -355,12 +362,17 @@ export function readLedger(paths: Mm3Paths, opts: { partialTail?: boolean } = {}
  * readFileSync of the whole file), with the exact readLedger wording and line number.
  */
 function checkTail(paths: Mm3Paths, upto: number, lineCount: number): void {
-  if (!existsSync(paths.log)) return;
-  const size = statSync(paths.log).size;
-  if (size <= upto) return;
-  const fd = openSync(paths.log, 'r');
+  let fd: number;
+  try {
+    fd = openSync(paths.log, 'r'); // open once, then size that same file: no check-then-use gap
+  } catch (e) {
+    if (isAbsent(e)) return;
+    throw e;
+  }
   let raw: string;
   try {
+    const size = fstatSync(fd).size;
+    if (size <= upto) return;
     const buf = Buffer.alloc(size - upto);
     let got = 0;
     while (got < buf.length) {
@@ -405,7 +417,13 @@ export function checkLedger(paths: Mm3Paths): void {
       const at = withIndex(paths, (h) => ({ upto: h.upto(), lineCount: h.lineCount() }));
       checkTail(paths, at.upto, at.lineCount);
     });
-    if (existsSync(paths.log)) onStore(paths.log, 'write', () => accessSync(paths.log, constants.W_OK));
+    onStore(paths.log, 'write', () => {
+      try {
+        accessSync(paths.log, constants.W_OK);
+      } catch (e) {
+        if (!isAbsent(e)) throw e; // no ledger yet: nothing to be unwritable
+      }
+    });
   });
 }
 
@@ -413,15 +431,16 @@ export function checkLedger(paths: Mm3Paths): void {
  *  Reads only the LAST BYTE of the file (openSync/readSync at size-1) — never readFileSync of the whole log,
  *  which used to cost ~55% of a paid call's own time at 100k just to answer this one-byte question. */
 function logEndsCleanly(logPath: string): boolean {
-  let size: number;
+  let fd: number;
   try {
-    size = statSync(logPath).size;
-  } catch {
-    return true; // no file yet: nothing to need a break from
+    fd = openSync(logPath, 'r'); // open once, then size that same file: no check-then-use gap
+  } catch (e) {
+    if (isAbsent(e)) return true; // no file yet: nothing to need a break from
+    throw e;
   }
-  if (size === 0) return true;
-  const fd = openSync(logPath, 'r');
   try {
+    const size = fstatSync(fd).size;
+    if (size === 0) return true;
     const buf = Buffer.alloc(1);
     const got = readSync(fd, buf, 0, 1, size - 1);
     return got === 1 && buf[0] === 0x0a;

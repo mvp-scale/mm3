@@ -5,12 +5,13 @@ IMPORTANT: work top-down. Ask a few high-leverage questions per layer and drill 
 - Pilot first: send one small request, read the answer, fix the questions, then widen. Send no more than a few before you have read one.
 - A sweep that says `gate: fail` is normal (any file failing any concern fails it): read the failing categories and the `next:` line; do not stop and do not repeat it.
 - Before writing a request run `mm3 agent probe` (distinct roles per probe, a "none fits" option on every choice) and tag it with mdl (`uses`, `area`).
-- Do not ration: a call costs a fraction of a cent. Cite the run id (MM3-####) for every claim that comes from MM3, and mark the rest as your own reading.
-- Delegating? Give helpers `mm3 agent delegate`, and check their reports against the ledger: a helper can report work it did not do.
+- Before a judgment call about code or a design (safe to merge? is it fixed? which option?), get an MM3 verdict: a call costs a fraction of a cent and every run is recorded, so the next decision starts from evidence, not from scratch.
+- Cite the run id (MM3-####) for every claim that comes from MM3, and mark the rest as your own reading.
+- Delegating? Give helpers `mm3 agent delegate`, and check their reports against the ledger with `mm3 view MM3-####`: a helper can report work it did not do.
 === mcp/tool-definition
 {
   "name": "mm3",
-  "description": "First call args: [\"agent\"] to learn the commands and rules, then args: [\"agent\", \"<command>\"] before writing a request. Otherwise runs any mm3 CLI command in this project — the same arguments and stdin the mm3 CLI takes (e.g. args: [\"class\",\"-\"], stdin: <request YAML>, or args: [\"doctor\"]). Returns the same text output mm3 would print, and marks the result an error when the exit code is not 0.",
+  "description": "Quick, citable evidence for judgment calls on code or a design (safe to merge? is it fixed? which option?). First call args: [\"agent\"] to learn the commands and rules, then args: [\"agent\", \"<command>\"] before writing a request. Otherwise runs any mm3 CLI command in this project — the same arguments and stdin the mm3 CLI takes (e.g. args: [\"class\",\"-\"], stdin: <request YAML>, or args: [\"doctor\"]). Returns the same text output mm3 would print, and marks the result an error when the exit code is not 0.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -42,8 +43,9 @@ IMPORTANT: work top-down. Ask a few high-leverage questions per layer and drill 
 - Pilot first: send one small request, read the answer, fix the questions, then widen. Send no more than a few before you have read one.
 - A sweep that says `gate: fail` is normal (any file failing any concern fails it): read the failing categories and the `next:` line; do not stop and do not repeat it.
 - Before writing a request run `mm3 agent probe` (distinct roles per probe, a "none fits" option on every choice) and tag it with mdl (`uses`, `area`).
-- Do not ration: a call costs a fraction of a cent. Cite the run id (MM3-####) for every claim that comes from MM3, and mark the rest as your own reading.
-- Delegating? Give helpers `mm3 agent delegate`, and check their reports against the ledger: a helper can report work it did not do.
+- Before a judgment call about code or a design (safe to merge? is it fixed? which option?), get an MM3 verdict: a call costs a fraction of a cent and every run is recorded, so the next decision starts from evidence, not from scratch.
+- Cite the run id (MM3-####) for every claim that comes from MM3, and mark the rest as your own reading.
+- Delegating? Give helpers `mm3 agent delegate`, and check their reports against the ledger with `mm3 view MM3-####`: a helper can report work it did not do.
 === agent/overview
 verbs (pick by goal):
 - view: free; what's already known, before any paid call
@@ -74,6 +76,7 @@ run: mm3 agent <verb|tool> — before writing that request
 run: mm3 agent probe — before writing questions: how to phrase one
 run: mm3 agent verdict — before reading a response: how to read it
 run: mm3 agent delegate — before handing MM3 work to a helper agent: what to paste into its prompt
+run: mm3 init --agents --yes — to set this project up for agents: writes the MM3 guidance into AGENTS.md (alone, not with mm3 init)
 run: no key → mm3 init to add one
 === help/overview
 MM3 turns a short numbered yes/no checklist into a calibrated pass/fail/unsure verdict — evidence,
@@ -624,8 +627,9 @@ IMPORTANT: work top-down. Ask a few high-leverage questions per layer and drill 
 - Pilot first: send one small request, read the answer, fix the questions, then widen. Send no more than a few before you have read one.
 - A sweep that says `gate: fail` is normal (any file failing any concern fails it): read the failing categories and the `next:` line; do not stop and do not repeat it.
 - Before writing a request run `mm3 agent probe` (distinct roles per probe, a "none fits" option on every choice) and tag it with mdl (`uses`, `area`).
-- Do not ration: a call costs a fraction of a cent. Cite the run id (MM3-####) for every claim that comes from MM3, and mark the rest as your own reading.
-- Delegating? Give helpers `mm3 agent delegate`, and check their reports against the ledger: a helper can report work it did not do.
+- Before a judgment call about code or a design (safe to merge? is it fixed? which option?), get an MM3 verdict: a call costs a fraction of a cent and every run is recorded, so the next decision starts from evidence, not from scratch.
+- Cite the run id (MM3-####) for every claim that comes from MM3, and mark the rest as your own reading.
+- Delegating? Give helpers `mm3 agent delegate`, and check their reports against the ledger with `mm3 view MM3-####`: a helper can report work it did not do.
 === help/view
 Agents: mm3 agent view
 ## view
@@ -1905,8 +1909,9 @@ IMPORTANT: work top-down. Ask a few high-leverage questions per layer and drill 
 - Pilot first: send one small request, read the answer, fix the questions, then widen. Send no more than a few before you have read one.
 - A sweep that says `gate: fail` is normal (any file failing any concern fails it): read the failing categories and the `next:` line; do not stop and do not repeat it.
 - Before writing a request run `mm3 agent probe` (distinct roles per probe, a "none fits" option on every choice) and tag it with mdl (`uses`, `area`).
-- Do not ration: a call costs a fraction of a cent. Cite the run id (MM3-####) for every claim that comes from MM3, and mark the rest as your own reading.
-- Delegating? Give helpers `mm3 agent delegate`, and check their reports against the ledger: a helper can report work it did not do.
+- Before a judgment call about code or a design (safe to merge? is it fixed? which option?), get an MM3 verdict: a call costs a fraction of a cent and every run is recorded, so the next decision starts from evidence, not from scratch.
+- Cite the run id (MM3-####) for every claim that comes from MM3, and mark the rest as your own reading.
+- Delegating? Give helpers `mm3 agent delegate`, and check their reports against the ledger with `mm3 view MM3-####`: a helper can report work it did not do.
 
 ## Run this first
 

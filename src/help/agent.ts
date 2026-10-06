@@ -137,6 +137,7 @@ function overview(env: Record<string, string | undefined>, deps: { resolveStored
       'run: mm3 agent probe — before writing questions: how to phrase one',
       'run: mm3 agent verdict — before reading a response: how to read it',
       'run: mm3 agent delegate — before handing MM3 work to a helper agent: what to paste into its prompt',
+      'run: mm3 init --agents --yes — to set this project up for agents: writes the MM3 guidance into AGENTS.md (alone, not with mm3 init)',
       ...noKeyRunLine(env, deps),
     ],
   );
@@ -410,6 +411,25 @@ const AGENT_TOPICS: Record<string, () => string> = {
 const agentExtras = (): string[] => Object.keys(AGENT_TOPICS);
 /** Re-exported for the CLI's own usage line, the same way help/index.ts's HELP_EXTRAS already is. */
 export const AGENT_EXTRAS: readonly string[] = Object.keys(AGENT_TOPICS);
+
+/** The `mm3 agent <topic>` card a stop from `command` should point at: the command's own card when `agent` has
+ *  one (the six verbs and every extra topic), else undefined, which means the overview (`mm3 agent`). */
+export const agentTopicFor = (command: string | undefined): string | undefined =>
+  command !== undefined && (isVerb(command) || Object.hasOwn(AGENT_TOPICS, command)) ? command : undefined;
+
+const POINTER_LINE = /^→ see: mm3 agent( \S+)?$/;
+
+/** A stop's text, ending with exactly one `→ see: mm3 agent <topic>` line (the overview when `command` has no
+ *  card). A text whose last line already is that pointer comes back untouched: a hand-written pointer (budget,
+ *  config, ledger, request stops) is never doubled. Used at the CLI's one exit and at the MCP tool's own stops,
+ *  so no non-zero answer leaves without a next place to read. [C-153] */
+export function endWithAgentPointer(text: string, command?: string): string {
+  const body = text.trimEnd();
+  const last = body.slice(body.lastIndexOf('\n') + 1);
+  if (POINTER_LINE.test(last)) return text;
+  const topic = agentTopicFor(command);
+  return `${body}\n→ see: mm3 agent${topic ? ` ${topic}` : ''}${text.endsWith('\n') ? '\n' : ''}`;
+}
 
 /** `env`/`deps` default to an empty environment (no key, not inside the plugin) so every existing caller that
  *  doesn't care about the no-key hint — every verb/tool card is unaffected by either — keeps working

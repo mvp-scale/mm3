@@ -9,7 +9,7 @@ import pkg from '../package.json' with { type: 'json' };
 
 export interface PackEntry { path: string; size: number }
 
-export const ALLOWED_PREFIXES = ['dist/', 'skills/', '.claude-plugin/'] as const;
+export const ALLOWED_PREFIXES = ['dist/', 'skills/', '.claude-plugin/', 'hooks/'] as const;
 export const ALLOWED_FILES = ['README.md', 'LICENSE', 'package.json'] as const; // npm always includes these regardless of "files"
 
 function entryPointPaths(): string[] {
@@ -24,6 +24,8 @@ export const REQUIRED: readonly string[] = [
   'skills/mm3/references/request.schema.json',
   '.claude-plugin/plugin.json',
   '.claude-plugin/marketplace.json',
+  'hooks/hooks.json',
+  'hooks/nudge.mjs',
   'README.md',
   'LICENSE',
 ];

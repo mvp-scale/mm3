@@ -50,6 +50,9 @@ describe('stop and recover [C-259]', () => {
     const m = await overMcp(root, [{ args: ['class', '-'], extra: { request: GOOD } }, { args: ['class', '-'], stdin: GOOD }]);
     expect(m.errors[0]).toBe(true);
     expect(m.texts[0]).toMatch(/✖ arguments: ignored "request" → .*"stdin"/u);
+    expect(m.texts[0]).not.toContain('request: empty'); // the one block names the real cause, not a blank request
+    expect(m.texts[0]!.match(/✖/gu)).toHaveLength(1);
+    expect(m.texts[0]).toMatch(/\n→ see: mm3 agent class$/u);
     expect(m.errors[1]).toBe(false);
     stops['ignored-field-mcp'] = `${m.texts[0]!.split('\n').filter((l) => l.startsWith('✖ arguments')).join('\n')}\n`;
   });

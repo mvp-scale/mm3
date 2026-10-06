@@ -1,21 +1,21 @@
 {
-  "fingerprint": "28e9e98d8f0c4b864f133ae0ab2da5472100bdc3c571da189749b01d68e147f9",
+  "fingerprint": "3f44e6d04dc27b23be2ee55aa8f8e193bdbfd809657f587e215d8ca69d287208",
   "surfaces": {
     "mcp/instructions": {
-      "sha256": "f84efd4ca9f7037dc64709b9f5972deb4092f5652aeaa8b393fdc48134ce2951",
-      "lines": 9
+      "sha256": "5b0182cb62918c854cb5fdd9ed9701d2a171644b24c52257833a35b780d0ef9d",
+      "lines": 10
     },
     "mcp/tool-definition": {
-      "sha256": "9b443cb1455a6af5737dbc86d8b191dea08eab37594bf7387bac1ef4aa437714",
+      "sha256": "75970f0465b5731ab3da20a3bafc51070c0be2370db4497af05be685ef6a9e09",
       "lines": 28
     },
     "agents-md/block": {
-      "sha256": "a7479cc71ba3bb31dda0ad7829ea2783a0e5c5116ebd78a6d9d03ddc2f9d273f",
-      "lines": 9
+      "sha256": "c638b8d6f0e007aa45b0d827f86e0ed60761d07e3f04ab17647c5a6117f1a2f3",
+      "lines": 10
     },
     "agent/overview": {
-      "sha256": "3c5121a4e0eb24741b757e8e80a6c19573566cbeff9251e2dddb214de32812cc",
-      "lines": 31
+      "sha256": "7edf89dd479dc2ac6248911862b7e5624dc28415b1de9047ca8b7adee5533fe8",
+      "lines": 32
     },
     "help/overview": {
       "sha256": "72d676b93f6c015df1026ebe55a3e989bf28a67a0b85325c52195ddc5cf78b16",
@@ -82,8 +82,8 @@
       "lines": 8
     },
     "agent/delegate": {
-      "sha256": "7257394737e2583fa9d307c33191288fe1dae80409d981a45cbcf2eb5032667a",
-      "lines": 15
+      "sha256": "cecf7525a2a2f69fa3ed590daad2a971c9ea8fde10e244178b35020230c0de94",
+      "lines": 16
     },
     "help/view": {
       "sha256": "2fd3added307b8de6bab5d075a2f284bae318b8f99bc44be409868be4afb0b8a",
@@ -186,8 +186,8 @@
       "lines": 9
     },
     "skills/mm3/SKILL.md": {
-      "sha256": "0938ee9d93c7179aa531f5f3ceb641187f2e062f932fadb72bd03dca03170115",
-      "lines": 34
+      "sha256": "a2d0f3fe1ee95f8ce641939d0c8ceeb40ca08a3ea57a3bb7dc98446a016f3002",
+      "lines": 35
     },
     "skills/mm3/references/request.schema.json": {
       "sha256": "4965ab7b21212b33ed4606564457fd8548cfeabb82584fc3411d29a08e7f30e3",

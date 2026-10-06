@@ -11,6 +11,8 @@ import { writeConfigOverride } from '../../src/config/write.ts';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { appendOutcome, appendRun } from '../../src/ledger/log.ts';
 import { runCli, type CliCtx } from '../../src/cli.ts';
+import { agentTopicFor, endWithAgentPointer } from '../../src/help/agent.ts';
+import { handleMessage } from '../../src/mcp/protocol.ts';
 import { runDrill } from '../../src/verbs/drill.ts';
 import { runLoop } from '../../src/verbs/loop.ts';
 import { runReport } from '../../src/verbs/report.ts';
@@ -158,5 +160,56 @@ describe('every non-request-validation stop still points at its own "mm3 agent <
       const r = await runCli(['doctor', '--bogus'], fakeCliCtx());
       expectPointer(r.text, 'doctor');
     });
+  });
+});
+
+// The one exit [C-197]: whatever branch produced a non-zero answer, it ends with exactly one pointer, at the
+// command's own card when `mm3 agent` has one and at the overview otherwise.
+describe('the pointer at the exit', () => {
+  it('names the command\'s own card, or the overview when it has none', () => {
+    expect(agentTopicFor('class')).toBe('class');
+    expect(agentTopicFor('config')).toBe('config');
+    expect(agentTopicFor('init')).toBeUndefined();
+    expect(agentTopicFor(undefined)).toBeUndefined();
+    expect(endWithAgentPointer('✖ x: y → z', 'budget')).toBe('✖ x: y → z\n→ see: mm3 agent budget');
+    expect(endWithAgentPointer('✖ x: y → z\n', 'frob')).toBe('✖ x: y → z\n→ see: mm3 agent\n');
+  });
+
+  it('never doubles a pointer a stop already ends with', () => {
+    for (const text of ['✖ a: b → c\n→ see: mm3 agent class', '✖ a: b → c\n→ see: mm3 agent class\n', '✖ a: b → c\n→ see: mm3 agent\n']) {
+      expect(endWithAgentPointer(text, 'view')).toBe(text);
+    }
+  });
+
+  it.each([
+    { argv: ['frob'], target: '' },
+    { argv: ['help', 'frob'], target: '' },
+    { argv: ['agent', 'frob'], target: '' },
+    { argv: ['init', '--global', '--user'], target: '' },
+    { argv: ['config', '--bogus'], target: ' config' },
+    { argv: ['uninstall', '--nope'], target: '' },
+    { argv: ['class', '--bogus', '-'], target: ' class' },
+  ])('mm3 $argv: one pointer, last line', async ({ argv, target }) => {
+    const r = await runCli(argv, fakeCliCtx());
+    expect(r.exit).not.toBe(0);
+    expect(r.text.endsWith(`\n→ see: mm3 agent${target}\n`), JSON.stringify(r.text)).toBe(true);
+    expect(r.text.match(/→ see: mm3 agent/g)).toHaveLength(1);
+  });
+
+  it('a success is left alone', async () => {
+    const r = await runCli(['--version'], fakeCliCtx());
+    expect(r.exit).toBe(0);
+    expect(r.text).not.toContain('→ see:');
+  });
+
+  it('the MCP tool\'s own stops end with the pointer too: bad args, unknown tool, unknown method, a thrown call', async () => {
+    const run = async (params: unknown, method = 'tools/call', runOne = async () => ({ exit: 0, text: 'ok' })) =>
+      handleMessage({ jsonrpc: '2.0', id: 1, method, params }, { runOne, serverVersion: '0.0.0-test' });
+    const text = (r: Awaited<ReturnType<typeof run>>): string => (r?.result as { content: Array<{ text: string }> }).content[0]!.text;
+    expect(text(await run({ name: 'mm3', arguments: { args: 'class -' } }))).toMatch(/\n→ see: mm3 agent$/);
+    expect(text(await run({ name: 'mm3', arguments: { args: ['view', 'x'] } }, 'tools/call', async () => { throw new Error('boom'); }))).toMatch(/^✖ mm3: boom → .*\n→ see: mm3 agent view$/);
+    expect((await run({ name: 'x' }))?.error?.message).toMatch(/^✖ mcp: Unknown tool "x" → .*\n→ see: mm3 agent$/);
+    expect((await run({}, 'nope/method'))?.error?.message).toMatch(/^✖ mcp: Method not found: nope\/method → .*\n→ see: mm3 agent$/);
+    expect(text(await run({ name: 'mm3', arguments: { args: ['agent'] } }))).toBe('ok'); // success untouched
   });
 });

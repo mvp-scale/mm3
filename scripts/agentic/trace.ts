@@ -52,9 +52,9 @@ export interface Recovery {
   fixedNext: number; // stops whose next MM3 verb request got a verdict
 }
 
-const isStop = (c: ClaudeCall): boolean => kindOf(c) === 'mm3' && /^(✖|Exit code [1-9])/u.test(c.result.trimStart());
-const isVerdict = (c: ClaudeCall): boolean => kindOf(c) === 'mm3' && /\bgate: (pass|fail|unsure)/u.test(c.result);
-const isVerbRequest = (c: ClaudeCall): boolean => (Array.isArray(c.input.args) ? ['class', 'scan', 'drill', 'loop', 'view', 'replay'].includes(String(c.input.args[0])) : /\bmm3\s+(class|scan|drill|loop|view|replay)\b/u.test(String(c.input.command ?? '')));
+export const isStop = (c: ClaudeCall): boolean => kindOf(c) === 'mm3' && /^(✖|Exit code [1-9])/u.test(c.result.trimStart());
+export const isVerdict = (c: ClaudeCall): boolean => kindOf(c) === 'mm3' && /\bgate: (pass|fail|unsure)/u.test(c.result);
+export const isVerbRequest = (c: ClaudeCall): boolean => (Array.isArray(c.input.args) ? ['class', 'scan', 'drill', 'loop', 'view', 'replay'].includes(String(c.input.args[0])) : /\bmm3\s+(class|scan|drill|loop|view|replay)\b/u.test(String(c.input.command ?? '')));
 
 export function recoveryOf(calls: ClaudeCall[]): Recovery {
   const r: Recovery = { stops: 0, onTrack: 0, fixedNext: 0 };

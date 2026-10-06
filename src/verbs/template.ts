@@ -142,6 +142,8 @@ function fromRunId(id: string, flags: TemplateFlags, paths: Mm3Paths | undefined
   return { exit: 0, text: doc.toString() };
 }
 
+const invalidYaml = (from: string, exit: 1 | 2 = 2): VerbResult => ({ exit, text: stopText([`✖ template: --from "${clip(from, 60)}" is not valid YAML → fix it (YAML indents with spaces, never tabs), or point at an MM3 request file`], 'template') });
+
 /** --from names a request file, not an item/category — read it, and overlay --where/--goal if given.
  *  Never validated here (same discipline as every other template path: this only prints). */
 function fromFile(from: string, flags: TemplateFlags): VerbResult {
@@ -157,12 +159,18 @@ function fromFile(from: string, flags: TemplateFlags): VerbResult {
   try {
     doc = parseDocument(raw);
   } catch {
-    return { exit: 2, text: stopText([`✖ template: --from "${clip(from, 60)}" is not valid YAML → point at an MM3 request file`], 'template') };
+    return invalidYaml(from);
   }
   if (!doc.has('mak')) return { exit: 2, text: stopText([`✖ template: --from "${clip(from, 60)}" has no mak: block → point at an MM3 request file`], 'template') };
   if (flags.goal !== undefined) doc.setIn(['mak', 'goal'], flags.goal);
   if (flags.where !== undefined) doc.setIn(['mak', 'where'], flags.where);
-  return { exit: 0, text: doc.toString() };
+  try {
+    return { exit: 0, text: doc.toString() };
+  } catch {
+    // parseDocument keeps its errors (a tab for indentation, an unclosed quote) and only throws when asked to print them.
+    // Exit 1 stays what this input always gave (it used to escape as an internal error); only the words change.
+    return invalidYaml(from, 1);
+  }
 }
 
 export function runTemplate(target: string, flags: TemplateFlags = {}, paths?: Mm3Paths, packageDir: string = DEFAULT_PACKAGE_DIR): VerbResult {

@@ -57,6 +57,13 @@ const GLYPH: Record<Status, string> = { done: '✔', already: '·', skipped: '�
 const line = (status: Status, label: string, text: string): string => `${GLYPH[status]} ${label}: ${text}`;
 const nowIso = (ctx: InitCtx): string => (ctx.now ?? (() => new Date().toISOString()))();
 const firstLine = (s: string): string => s.trim().split('\n')[0] ?? '';
+/** `<what> failed → <fix>` for an outside command: the runner reports a command that is not installed as
+ *  "spawnSync npm ENOENT", which says nothing a person can act on, so that becomes "not found on PATH". */
+function failed(what: string, r: { stderr: string }, fallback: string): string {
+  const missing = /spawnSync (\S+) ENOENT/.exec(r.stderr)?.[1];
+  if (missing) return `${what} failed (${missing} was not found on PATH) → install ${missing === 'npm' ? 'Node.js, which includes npm' : missing}, then re-run "mm3 init"`;
+  return `${what} failed → ${firstLine(r.stderr) || fallback}`;
+}
 const insideGitProject = (cwd: string): boolean => existsSync(path.join(cwd, '.git'));
 
 /** Is `binPath` (resolved off PATH) actually a copy of the named package, not some other `mm3`? Walks up
@@ -110,7 +117,7 @@ async function stepCli(flags: InitFlags, ctx: InitCtx): Promise<string[]> {
       return [line('problem', 'cli', 'the global npm prefix needs sudo → re-run "mm3 init --user" instead (never runs sudo for you)')];
     }
     const r = ctx.runner('npm', ['install', '-g', self.spec]);
-    if (r.status !== 0) return [line('problem', 'cli', `npm install -g ${self.spec} failed → ${firstLine(r.stderr) || "see npm's own output"}`)];
+    if (r.status !== 0) return [line('problem', 'cli', failed(`npm install -g ${self.spec}`, r, "see npm's own output"))];
     writeInstallRecord(ctx.env, { mode: 'global', npmPrefix: prefix, installedAt: nowIso(ctx) });
     return [line('done', 'cli', `installed --global (npm prefix ${prefix})`)];
   }
@@ -118,7 +125,7 @@ async function stepCli(flags: InitFlags, ctx: InitCtx): Promise<string[]> {
   if (mode === 'user') {
     const userPrefix = path.join(ctx.homeDir, '.local');
     const r = ctx.runner('npm', ['install', '-g', '--prefix', userPrefix, self.spec]);
-    if (r.status !== 0) return [line('problem', 'cli', `npm install -g --prefix ${userPrefix} ${self.spec} failed → ${firstLine(r.stderr) || "see npm's own output"}`)];
+    if (r.status !== 0) return [line('problem', 'cli', failed(`npm install -g --prefix ${userPrefix} ${self.spec}`, r, "see npm's own output"))];
     writeInstallRecord(ctx.env, { mode: 'user', npmPrefix: userPrefix, installedAt: nowIso(ctx) });
     const bin = path.join(userPrefix, 'bin');
     const onPathNow = (ctx.env.PATH ?? '').split(path.delimiter).includes(bin);
@@ -129,7 +136,7 @@ async function stepCli(flags: InitFlags, ctx: InitCtx): Promise<string[]> {
 
   // local
   const r = ctx.runner('npm', ['install', '-D', self.spec]);
-  if (r.status !== 0) return [line('problem', 'cli', `npm install -D ${self.spec} failed → ${firstLine(r.stderr) || "see npm's own output"}`)];
+  if (r.status !== 0) return [line('problem', 'cli', failed(`npm install -D ${self.spec}`, r, "see npm's own output"))];
   writeInstallRecord(ctx.env, { mode: 'local', projectDir: ctx.cwd, installedAt: nowIso(ctx) });
   return [line('done', 'cli', `installed --local (run it as npx mm3, in ${ctx.cwd})`)];
 }
@@ -234,7 +241,10 @@ async function runAgentsStep(flags: InitFlags, ctx: InitCtx): Promise<string[]> 
 const NOT_A_PROJECT = line('skipped', 'project', 'not in a git project → cd into one and run "mm3 init" there to enable MM3 for it');
 
 export async function runInit(flags: InitFlags, ctx: InitCtx): Promise<VerbResult> {
-  if (flags.agents) return { exit: 0, text: `${(await runAgentsStep(flags, ctx)).join('\n')}\n` };
+  if (flags.agents) {
+    const out = await runAgentsStep(flags, ctx);
+    return { exit: out.some((l) => l.startsWith(GLYPH.problem)) ? 1 : 0, text: `${out.join('\n')}\n` };
+  }
   const lines: string[] = [];
   lines.push(...(await stepCli(flags, ctx))); // per user
   lines.push(...(await stepKey(flags, ctx))); // per user
@@ -259,5 +269,8 @@ export async function runInit(flags: InitFlags, ctx: InitCtx): Promise<VerbResul
   const next = partial
     ? 'next: not usable yet — fix the ✖ line(s) above, then re-run "mm3 init"'
     : 'next: run "mm3 agent" for the rules and good/bad patterns before your first request, or "mm3 template class" to start by hand';
-  return { exit: 0, text: `${lines.join('\n')}\n\n${doctorOut.text}\n${next}\n` };
+  // A failed step is not a success: the exit says so, the same way the "not usable yet" line does. Advice that the
+  // install worked but its folder is not on PATH yet is a ✖ line to read, not a failed step.
+  const failedStep = lines.some((l) => l.startsWith(GLYPH.problem) && !l.includes(' is not on PATH → add '));
+  return { exit: failedStep ? 1 : 0, text: `${lines.join('\n')}\n\n${doctorOut.text}\n${next}\n` };
 }

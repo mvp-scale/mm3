@@ -32,6 +32,7 @@ describe('the guidance text [C-255]', () => {
     expect(MM3_GUIDANCE).toMatch(/`gate: fail` is normal/u);
     expect(MM3_GUIDANCE).toMatch(/mm3 agent probe/u);
     expect(MM3_GUIDANCE).toMatch(/mm3 agent delegate/u);
+    expect(MM3_GUIDANCE).toMatch(/judgment call about code or a design.*MM3 verdict.*fraction of a cent.*every run is recorded/u);
     expect(MM3_GUIDANCE).toMatch(/run id/u);
     expect(MM3_GUIDANCE).toMatch(/mm3 agent`/u);
     expect(MM3_GUIDANCE).toMatch(/mm3 agent <verb>/u);

@@ -63,9 +63,10 @@ describe('mcp protocol: tools/list', () => {
     expect(TOOL_NAME).toBe('mm3');
   });
 
-  it('[C-186] the tool description opens with the agent directive, before anything else', () => {
+  it('[C-186] the tool description opens with when to use it, then the agent directive, before anything else', () => {
     const { description } = toolDefinition();
-    expect(description).toMatch(/^First call args: \["agent"\] to learn the commands and rules/);
+    expect(description).toMatch(/^Quick, citable evidence for judgment calls on code or a design[^.]*\. First call args: \["agent"\] to learn the commands and rules/);
+    expect(description.indexOf('First call args')).toBeLessThan(140);
     expect(description).toContain('args: ["agent", "<command>"]');
   });
 });
@@ -167,6 +168,37 @@ describe('mcp protocol: tools/call [C-103]', () => {
     expect((ok?.result as { content: Array<{ text: string }> }).content[0]?.text).not.toContain('ignored'); // a passing call is untouched
   });
 
+  it('[C-103] the wrong field is checked before the request is read: a "-" call with no stdin stops once, names "stdin", ends with the pointer, and runs nothing', async () => {
+    let ran = false;
+    const resp = await handleMessage(
+      { jsonrpc: '2.0', id: 15, method: 'tools/call', params: { name: 'mm3', arguments: { args: ['class', '-'], request: 'mak:\n  goal: x\n' } } },
+      { runOne: async () => { ran = true; return { exit: 2, text: '✖ request: empty → start with "mak:"' }; }, serverVersion: '0.0.0-test' },
+    );
+    const result = resp?.result as { content: Array<{ text: string }>; isError: boolean };
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toBe('✖ arguments: ignored "request" → the tool takes only args, stdin and project: the request YAML goes in "stdin" (args: ["class","-"])\n→ see: mm3 agent class');
+    expect(ran).toBe(false);
+  });
+
+  it('[C-103] an unknown field next to a real stdin still runs the call; its own stop comes first, the ignored line next, one pointer last', async () => {
+    const resp = await handleMessage(
+      { jsonrpc: '2.0', id: 16, method: 'tools/call', params: { name: 'mm3', arguments: { args: ['class', '-'], stdin: 'x', yaml: 'x' } } },
+      { runOne: async () => ({ exit: 2, text: '✖ request: x → y\n→ see: mm3 agent class' }), serverVersion: '0.0.0-test' },
+    );
+    const text = (resp?.result as { content: Array<{ text: string }> }).content[0]!.text;
+    expect(text).toBe('✖ request: x → y\n\n✖ arguments: ignored "yaml" → the tool takes only args, stdin and project: the request YAML goes in "stdin" (args: ["class","-"])\n→ see: mm3 agent class');
+  });
+
+  it('[C-103] a stdin that is not text stops with that said, not with an empty request', async () => {
+    const resp = await handleMessage(
+      { jsonrpc: '2.0', id: 17, method: 'tools/call', params: { name: 'mm3', arguments: { args: ['class', '-'], stdin: { goal: 'x' } } } },
+      { runOne: async () => ({ exit: 0, text: 'ran' }), serverVersion: '0.0.0-test' },
+    );
+    const result = resp?.result as { content: Array<{ text: string }>; isError: boolean };
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toBe('✖ stdin: must be text, got object → send the request YAML as one string in stdin\n→ see: mm3 agent class');
+  });
+
   it('[C-103] args that is not an array (a string with the YAML folded into it) stops with the fix instead of the generic help, and runs nothing', async () => {
     let ran = false;
     const resp = await handleMessage(
@@ -175,7 +207,7 @@ describe('mcp protocol: tools/call [C-103]', () => {
     );
     const result = resp?.result as { content: Array<{ text: string }>; isError: boolean };
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toBe('✖ args: must be an array of strings, got string → args: ["class","-"] and the request YAML as the separate field stdin');
+    expect(result.content[0]?.text).toBe('✖ args: must be an array of strings, got string → args: ["class","-"] and the request YAML as the separate field stdin\n→ see: mm3 agent');
     expect(ran).toBe(false);
   });
 
@@ -242,7 +274,7 @@ describe('the Node ≥ 22.13 guard (owner ruling) [C-106]', () => {
     const ctx: CliCtx = { ...fakeCtx(), nodeVersion: 'v20.11.0' };
     const r = await runCli(['template', 'class'], ctx);
     expect(r.exit).toBe(2);
-    expect(r.text).toBe(`${NODE_STOP_LINE}\n`);
+    expect(r.text).toBe(`${NODE_STOP_LINE}\n→ see: mm3 agent template\n`);
   });
 
   it('a good Node runs the same command normally', async () => {
@@ -285,7 +317,7 @@ describe('the Node ≥ 22.13 guard (owner ruling) [C-106]', () => {
     for (const resp of responses) {
       const result = resp?.result as { content: Array<{ type: string; text: string }>; isError: boolean };
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toBe(`${NODE_STOP_LINE}\n`);
+      expect(result.content[0]?.text).toBe(`${NODE_STOP_LINE}\n→ see: mm3 agent\n`);
     }
   });
 });
