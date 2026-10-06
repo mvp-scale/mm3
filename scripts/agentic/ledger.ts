@@ -125,7 +125,7 @@ export interface ReleaseRecord {
   ts: string;
   version: string;
   title: string;
-  target: 'nightly';
+  target: 'nightly' | 'main';
   head: string; // the commit nightly was at when it was verified
   prs: number[];
   npmVersion: string;
