@@ -2,7 +2,7 @@
 
 Newest first. Each entry says what you can now do, and the number is the pull request that shipped it. Releases are tagged; the top section is what the `nightly` build on npm already has.
 
-## Unreleased
+## Unreleased: 0.1.3, on the nightly build
 
 **Agents get a verdict on the first real try more often, and every agent test now shows how the agent got there.**
 

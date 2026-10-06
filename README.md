@@ -4,7 +4,7 @@
 
 <p align="center">The memory and decision layer for coding agents. Every answer is citable.</p>
 
-<p align="center"><a href="https://github.com/mvp-scale/mm3/actions/workflows/ci.yml"><img src="https://github.com/mvp-scale/mm3/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0 license"></a> <a href="#install"><img src="https://img.shields.io/badge/node-%E2%89%A5%2022.13-3c873a" alt="Node 22.13 or newer"></a></p>
+<p align="center"><a href="https://github.com/mvp-scale/mm3/actions/workflows/ci.yml"><img src="https://github.com/mvp-scale/mm3/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0 license"></a> <a href="https://www.npmjs.com/package/@mvpscale/mm3"><img src="https://img.shields.io/npm/v/@mvpscale/mm3/latest?label=release" alt="Latest release on npm"></a> <a href="https://www.npmjs.com/package/@mvpscale/mm3/v/nightly"><img src="https://img.shields.io/npm/v/@mvpscale/mm3/nightly?label=nightly" alt="Latest nightly build on npm"></a></p>
 
 <p align="center"><img src="docs/assets/how-it-works.svg" width="900" alt="How MM3 works. MM3: make and model. Six verbs in two bands and three columns. MAK³, make, use what is proven: view is a free lookup of the ledger, class gives one verdict for one subject, replay rechecks after a fix. MDL³, model, learn what is missing: scan sweeps to find where to look, drill digs into one weak spot, loop vets a design before code. The columns are Know, Judge and Prove. One ledger sits under all six and learns."></p>
 
