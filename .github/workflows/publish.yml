@@ -49,14 +49,15 @@ jobs:
 
   ci:
     needs: plan
-    if: needs.plan.outputs.go == 'true'
+    # a release is a clean copy of a nightly that already passed CI and the ceremony: main holds no tests, so only nightly runs them here
+    if: needs.plan.outputs.go == 'true' && needs.plan.outputs.channel == 'nightly'
     uses: ./.github/workflows/ci.yml
     with:
       ref: ${{ needs.plan.outputs.ref }}
 
   publish:
     needs: [plan, ci]
-    if: needs.plan.outputs.go == 'true' && vars.MM3_PUBLISH == 'true'
+    if: always() && needs.plan.outputs.go == 'true' && vars.MM3_PUBLISH == 'true' && (needs.ci.result == 'success' || needs.plan.outputs.channel == 'release')
     runs-on: ubuntu-latest
     permissions:
       contents: write
