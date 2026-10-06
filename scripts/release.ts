@@ -143,8 +143,21 @@ export function survey(m: Manifest, io: Io, ledger: LedgerRecord[], fingerprint:
   steps.push({ id: 'GitHub release for it (Releases and Tags)', state: out && rel ? 'done' : 'todo', detail: out && rel ? `${rel.tagName}${rel.isLatest ? ', marked Latest' : ''}` : 'a normal release with a tag on that head; GitHub marks the newest release "Latest"' });
   const cer = lastFormal(ledger);
   const cerOn = cer && cer.started.version === tag;
-  steps.push({ id: 'formal ceremony on this build', state: cerOn ? 'done' : 'missing', detail: cerOn ? `${cer.started.id}, ${cer.finished.passed ? 'passed' : 'did not pass'}` : `after publishing → npm run ceremony -- --version <the npm nightly version>  (main needs it)` });
+  steps.push({ id: 'formal ceremony on this build', state: cerOn ? 'done' : 'todo', detail: cerOn ? `${cer.started.id}, ${cer.finished.passed ? 'passed' : 'did not pass'}` : 'will run last, in a clean worktree: about half an hour, free path, its progress prints below (main needs it)' });
   return { steps, open };
+}
+
+/** The three lines every nightly run ends with, so the state is never in the middle of a paragraph: what is released, whether the build is certified, whether main can go. */
+export function statusLines(m: Manifest, ledger: LedgerRecord[], npmVersion: string, released: boolean): string[] {
+  const cer = lastFormal(ledger);
+  const on = cer && cer.started.version === npmVersion ? cer : undefined;
+  const passed = on && (on.finished.passed || m.accept.includes(on.started.id));
+  return [
+    'STATUS',
+    `  nightly   ${released ? `RELEASED  ${tagFor(npmVersion)}` : 'NOT RELEASED'}`,
+    `  ceremony  ${on ? `${on.finished.passed ? 'PASSED' : 'DID NOT PASS'}  ${on.started.id}${!on.finished.passed && passed ? ' (accepted in release.json)' : ''}` : 'NOT RUN  (nothing is running)'}`,
+    `  main      ${passed ? 'READY  → npm run release -- main' : on ? 'BLOCKED  the ceremony did not pass: read it, fix it, or list its id under "accept" in release.json' : 'BLOCKED  needs a passed ceremony on this build'}`,
+  ];
 }
 
 /** After everything ran: what a person looking at GitHub's Releases, Tags, the branch and npm would see, each read from there. */
@@ -236,7 +249,7 @@ function comment(io: Io, pr: number | undefined, body: string): void {
 async function nightly(m: Manifest, io: Io, yes: boolean): Promise<number> {
   const { steps, open } = survey(m, io, readLedger(), manifestOf(collectSurfaces()).fingerprint, chainProblem());
   console.log([`RELEASE ${m.version} to nightly · ${m.title}`, '', ...steps.map(stepLine)].join('\n'));
-  const blocked = steps.filter((s) => s.state === 'missing' && !/agent trials|formal ceremony/u.test(s.id));
+  const blocked = steps.filter((s) => s.state === 'missing' && !/agent trials/u.test(s.id));
   if (blocked.length) {
     console.log(`\n✖ stopped before changing anything: ${blocked.map((s) => s.id).join('; ')}`);
     return 1;
@@ -279,8 +292,32 @@ async function nightly(m: Manifest, io: Io, yes: boolean): Promise<number> {
     comment(io, m.prs[m.prs.length - 1], [`**${rec.id}: released to nightly** (${m.version}, ${m.title})`, '', ...after.map((c) => `- ✔ ${c.id}: ${c.detail}`)].join('\n'));
   }
   console.log(`\nRELEASED to nightly: ${tagFor(npmVersion)} · GitHub Releases and Tags show it · npm nightly ${npmVersion} · receipt ${rec.id}${prior ? ' (recorded earlier)' : ''}`);
-  console.log(`next: npm run ceremony -- --version ${npmVersion}   (from a clean checkout of ${short}), then npm run release -- main`);
+  const last = lastFormal(readLedger());
+  if (!(last && last.started.version === npmVersion)) {
+    console.log(`\nformal ceremony on ${npmVersion}: starting (about half an hour; each job prints as it finishes)`);
+    const code = runCeremony(io, npmVersion, head);
+    if (code !== 0) console.log('✖ the ceremony could not run → nothing was tested');
+    comment(io, m.prs[m.prs.length - 1], ((): string => { const l = lastFormal(readLedger()); return l && l.started.version === npmVersion ? `**${l.started.id}: formal ceremony on ${npmVersion}: ${l.finished.passed ? 'passed' : 'did not pass'}** (read it: npm run agentic:release-report -- ${l.started.id})` : ''; })());
+  }
+  console.log(['', ...statusLines(m, readLedger(), npmVersion, true)].join('\n'));
   return 0;
+}
+
+/** The formal ceremony on a published nightly, from a clean worktree at the commit it was built from, with a real npm ci: a link to this checkout's node_modules changes the plugin bundle's paths and fails its check for no real reason. Its record is brought home into this ledger. */
+function runCeremony(io: Io, npmVersion: string, head: string): number {
+  const tree = path.join(mkdtempSync(path.join(os.tmpdir(), 'mm3-ceremony-')), 'tree');
+  io.git(['worktree', 'add', '-q', tree, head]);
+  try {
+    if (spawnSync('npm', ['ci', '--no-audit', '--no-fund', '--silent'], { cwd: tree, stdio: 'inherit' }).status !== 0) return 1;
+    spawnSync('npm', ['run', '-s', 'ceremony', '--', '--version', npmVersion], { cwd: tree, stdio: 'inherit' }); // a failing gate still writes its record: that record is the point
+    const idOf = (r: LedgerRecord): string => `${r.phase}:${'id' in r ? r.id : r.startedId}`;
+    const theirs = readFileSync(path.join(tree, 'test/agentic/ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as LedgerRecord);
+    const mine = new Set(readLedger().map(idOf));
+    for (const r of theirs.filter((x) => !mine.has(idOf(x)))) append({ ...r, prev: undefined } as LedgerRecord); // re-chained onto this checkout's ledger
+    return 0;
+  } finally {
+    io.git(['worktree', 'remove', '--force', tree]);
+  }
 }
 
 /** Where every step of the main stage stands. The gate is everything that says the code was tested; the last steps are the clean copy itself. */

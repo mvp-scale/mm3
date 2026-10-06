@@ -2,7 +2,7 @@
 // yet, read GitHub's Releases and Tags back before saying "RELEASED", and let main be built only from a tested, certified, clean copy.
 import { describe, expect, it } from 'vitest';
 import type { LedgerRecord } from '../../scripts/agentic/ledger.ts';
-import { cleanLines, deadLinks, featuresSince, parseManifest, rollupProblem, survey, surveyMain, unreleasedNotes, verify, type Io, type Manifest } from '../../scripts/release.ts';
+import { cleanLines, deadLinks, featuresSince, parseManifest, rollupProblem, statusLines, survey, surveyMain, unreleasedNotes, verify, type Io, type Manifest } from '../../scripts/release.ts';
 
 const HEAD = 'fe932dcabcdef0123456789abcdef0123456789a';
 const NPM = '0.1.3-nightly.20261006.1827.gfe932dc';
@@ -96,14 +96,14 @@ describe('the nightly stage shows every step before it runs [C-277]', () => {
   });
   it('[C-277] npm behind the head and no GitHub release are the two steps the stage will do', () => {
     const { steps } = survey(M, fakeIo({ tag: '0.1.3-nightly.20261006.1743.geb41121', releases: [] }), [], 'F', undefined);
-    expect(steps.filter((s) => s.state === 'todo').map((s) => s.id)).toEqual(['npm nightly built from fe932dc', 'GitHub release for it (Releases and Tags)']);
+    expect(steps.filter((s) => s.state === 'todo').map((s) => s.id)).toEqual(['npm nightly built from fe932dc', 'GitHub release for it (Releases and Tags)', 'formal ceremony on this build']);
   });
-  it('[C-277] trials and the ceremony not done yet are shown as not done, with the command', () => {
+  it('[C-277] trials not done yet are shown as not done with the command; the ceremony is a step the stage will run last, and says how long it takes', () => {
     const { steps } = survey(M, fakeIo(), [], 'F', undefined);
     expect(states(steps, /agent trials/u)).toBe('missing');
     expect(steps.find((s) => /agent trials/u.test(s.id))!.detail).toContain('npm run agentic:feature');
-    expect(states(steps, /formal ceremony/u)).toBe('missing');
-    expect(steps.find((s) => /formal ceremony/u.test(s.id))!.detail).toContain('npm run ceremony -- --version');
+    expect(states(steps, /formal ceremony/u)).toBe('todo');
+    expect(steps.find((s) => /formal ceremony/u.test(s.id))!.detail).toContain('about half an hour');
   });
   it('[C-277] an open PR that is green will be merged; one still running or failing stops the stage; a merged one is skipped', () => {
     const green = survey({ ...M, prs: [35] }, fakeIo(), [], 'F', undefined);
@@ -123,6 +123,20 @@ describe('the nightly stage shows every step before it runs [C-277]', () => {
     expect(rollupProblem([{ name: 'CodeQL', status: 'IN_PROGRESS' }])).toMatch(/still running: CodeQL/u);
     expect(rollupProblem([{ name: 'test (22)', status: 'COMPLETED', conclusion: 'FAILURE' }])).toMatch(/failed: test \(22\)/u);
     expect(rollupProblem([])).toMatch(/no checks reported/u);
+  });
+});
+
+describe('every nightly run ends with the state in three lines [C-277]', () => {
+  it('[C-277] released but never certified: the ceremony says NOT RUN and that nothing is running, and main is blocked', () => {
+    expect(statusLines(M, [], NPM, true)).toEqual(['STATUS', `  nightly   RELEASED  v${NPM}`, '  ceremony  NOT RUN  (nothing is running)', '  main      BLOCKED  needs a passed ceremony on this build']);
+  });
+  it('[C-277] a passed ceremony on this build makes main READY; a failed one says so and what to do', () => {
+    expect(statusLines(M, ceremony(), NPM, true).slice(2)).toEqual(['  ceremony  PASSED  CER-0001', '  main      READY  → npm run release -- main']);
+    expect(statusLines(M, ceremony({ passed: false }), NPM, true)[3]).toContain('BLOCKED  the ceremony did not pass');
+    expect(statusLines({ ...M, accept: ['CER-0001'] }, ceremony({ passed: false }), NPM, true).slice(2)).toEqual(['  ceremony  DID NOT PASS  CER-0001 (accepted in release.json)', '  main      READY  → npm run release -- main']);
+  });
+  it('[C-277] a ceremony on an older build does not count for this one', () => {
+    expect(statusLines(M, ceremony({ version: '0.1.2-nightly.old' }), NPM, true)[2]).toContain('NOT RUN');
   });
 });
 
