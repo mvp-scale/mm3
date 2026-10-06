@@ -115,7 +115,24 @@ export interface InvalidatedRecord {
   reason: string;
 }
 
-export type LedgerRecord = StartedRecord | FinishedRecord | InvalidatedRecord;
+/** One release stage that finished and verified: what went out, where, and what was read back from GitHub and npm to say so. */
+export interface ReleaseRecord {
+  kind: 'release';
+  phase: 'released';
+  schema?: number;
+  prev?: string;
+  id: string; // REL-0001
+  ts: string;
+  version: string;
+  title: string;
+  target: 'nightly';
+  head: string; // the commit nightly was at when it was verified
+  prs: number[];
+  npmVersion: string;
+  checks: Array<{ id: string; ok: boolean; detail: string }>;
+}
+
+export type LedgerRecord = StartedRecord | FinishedRecord | InvalidatedRecord | ReleaseRecord;
 
 export const sha = (s: string): string => createHash('sha256').update(s).digest('hex');
 
@@ -138,8 +155,8 @@ const lines = (file: string): string[] => (existsSync(file) ? readFileSync(file,
 export const readLedger = (file = LEDGER): LedgerRecord[] => lines(file).map((l) => JSON.parse(l) as LedgerRecord);
 
 /** One past the highest number used for that kind of run, so an id is never reused even when earlier runs were archived out of the file. CER-#### are ceremonies, TRL-#### are trials. */
-export function nextId(records: LedgerRecord[], prefix: 'CER' | 'TRL' = 'CER'): string {
-  const used = records.filter((r): r is StartedRecord => r.phase === 'started' && r.id.startsWith(`${prefix}-`)).map((r) => Number(/\d+/u.exec(r.id)?.[0] ?? 0));
+export function nextId(records: LedgerRecord[], prefix: 'CER' | 'TRL' | 'REL' = 'CER'): string {
+  const used = records.flatMap((r) => ('id' in r && r.id.startsWith(`${prefix}-`) ? [Number(/\d+/u.exec(r.id)?.[0] ?? 0)] : []));
   return `${prefix}-${String(Math.max(0, ...used) + 1).padStart(4, '0')}`;
 }
 
@@ -210,7 +227,7 @@ export function lastFormal(records: LedgerRecord[]): { started: StartedRecord; f
 
 /** Runs that began and never closed. */
 export const incomplete = (records: LedgerRecord[]): StartedRecord[] =>
-  records.filter((r): r is StartedRecord => r.phase === 'started').filter((s) => !records.some((r) => r.phase !== 'started' && r.startedId === s.id));
+  records.filter((r): r is StartedRecord => r.phase === 'started').filter((s) => !records.some((r) => r.phase !== 'started' && r.phase !== 'released' && r.startedId === s.id));
 
 /** Why a run was disqualified, if a later line says so. */
 export const invalidReason = (records: LedgerRecord[], id: string): string | undefined => records.find((r): r is InvalidatedRecord => r.phase === 'invalidated' && r.startedId === id)?.reason;
