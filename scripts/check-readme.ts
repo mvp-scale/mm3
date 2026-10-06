@@ -218,7 +218,7 @@ async function main(): Promise<void> {
   try { story = loadStory(); problems = checkStory(story); } catch (e) { problems = [`✖ story.yaml: ${(e as Error).message.split('\n')[0]} → fix site/story.yaml`]; }
   if (!problems.length) {
     const md = readFileSync('README.md', 'utf8');
-    problems = checkReadme(md, story!, { root: '.', dryRun: cliDryRun, published: false });
+    problems = checkReadme(md, story!, { root: '.', dryRun: cliDryRun, published: true });
     buildSite(story!); // the site is built here so CI and a clean checkout check the page they would ship
     problems.push(...checkSite(readFileSync('site/dist/index.html', 'utf8'), story!, 'site/dist', md, loadScenes()));
     const ext = await checkExternalLinks(externalLinks(md));
