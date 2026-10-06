@@ -2,7 +2,7 @@
 // short line at two moments (a helper about to be spawned, a commit/merge/push/PR about to happen), only in a project
 // with `.mm3/`, once per moment, and on anything else it prints nothing and exits 0 so it can never stop a tool call.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -77,7 +77,7 @@ describe('the nudge speaks at the two moments [C-268]', () => {
     expect(ctx(fire(agent({ tool_name: 'Task' })).out)).toBe(AGENT_LINE);
   });
 
-  it.each(['git commit -m "x"', 'git merge nightly', 'git push origin main', 'gh pr create --fill', 'npm test && git commit -am x', 'git -C /tmp/x push', 'FOO=1 git push'])(
+  it.each(['git commit -m "x"', 'git merge nightly', 'git push origin main', 'gh pr create --fill', 'npm test && git commit -am x', 'git -C /tmp/x push', 'FOO=1 git push', 'A=1 B=2 git -c k=v -C /x merge', '( git push )', 'echo hi | gh pr view', 'git --no-pager commit'])(
     '[C-268] before a decision (%s): one JSON line that says to get a verdict first',
     (command) => {
       const r = fire(bash(command));
@@ -102,7 +102,7 @@ describe('the nudge speaks at the two moments [C-268]', () => {
 });
 
 describe('the nudge is quiet otherwise, and never fails [C-268]', () => {
-  it.each(['git status', 'git log --oneline', 'ls -la', 'npm run typecheck', 'echo git commit', 'git commitment', 'gh issue list'])('[C-268] prints nothing for a command that decides nothing (%s)', (command) => {
+  it.each(['git status', 'git log --oneline', 'ls -la', 'npm run typecheck', 'echo git commit', 'git commitment', 'gh issue list', 'git -C /x status', 'FOO=1 git log', 'gh prx', 'git'])('[C-268] prints nothing for a command that decides nothing (%s)', (command) => {
     const r = fire(bash(command));
     expect(r).toEqual({ out: '', status: 0 });
   });
@@ -132,4 +132,36 @@ describe('the nudge is quiet otherwise, and never fails [C-268]', () => {
       expect(fire(raw)).toEqual({ out: '', status: 0 });
     },
   );
+});
+
+describe('the matcher cannot be stalled, and the marker folder is private [C-268]', () => {
+  it('[C-268] a long run of option-like words returns at once (no catastrophic backtracking)', () => {
+    const hostile = 'git ' + '-C -! '.repeat(50000);
+    const t = Date.now();
+    expect(fire(bash(hostile))).toEqual({ out: '', status: 0 });
+    expect(fire(bash(hostile + 'push')).out).not.toBe('');
+    // two spawns of node, so the bound is generous; the old pattern ran for minutes here
+    expect(Date.now() - t).toBeLessThan(3000);
+  });
+
+  it('[C-268] the marker is made in a private folder named for the user, mode 0700 for the folder and 0600 for the marker', () => {
+    if (typeof process.getuid !== 'function') return;
+    const t = mkdtempSync(join(scratch, 'priv-'));
+    fire(bash('git commit -m x'), { env: { TMPDIR: t } });
+    const dir = join(t, `mm3-nudge-${process.getuid()}`);
+    expect(statSync(dir).mode & 0o777).toBe(0o700);
+    const marker = readdirSync(dir)[0] ?? '';
+    expect(statSync(join(dir, marker)).mode & 0o777).toBe(0o600);
+  });
+
+  it('[C-268] a marker folder that is a symlink is not used: the nudge still speaks, every time, and writes nothing through it', () => {
+    if (typeof process.getuid !== 'function') return;
+    const t = mkdtempSync(join(scratch, 'link-'));
+    const elsewhere = mkdtempSync(join(scratch, 'elsewhere-'));
+    symlinkSync(elsewhere, join(t, `mm3-nudge-${process.getuid()}`));
+    const session_id = fresh();
+    expect(fire(bash('git commit -m x', { session_id }), { env: { TMPDIR: t } }).out).not.toBe('');
+    expect(fire(bash('git commit -m x', { session_id }), { env: { TMPDIR: t } }).out).not.toBe('');
+    expect(readdirSync(elsewhere)).toEqual([]);
+  });
 });
