@@ -319,3 +319,44 @@ describe('runInit: the final "next:" line [C-176]', () => {
     expect(r.text).not.toContain('ask Claude to use MM3');
   });
 });
+
+describe('runInit: a failed step is a failed run, said in words [C-176]', () => {
+  it('npm not installed: exit 1, "npm was not found on PATH" and the fix, never "spawnSync npm ENOENT"', async () => {
+    const { ctx } = baseCtx();
+    const { runner } = scriptedRunner({ npm: () => ({ status: 1, stdout: '', stderr: 'spawnSync npm ENOENT' }) });
+    ctx.runner = runner;
+    const r = await runInit({ mode: 'user', key: 'no', claude: false, yes: true }, ctx);
+    expect(r.exit).toBe(1);
+    expect(r.text).toContain('✖ cli: npm install -g --prefix');
+    expect(r.text).toContain('failed (npm was not found on PATH) → install Node.js, which includes npm, then re-run "mm3 init"');
+    expect(r.text).not.toContain('ENOENT');
+    expect(r.text).not.toContain('spawnSync');
+  });
+
+  it('an install that errors keeps npm\'s own first line and still exits 1', async () => {
+    const { ctx } = baseCtx();
+    const { runner } = scriptedRunner({ npm: () => ({ status: 1, stdout: '', stderr: 'npm ERR! network down\nmore' }) });
+    ctx.runner = runner;
+    const r = await runInit({ mode: 'local', key: 'no', claude: false, yes: true }, ctx);
+    expect(r.exit).toBe(1);
+    expect(r.text).toContain('failed → npm ERR! network down');
+  });
+
+  it('a clean run, and install advice that the folder is not on PATH yet, still exit 0', async () => {
+    const { ctx } = baseCtx();
+    const { runner } = scriptedRunner({ npm: () => ({ status: 0, stdout: '', stderr: '' }) });
+    ctx.runner = runner;
+    const r = await runInit({ mode: 'user', key: 'no', claude: false, yes: true }, ctx);
+    expect(r.text).toContain('is not on PATH → add');
+    expect(r.exit).toBe(0);
+  });
+
+  it('init --agents with an unmatched marker exits 1 as well', async () => {
+    const { ctx } = baseCtx();
+    mkdirSync(path.join(ctx.cwd, '.git'));
+    writeFileSync(path.join(ctx.cwd, 'AGENTS.md'), '<!-- mm3:agents -->\nhalf a block\n');
+    const r = await runInit({ agents: true, key: 'no', yes: true }, ctx);
+    expect(r.text).toContain('✖ agents: AGENTS.md has an unmatched');
+    expect(r.exit).toBe(1);
+  });
+});

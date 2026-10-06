@@ -107,7 +107,7 @@ function keyLine(env: Record<string, string | undefined>, config: JevConfig, dep
     const read = readEnvFile(file);
     const mode = read?.mode ?? 0o600;
     const note = read
-      ? (looseFileModeWarning(file, mode) ?? (read.ignoredLines > 0 ? `✖ credentials: ${file} has ${read.ignoredLines} line(s) mm3 ignored (not "export NAME='value'" for an allowed name)` : undefined))
+      ? (looseFileModeWarning(file, mode) ?? (read.ignoredLines > 0 ? `✖ credentials: ${file} has ${read.ignoredLines} line(s) mm3 ignored (not "export NAME='value'" for an allowed name) → fix or remove those lines` : undefined))
       : undefined;
     return { value: `yes · from user file ${file} (${octal4(mode)}, not encrypted)`, note };
   }

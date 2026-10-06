@@ -8531,13 +8531,13 @@ function appendContractRunLocked(paths, run, now, budget) {
 function appendContractRun(paths, run, now, budget) {
   return withLock(paths.lock, () => appendContractRunLocked(paths, run, now, budget));
 }
-function appendFailedLocked(paths, failed, now = Date.now()) {
+function appendFailedLocked(paths, failed2, now = Date.now()) {
   onStore(paths.log, "read", () => {
     const at = withIndex(paths, (h) => ({ upto: h.upto(), lineCount: h.lineCount() }));
     checkTail(paths, at.upto, at.lineCount);
   });
   const uid = ulid(now);
-  const record2 = { kind: "failed", id: uid, uid, ts: iso(now), ...redactDeep(failed), actor: redactSecrets(failed.actor) };
+  const record2 = { kind: "failed", id: uid, uid, ts: iso(now), ...redactDeep(failed2), actor: redactSecrets(failed2.actor) };
   appendLine(paths, record2);
   return record2;
 }
@@ -12616,7 +12616,7 @@ function keyLine(env, config, deps) {
     const file = envFilePath(env);
     const read3 = readEnvFile(file);
     const mode = read3?.mode ?? 384;
-    const note = read3 ? looseFileModeWarning(file, mode) ?? (read3.ignoredLines > 0 ? `\u2716 credentials: ${file} has ${read3.ignoredLines} line(s) mm3 ignored (not "export NAME='value'" for an allowed name)` : void 0) : void 0;
+    const note = read3 ? looseFileModeWarning(file, mode) ?? (read3.ignoredLines > 0 ? `\u2716 credentials: ${file} has ${read3.ignoredLines} line(s) mm3 ignored (not "export NAME='value'" for an allowed name) \u2192 fix or remove those lines` : void 0) : void 0;
     return { value: `yes \xB7 from user file ${file} (${octal4(mode)}, not encrypted)`, note };
   }
   const envVar = config.route === "gateway" ? "AI_GATEWAY_API_KEY" : "TYPESAFE_API_KEY";
@@ -12823,6 +12823,11 @@ var GLYPH = { done: "\u2714", already: "\xB7", skipped: "\u2013", problem: "\u27
 var line = (status, label, text) => `${GLYPH[status]} ${label}: ${text}`;
 var nowIso = (ctx) => (ctx.now ?? (() => (/* @__PURE__ */ new Date()).toISOString()))();
 var firstLine = (s) => s.trim().split("\n")[0] ?? "";
+function failed(what, r, fallback) {
+  const missing = /spawnSync (\S+) ENOENT/.exec(r.stderr)?.[1];
+  if (missing) return `${what} failed (${missing} was not found on PATH) \u2192 install ${missing === "npm" ? "Node.js, which includes npm" : missing}, then re-run "mm3 init"`;
+  return `${what} failed \u2192 ${firstLine(r.stderr) || fallback}`;
+}
 var insideGitProject = (cwd) => existsSync15(path13.join(cwd, ".git"));
 function isPackageBin(binPath, pkgName) {
   try {
@@ -12863,14 +12868,14 @@ async function stepCli(flags, ctx) {
       return [line("problem", "cli", 'the global npm prefix needs sudo \u2192 re-run "mm3 init --user" instead (never runs sudo for you)')];
     }
     const r2 = ctx.runner("npm", ["install", "-g", self.spec]);
-    if (r2.status !== 0) return [line("problem", "cli", `npm install -g ${self.spec} failed \u2192 ${firstLine(r2.stderr) || "see npm's own output"}`)];
+    if (r2.status !== 0) return [line("problem", "cli", failed(`npm install -g ${self.spec}`, r2, "see npm's own output"))];
     writeInstallRecord(ctx.env, { mode: "global", npmPrefix: prefix, installedAt: nowIso(ctx) });
     return [line("done", "cli", `installed --global (npm prefix ${prefix})`)];
   }
   if (mode === "user") {
     const userPrefix = path13.join(ctx.homeDir, ".local");
     const r2 = ctx.runner("npm", ["install", "-g", "--prefix", userPrefix, self.spec]);
-    if (r2.status !== 0) return [line("problem", "cli", `npm install -g --prefix ${userPrefix} ${self.spec} failed \u2192 ${firstLine(r2.stderr) || "see npm's own output"}`)];
+    if (r2.status !== 0) return [line("problem", "cli", failed(`npm install -g --prefix ${userPrefix} ${self.spec}`, r2, "see npm's own output"))];
     writeInstallRecord(ctx.env, { mode: "user", npmPrefix: userPrefix, installedAt: nowIso(ctx) });
     const bin = path13.join(userPrefix, "bin");
     const onPathNow = (ctx.env.PATH ?? "").split(path13.delimiter).includes(bin);
@@ -12879,7 +12884,7 @@ async function stepCli(flags, ctx) {
     return lines;
   }
   const r = ctx.runner("npm", ["install", "-D", self.spec]);
-  if (r.status !== 0) return [line("problem", "cli", `npm install -D ${self.spec} failed \u2192 ${firstLine(r.stderr) || "see npm's own output"}`)];
+  if (r.status !== 0) return [line("problem", "cli", failed(`npm install -D ${self.spec}`, r, "see npm's own output"))];
   writeInstallRecord(ctx.env, { mode: "local", projectDir: ctx.cwd, installedAt: nowIso(ctx) });
   return [line("done", "cli", `installed --local (run it as npx mm3, in ${ctx.cwd})`)];
 }
@@ -12968,8 +12973,11 @@ ${e.written}`).join("\n\n");
 }
 var NOT_A_PROJECT = line("skipped", "project", 'not in a git project \u2192 cd into one and run "mm3 init" there to enable MM3 for it');
 async function runInit(flags, ctx) {
-  if (flags.agents) return { exit: 0, text: `${(await runAgentsStep(flags, ctx)).join("\n")}
+  if (flags.agents) {
+    const out = await runAgentsStep(flags, ctx);
+    return { exit: out.some((l) => l.startsWith(GLYPH.problem)) ? 1 : 0, text: `${out.join("\n")}
 ` };
+  }
   const lines = [];
   lines.push(...await stepCli(flags, ctx));
   lines.push(...await stepKey(flags, ctx));
@@ -12987,7 +12995,8 @@ async function runInit(flags, ctx) {
   });
   const partial = lines.some((l) => l.startsWith(GLYPH.problem));
   const next = partial ? 'next: not usable yet \u2014 fix the \u2716 line(s) above, then re-run "mm3 init"' : 'next: run "mm3 agent" for the rules and good/bad patterns before your first request, or "mm3 template class" to start by hand';
-  return { exit: 0, text: `${lines.join("\n")}
+  const failedStep = lines.some((l) => l.startsWith(GLYPH.problem) && !l.includes(" is not on PATH \u2192 add "));
+  return { exit: failedStep ? 1 : 0, text: `${lines.join("\n")}
 
 ${doctorOut.text}
 ${next}
@@ -16246,7 +16255,7 @@ function buildWindow(records) {
   const runs = records.filter(isContractRun);
   const legacyRuns = records.filter(isRun);
   const outcomes = records.filter((r) => r.kind === "outcome");
-  const failed = records.filter((r) => r.kind === "failed");
+  const failed2 = records.filter((r) => r.kind === "failed");
   const { edges: rawEdges, runTags } = collectEdges(runs);
   const { canonicalOf, merged: pathsMerged } = mergePathAliases(rawEdges.map((e) => e.place));
   const edges = canonicalOf.size ? rawEdges.map((e) => canonicalOf.has(e.place) ? { ...e, place: canonicalOf.get(e.place) } : e) : rawEdges;
@@ -16358,7 +16367,7 @@ function buildWindow(records) {
       paidCalls += 1;
     }
   }
-  for (const f of failed) if (f.costUsd) spendUsd += f.costUsd;
+  for (const f of failed2) if (f.costUsd) spendUsd += f.costUsd;
   let dateFrom = null;
   let dateTo = null;
   for (const r of records) {
@@ -17197,6 +17206,7 @@ function fromRunId(id, flags, paths) {
   if (flags.where !== void 0) doc.setIn(["mak", "where"], flags.where);
   return { exit: 0, text: doc.toString() };
 }
+var invalidYaml = (from, exit = 2) => ({ exit, text: stopText([`\u2716 template: --from "${clip(from, 60)}" is not valid YAML \u2192 fix it (YAML indents with spaces, never tabs), or point at an MM3 request file`], "template") });
 function fromFile(from, flags) {
   let raw;
   try {
@@ -17210,12 +17220,16 @@ function fromFile(from, flags) {
   try {
     doc = (0, import_yaml5.parseDocument)(raw);
   } catch {
-    return { exit: 2, text: stopText([`\u2716 template: --from "${clip(from, 60)}" is not valid YAML \u2192 point at an MM3 request file`], "template") };
+    return invalidYaml(from);
   }
   if (!doc.has("mak")) return { exit: 2, text: stopText([`\u2716 template: --from "${clip(from, 60)}" has no mak: block \u2192 point at an MM3 request file`], "template") };
   if (flags.goal !== void 0) doc.setIn(["mak", "goal"], flags.goal);
   if (flags.where !== void 0) doc.setIn(["mak", "where"], flags.where);
-  return { exit: 0, text: doc.toString() };
+  try {
+    return { exit: 0, text: doc.toString() };
+  } catch {
+    return invalidYaml(from, 1);
+  }
 }
 function runTemplate(target, flags = {}, paths, packageDir = DEFAULT_PACKAGE_DIR) {
   if (!VERBS.includes(target)) return { exit: 2, text: stopText([`\u2716 template: "${clip(target, 30)}" is not a verb \u2192 one of ${VERBS.join(", ")}`], "template") };
@@ -17782,6 +17796,13 @@ var UsageStop = class extends Error {
     this.name = "UsageStop";
   }
 };
+var isFolder = (p) => {
+  try {
+    return statSync9(p).isDirectory();
+  } catch {
+    return false;
+  }
+};
 var OUTCOMES = ["held", "overruled", "failed"];
 var NO_PROJECT = '\u2716 project: no .mm3 or .git folder here or above \u2192 run inside a project, or "mkdir .mm3" to start one here';
 var DEFAULT_REQUEST_MAX_BYTES = 1048576;
@@ -17970,13 +17991,13 @@ async function dispatch(argv, ctx) {
     });
     positionalCount("init", positionals, 0, 0);
     if ([values.global, values.user, values.local].filter(Boolean).length > 1) {
-      return finish(2, "\u2716 init: give at most one of --global, --user or --local");
+      return finish(2, "\u2716 init: give at most one of --global, --user or --local \u2192 pick one, or none to let init choose");
     }
     if (values.agents && (values.global || values.user || values.local || values.claude || values["no-claude"] || values["key-stdin"] || values["no-key"] || values.scope !== void 0)) {
       return finish(2, '\u2716 init: --agents runs on its own \u2192 run "mm3 init --agents [--yes]" alone (and "mm3 init" separately for the install, key and plugin)');
     }
-    if (values.claude && values["no-claude"]) return finish(2, "\u2716 init: give at most one of --claude or --no-claude");
-    if (values["key-stdin"] && values["no-key"]) return finish(2, "\u2716 init: give at most one of --key-stdin or --no-key");
+    if (values.claude && values["no-claude"]) return finish(2, "\u2716 init: give at most one of --claude or --no-claude \u2192 pick one, or neither to let init decide");
+    if (values["key-stdin"] && values["no-key"]) return finish(2, "\u2716 init: give at most one of --key-stdin or --no-key \u2192 pick one, or neither to be asked");
     if (values.scope !== void 0 && values.scope !== "user" && values.scope !== "project") {
       return finish(2, `\u2716 --scope: "${clip(values.scope, 20)}" is not user or project \u2192 use --scope user or --scope project`);
     }
@@ -18027,6 +18048,7 @@ async function dispatch(argv, ctx) {
   }
   const paths = resolvePaths(ctx.cwd, ctx.env);
   if (!paths) return finish(2, withAgentPointer(NO_PROJECT, command));
+  if (!isFolder(paths.root)) return finish(2, withAgentPointer(`\u2716 project: "${clip(paths.root, 80)}" is not a folder \u2192 give an existing project folder (MM3_HOME, or the plugin's project field)`, command));
   let resolvedOnce;
   const resolved = () => resolvedOnce ??= resolveConfig(paths, ctx.env);
   switch (command) {
@@ -18164,9 +18186,27 @@ async function runCaught(argv, ctx) {
     if (e instanceof LedgerError) return finish(e.exit, e.message);
     if (e instanceof JevConfigError) return finish(e.exit, e.message);
     if (e instanceof LockError || e instanceof StoreError) return finish(1, e.message);
+    const plain = systemStop(e);
+    if (plain) return finish(1, plain);
     const text = (e instanceof Error ? e.message : String(e)).split("\n")[0].slice(0, 200);
     return finish(1, `\u2716 mm3: ${text} \u2192 retry; if it repeats, report it with the command you ran`);
   }
+}
+var FS_WORDS = {
+  EISDIR: "a file MM3 reads is a folder",
+  ENOTDIR: "a folder MM3 needs is a file",
+  EACCES: "MM3 may not read or write a file",
+  EPERM: "MM3 may not read or write a file",
+  ENOENT: "a file MM3 needs is missing",
+  ENOSPC: "the disk is full",
+  EROFS: "the disk is read-only"
+};
+function systemStop(e) {
+  const err2 = e;
+  const what = typeof err2?.code === "string" ? FS_WORDS[err2.code] : void 0;
+  if (!what) return void 0;
+  const where = typeof err2?.path === "string" ? ` (${clip(path25.basename(err2.path), 40)})` : "";
+  return `\u2716 files: ${what}${where} \u2192 check .mm3/ (log.jsonl and budget.json are files, the folder is writable), then re-run`;
 }
 function realCtx() {
   return {

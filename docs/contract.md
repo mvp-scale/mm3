@@ -283,6 +283,13 @@ a sweep:      1 call per layer. state = {goal, items: {"<item id>": <text or red
 - **The one exit:** whatever branch made a non-zero answer (and whatever the command), the CLI's single exit adds the pointer when the answer does not already end with one. It names the command's own card when `mm3 agent` has one (the six verbs, `report`, `outcome`, `budget`, `template`, `doctor`, `config`). A command with no card (`help`, `agent`, `init`, `uninstall`, `mcp`, an unknown command) points at the overview, `mm3 agent`. A stop that already ends with a pointer keeps it, and never gets a second one. `doctor` exits 0 even when it reports a problem, so its `✖` lines get the `doctor` pointer without an exit change. [C-197]
 - **The plugin's own stops:** a tool call's own stops (`args` not an array, a thrown call) and the JSON-RPC errors (unknown tool, unknown method, a line that is not JSON, a message without `"jsonrpc":"2.0"`) say `✖ mcp: <what> → <fix>` and end with the same pointer. The numeric JSON-RPC code is unchanged. [C-197]
 
+**Plain words where a system error would escape**
+
+- A project folder that does not exist (`MM3_HOME`, or the plugin's `project` field) stops with `✖ project: "<folder>" is not a folder → give an existing project folder (MM3_HOME, or the plugin's project field)`. It no longer reports a missing `src/…` file or a lock it could not write. [C-197]
+- A file-system error nothing closer translated (a ledger file that is a folder, a file MM3 may not read) comes back as one line, `✖ files: <what is wrong> → check .mm3/ (log.jsonl and budget.json are files, the folder is writable), then re-run`, with exit 1. It never carries the system's own words (`EISDIR`, `illegal operation on a directory`). [C-197]
+- `mm3 template <verb> --from <file>` on a file that is not valid YAML (a tab for indentation, an unclosed quote) stops with `✖ template: --from "<file>" is not valid YAML → fix it (YAML indents with spaces, never tabs), or point at an MM3 request file`, exit 1. [C-197]
+- Every `✖` line in a non-zero answer carries a fix after `→`. [C-197]
+
 ### Every response
 
 ```yaml
@@ -1680,6 +1687,8 @@ The key's source (`env`, `keychain` or `file`) is carried alongside it. [C-097]
 - It points at `mm3 agent`. That is the minimum an agent needs before writing a first real request: its enforced rules and good/bad patterns. [C-176]
 - It does not invite a real request straight off. [C-176]
 - If any step above logged a `✖ problem` line, `next:` never claims the setup is usable. It points back at the fix and at re-running `mm3 init`. [C-176]
+- A step that failed makes `init` exit 1, not 0 (a missing `npm`, an install that errors, a plugin step that errors, an unmatched marker in `init --agents`). The one exception is the `✖ cli:` advice that the install worked but its folder is not on `PATH` yet, which stays exit 0. [C-176]
+- A command that is not installed is said in words (`npm install … failed (npm was not found on PATH) → install Node.js, which includes npm, then re-run "mm3 init"`), never as `spawnSync npm ENOENT`. [C-176]
 
 **`mm3 init --agents`** is an opt-in step that runs on its own. [C-233]
 

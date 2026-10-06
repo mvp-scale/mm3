@@ -111,6 +111,14 @@ class UsageStop extends Error {
   }
 }
 
+const isFolder = (p: string): boolean => {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+};
+
 const OUTCOMES: readonly string[] = ['held', 'overruled', 'failed'];
 const NO_PROJECT = '✖ project: no .mm3 or .git folder here or above → run inside a project, or "mkdir .mm3" to start one here';
 // the default lives in config/defaults.ts's requestMaxBytes now (still 1_048_576) — a project can
@@ -413,13 +421,13 @@ async function dispatch(argv: string[], ctx: CliCtx): Promise<{ exit: number; te
     });
     positionalCount('init', positionals, 0, 0);
     if ([values.global, values.user, values.local].filter(Boolean).length > 1) {
-      return finish(2, '✖ init: give at most one of --global, --user or --local');
+      return finish(2, '✖ init: give at most one of --global, --user or --local → pick one, or none to let init choose');
     }
     if (values.agents && (values.global || values.user || values.local || values.claude || values['no-claude'] || values['key-stdin'] || values['no-key'] || values.scope !== undefined)) {
       return finish(2, '✖ init: --agents runs on its own → run "mm3 init --agents [--yes]" alone (and "mm3 init" separately for the install, key and plugin)');
     }
-    if (values.claude && values['no-claude']) return finish(2, '✖ init: give at most one of --claude or --no-claude');
-    if (values['key-stdin'] && values['no-key']) return finish(2, '✖ init: give at most one of --key-stdin or --no-key');
+    if (values.claude && values['no-claude']) return finish(2, '✖ init: give at most one of --claude or --no-claude → pick one, or neither to let init decide');
+    if (values['key-stdin'] && values['no-key']) return finish(2, '✖ init: give at most one of --key-stdin or --no-key → pick one, or neither to be asked');
     if (values.scope !== undefined && values.scope !== 'user' && values.scope !== 'project') {
       return finish(2, `✖ --scope: "${clip(values.scope, 20)}" is not user or project → use --scope user or --scope project`);
     }
@@ -472,6 +480,7 @@ async function dispatch(argv: string[], ctx: CliCtx): Promise<{ exit: number; te
 
   const paths = resolvePaths(ctx.cwd, ctx.env);
   if (!paths) return finish(2, withAgentPointer(NO_PROJECT, command));
+  if (!isFolder(paths.root)) return finish(2, withAgentPointer(`✖ project: "${clip(paths.root, 80)}" is not a folder → give an existing project folder (MM3_HOME, or the plugin's project field)`, command));
   // The effective config, read once per request and only by the commands that use it (`budget` and the
   // ledger-only commands never need it).
   let resolvedOnce: ResolvedConfig | undefined;
@@ -637,9 +646,30 @@ async function runCaught(argv: string[], ctx: CliCtx): Promise<{ exit: number; t
     if (e instanceof LedgerError) return finish(e.exit, e.message);
     if (e instanceof JevConfigError) return finish(e.exit, e.message);
     if (e instanceof LockError || e instanceof StoreError) return finish(1, e.message);
+    const plain = systemStop(e);
+    if (plain) return finish(1, plain);
     const text = (e instanceof Error ? e.message : String(e)).split('\n')[0]!.slice(0, 200);
     return finish(1, `✖ mm3: ${text} → retry; if it repeats, report it with the command you ran`);
   }
+}
+
+/** A file-system error nothing closer to it translated, as one plain line: what is wrong with a file, and where
+ *  MM3 keeps its own, instead of "EISDIR: illegal operation on a directory, read". Undefined for anything else. */
+const FS_WORDS: Record<string, string> = {
+  EISDIR: 'a file MM3 reads is a folder',
+  ENOTDIR: 'a folder MM3 needs is a file',
+  EACCES: 'MM3 may not read or write a file',
+  EPERM: 'MM3 may not read or write a file',
+  ENOENT: 'a file MM3 needs is missing',
+  ENOSPC: 'the disk is full',
+  EROFS: 'the disk is read-only',
+};
+function systemStop(e: unknown): string | undefined {
+  const err = e as NodeJS.ErrnoException | undefined;
+  const what = typeof err?.code === 'string' ? FS_WORDS[err.code] : undefined;
+  if (!what) return undefined;
+  const where = typeof err?.path === 'string' ? ` (${clip(path.basename(err.path), 40)})` : '';
+  return `✖ files: ${what}${where} → check .mm3/ (log.jsonl and budget.json are files, the folder is writable), then re-run`;
 }
 
 /** The real ctx: real env/cwd/platform, the real runner, real stdin/stdout for prompts, and fd 0 for a `-`
