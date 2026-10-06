@@ -5,11 +5,12 @@
 // on GitHub. main: reviews that all of it was tested (CI, trials, a passed ceremony on the published build, an intact ledger), then squeezes the
 // tested commit down to the allow-list in release.json into one clean commit for main; the owner merges it, tags and publishes. Main is never worked in.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { collectSurfaces, manifestOf } from '../test/helpers/guidance-surfaces.ts';
+import { ceremonyBrief } from './agentic/brief.ts';
 import { append, chainProblem, lastFormal, nextId, readLedger, type LedgerRecord, type ReleaseRecord, type StartedRecord } from './agentic/ledger.ts';
 
 export interface Manifest {
@@ -159,8 +160,16 @@ export function statusLines(m: Manifest, ledger: LedgerRecord[], npmVersion: str
     'STATUS',
     `  nightly   ${released ? `RELEASED  ${tagFor(npmVersion)}` : 'NOT RELEASED'}`,
     `  ceremony  ${on ? `${on.finished.passed ? 'PASSED' : 'DID NOT PASS'}  ${on.started.id}${!on.finished.passed && passed ? ' (accepted in release.json)' : ''}` : 'NOT RUN  (nothing is running)'}`,
-    `  main      ${passed ? 'READY  → npm run release -- main' : on ? 'BLOCKED  the ceremony did not pass: read it, fix it, or list its id under "accept" in release.json' : 'BLOCKED  needs a passed ceremony on this build'}`,
+    `  main      ${passed ? 'READY  → npm run release -- main' : on ? 'BLOCKED  the ceremony did not pass: the evidence is below, then fix it or list its id under "accept" in release.json' : 'BLOCKED  needs a passed ceremony on this build'}`,
   ];
+}
+
+/** The ceremony's evidence for this build, as lines to print under STATUS: the score, what blocked it and why, what changed since the last pass, impact, blast radius, the commands. Empty when no ceremony ran on it. */
+export function briefLines(ledger: LedgerRecord[], npmVersion: string): string[] {
+  const cer = lastFormal(ledger);
+  if (!cer || cer.started.version !== npmVersion) return [];
+  const before = ledger.filter((r): r is StartedRecord => r.phase === 'started' && r.kind === 'ceremony' && r.formal && r.id !== cer.started.id).reverse().find((s) => ledger.some((f) => f.phase === 'finished' && f.startedId === s.id && f.passed));
+  return ceremonyBrief(cer.started, cer.finished, before);
 }
 
 /** After everything ran: what a person looking at GitHub's Releases, Tags, the branch and npm would see, each read from there. */
@@ -303,7 +312,7 @@ async function nightly(m: Manifest, io: Io, yes: boolean): Promise<number> {
     if (code !== 0) console.log('✖ the ceremony could not run → nothing was tested');
     comment(io, merged[merged.length - 1], ((): string => { const l = lastFormal(readLedger()); return l && l.started.version === npmVersion ? `**${l.started.id}: formal ceremony on ${npmVersion}: ${l.finished.passed ? 'passed' : 'did not pass'}** (read it: npm run agentic:release-report -- ${l.started.id})` : ''; })());
   }
-  console.log(['', ...statusLines(m, readLedger(), npmVersion, true)].join('\n'));
+  console.log(['', ...statusLines(m, readLedger(), npmVersion, true), '', ...briefLines(readLedger(), npmVersion)].join('\n'));
   return 0;
 }
 
@@ -318,6 +327,12 @@ function runCeremony(io: Io, npmVersion: string, head: string): number {
     const theirs = readFileSync(path.join(tree, 'test/agentic/ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as LedgerRecord);
     const mine = new Set(readLedger().map(idOf));
     for (const r of theirs.filter((x) => !mine.has(idOf(x)))) append({ ...r, prev: undefined } as LedgerRecord); // re-chained onto this checkout's ledger
+    // the transcripts the ledger's digests point at live in the worktree, which is removed below: keep them where the report reads them
+    const archive = path.join(tree, 'lab/archive/agentic');
+    if (existsSync(archive)) {
+      mkdirSync('lab/archive/agentic', { recursive: true });
+      cpSync(archive, 'lab/archive/agentic', { recursive: true });
+    }
     return 0;
   } finally {
     io.git(['worktree', 'remove', '--force', tree]);

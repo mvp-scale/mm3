@@ -2,7 +2,7 @@
 // yet, read GitHub's Releases and Tags back before saying "RELEASED", and let main be built only from a tested, certified, clean copy.
 import { describe, expect, it } from 'vitest';
 import type { LedgerRecord } from '../../scripts/agentic/ledger.ts';
-import { cleanLines, deadLinks, featuresSince, parseManifest, rollupProblem, statusLines, survey, surveyMain, unreleasedNotes, verify, type Io, type Manifest } from '../../scripts/release.ts';
+import { briefLines, cleanLines, deadLinks, featuresSince, parseManifest, rollupProblem, statusLines, survey, surveyMain, unreleasedNotes, verify, type Io, type Manifest } from '../../scripts/release.ts';
 
 const HEAD = 'fe932dcabcdef0123456789abcdef0123456789a';
 const NPM = '0.1.3-nightly.20261006.1827.gfe932dc';
@@ -148,6 +148,15 @@ describe('every nightly run ends with the state in three lines [C-277]', () => {
   });
   it('[C-277] a ceremony on an older build does not count for this one', () => {
     expect(statusLines(M, ceremony({ version: '0.1.2-nightly.old' }), NPM, true)[2]).toContain('NOT RUN');
+  });
+});
+
+describe('what a failed ceremony prints under STATUS [C-277] [C-278]', () => {
+  it('[C-278] nothing for a build with no ceremony, or one on an older build; the brief for the build it ran on', () => {
+    expect(briefLines([], NPM)).toEqual([]);
+    expect(briefLines(ceremony({ version: '0.1.2-nightly.old' }), NPM)).toEqual([]);
+    const full = ceremony().map((r) => ('startedId' in r ? { ...r, level3: [], decision: { verdict: 'SHIP', exceptions: [] } } : { ...r, fingerprint: 'F', environment: { claude: '2.1.292 (Claude Code)' }, definition: { hash: 'H', rules: { gateModel: 'sonnet', mustPassTrials: 2 }, scenarios: [] } })) as unknown as LedgerRecord[];
+    expect(briefLines(full, NPM)[0]).toContain('CEREMONY CER-0001');
   });
 });
 
