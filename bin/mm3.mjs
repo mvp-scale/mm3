@@ -7413,6 +7413,7 @@ var package_default = {
     "dist",
     "skills",
     ".claude-plugin",
+    "hooks",
     "README.md",
     "LICENSE"
   ],

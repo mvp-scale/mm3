@@ -1751,6 +1751,14 @@ The key's source (`env`, `keychain` or `file`) is carried alongside it. [C-097]
 - That comes ahead of what the tool otherwise does, which is to run any CLI command in the project. [C-186]
 - The description is the first, and sometimes only, text a cold agent reads before its first call. So it has to name `agent` itself rather than assume the agent already knows to ask for it. [C-186]
 
+**The plugin's nudge hook:**
+
+- The plugin ships one `PreToolUse` hook, declared in `hooks/hooks.json` (the documented plugin location, an event map under a top-level `"hooks"` key) and run by `node` from `${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs`. Enabling the plugin turns it on and disabling it turns it off. [C-268]
+- It fires before the `Agent` tool (and the older `Task` name), where a helper is about to be spawned, and before a `Bash` command that commits, merges, pushes or opens a PR (`git commit|merge|push`, `gh pr`). [C-268]
+- It nudges and never blocks: it prints one JSON object whose `additionalContext` is one line of at most 200 characters naming the next step (the helper moment points at `mm3 agent delegate`; the decision moment says to get a verdict, `view` then `class`, and to cite the `MM3-####` id), and it always exits 0. [C-268]
+- It speaks only when the project (the hook input's `cwd` or the project folder Claude Code names, or a folder above it) has `.mm3/`. It speaks once per agent per moment per session, kept by a marker file in the temp folder. A marker that cannot be written does not silence it. [C-268]
+- Garbage or empty input, another tool, another event, a command that decides nothing, or no `.mm3/` prints nothing and exits 0. [C-268]
+
 **Errors:**
 
 - Every tool call runs through the same error normalization the real CLI entrypoint uses. [C-140]
