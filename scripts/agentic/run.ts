@@ -91,7 +91,14 @@ export function prepareProject(fixtureFile = 'test/agentic/fixture.json', source
 }
 
 /** The commit a nightly version was built from: `x.y.z-nightly.<date>.g<sha>`. */
-export const commitOf = (version: string): string | undefined => /\.g([0-9a-f]{7,40})$/u.exec(version)?.[1];
+/** The commit a published version was built from: the `.g<sha>` on a feature candidate's name, or, for a plain x.y.z, the commit npm itself recorded when it was published. */
+export const commitOf = (version: string): string | undefined => {
+  const named = /\.g([0-9a-f]{7,40})$/u.exec(version)?.[1];
+  if (named || !/^\d+\.\d+\.\d+$/u.test(version)) return named;
+  const r = spawnSync('npm', ['view', `@mvpscale/mm3@${version}`, 'gitHead', '--prefer-online'], { encoding: 'utf8' });
+  const head = r.status === 0 ? r.stdout.trim() : '';
+  return head ? head.slice(0, 7) : undefined;
+};
 
 /** A clean checkout of this repo at `commit`: what a marketplace install of that build is. */
 export function checkoutPlugin(commit: string): string {

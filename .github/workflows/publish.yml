@@ -1,12 +1,11 @@
-# Nightly (schedule, builds the `nightly` branch) and release (tag vX.Y.Z on `main`) publishing, in one
+# Nightly (dispatched by `npm run release -- nightly`, builds the `nightly` branch as the plain x.y.z) and release (tag vX.Y.Z on `main`) publishing, in one
 # workflow because npm trusted publishing names a single workflow file. Nothing publishes unless the repo
 # variable MM3_PUBLISH is 'true'. Releases to main are not automated yet: the tag trigger stays off until
 # nightly has been tested in the wild; a release runs only by hand (workflow_dispatch on a v*.*.* tag).
 name: publish
 
 on:
-  schedule:
-    - cron: '0 7 * * *'
+  # no schedule: a nightly is a formal version, released with `npm run release -- nightly`, not a daily build
   workflow_dispatch:
 
 permissions:
@@ -74,11 +73,16 @@ jobs:
       - run: npm install -g npm@11
       - run: npm ci
       - run: npm run build
-      - name: Nightly version
+      - name: Nightly version is the plain number
         if: needs.plan.outputs.channel == 'nightly'
         run: |
           base=$(node -p "require('./package.json').version")
-          npm version --no-git-tag-version "$base-nightly.$(date -u +%Y%m%d.%H%M).g$(git rev-parse --short HEAD)"  # the time keeps a re-run on the same commit from reusing a version
+          # a formal nightly is exactly package.json's x.y.z, with nothing attached: npm takes a version once, so a version that is already out has to be bumped in a PR
+          if npm view "@mvpscale/mm3@$base" version >/dev/null 2>&1; then
+            echo "::error::$base is already on npm; bump the version in package.json and release.json to release again"
+            exit 1
+          fi
+          echo "publishing $base"
       - name: Publish nightly
         if: needs.plan.outputs.channel == 'nightly'
         run: npm publish --tag nightly
