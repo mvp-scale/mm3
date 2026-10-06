@@ -15,7 +15,6 @@ import { append, chainProblem, lastFormal, nextId, readLedger, type LedgerRecord
 export interface Manifest {
   version: string;
   title: string;
-  prs: number[]; // open PRs to merge first; ones already merged are skipped, so the list can stay
   accept: string[]; // ceremony ids the owner accepted although the gate did not pass
   include: string[]; // what main keeps: everything else is development and stays on nightly
   tested: string[]; // the paths whose change makes a passed ceremony stale: the code and the text agents read
@@ -47,13 +46,12 @@ export function parseManifest(raw: unknown): { manifest?: Manifest; stops: strin
   const m = (raw ?? {}) as Record<string, unknown>;
   if (typeof m.version !== 'string' || !/^\d+\.\d+\.\d+$/u.test(m.version)) stops.push('✖ version: must look like 0.1.3 → set the version this release will be');
   if (typeof m.title !== 'string' || m.title.trim() === '' || m.title.length > 100) stops.push('✖ title: one line of at most 100 characters → say what this release does for a user');
-  if (m.prs !== undefined && !(Array.isArray(m.prs) && m.prs.every((n) => Number.isInteger(n) && (n as number) > 0))) stops.push('✖ prs: a list of pull request numbers → list the open PRs to merge first, or leave it out');
   if (m.accept !== undefined && !(Array.isArray(m.accept) && m.accept.every((s) => typeof s === 'string'))) stops.push('✖ accept: a list of ceremony ids the owner accepted → for example ["CER-0007"], or leave it out');
   const paths = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every((p) => typeof p === 'string' && p !== '' && !p.startsWith('/') && !p.includes('..'));
   if (!paths(m.include)) stops.push('✖ include: the paths main keeps, relative to the repo root → list them, for example ["README.md", "src"]');
   if (!paths(m.tested)) stops.push('✖ tested: the paths whose change makes a passed ceremony stale → list the code and agent-read text, for example ["src", "skills"]');
   if (stops.length) return { stops };
-  return { manifest: { version: m.version as string, title: (m.title as string).trim(), prs: (m.prs as number[] | undefined) ?? [], accept: (m.accept as string[] | undefined) ?? [], include: m.include as string[], tested: m.tested as string[] }, stops };
+  return { manifest: { version: m.version as string, title: (m.title as string).trim(), accept: (m.accept as string[] | undefined) ?? [], include: m.include as string[], tested: m.tested as string[] }, stops };
 }
 
 const MARK = { done: '✔ done     ', todo: '▶ will do  ', missing: '✖ not done ' } as const;
@@ -117,15 +115,20 @@ export function survey(m: Manifest, io: Io, ledger: LedgerRecord[], fingerprint:
   const short = io.git(['rev-parse', 'origin/nightly']).trim().slice(0, 7);
   const steps: Step[] = [{ id: 'ledger chain', state: chain === undefined ? 'done' : 'missing', detail: chain ?? 'intact' }];
   const open: number[] = [];
-  for (const n of m.prs) {
-    const pr = JSON.parse(io.gh(['pr', 'view', String(n), '--json', 'state,baseRefName,statusCheckRollup'])) as { state: string; baseRefName: string; statusCheckRollup: Array<{ name?: string; status?: string; conclusion?: string }> };
-    if (pr.state === 'MERGED') {
-      steps.push({ id: `PR #${n} merged into nightly`, state: 'done', detail: 'already merged' });
+  const prs = (JSON.parse(io.gh(['pr', 'list', '--base', 'nightly', '--state', 'open', '--limit', '30', '--json', 'number,title,isDraft,statusCheckRollup,headRefOid'])) as Array<{ number: number; title: string; isDraft: boolean; statusCheckRollup: Array<{ name?: string; status?: string; conclusion?: string }> }>).sort((x, y) => x.number - y.number);
+  for (const pr of prs) {
+    const id = `PR #${pr.number} merged into nightly (${pr.title.slice(0, 60)})`;
+    if (pr.isDraft) {
+      steps.push({ id, state: 'done', detail: 'a draft: left alone' });
       continue;
     }
-    const why = pr.state !== 'OPEN' || pr.baseRefName !== 'nightly' ? `${pr.state}, base ${pr.baseRefName}` : rollupProblem(pr.statusCheckRollup ?? []);
-    steps.push({ id: `PR #${n} merged into nightly`, state: why === undefined ? 'todo' : 'missing', detail: why ?? 'open, targets nightly, checks green' });
-    if (why === undefined) open.push(n);
+    const why = rollupProblem(pr.statusCheckRollup ?? []);
+    io.git(['fetch', '-q', 'origin', `pull/${pr.number}/head`]);
+    const v = pkgVersion(show(io, 'FETCH_HEAD', 'package.json'));
+    const cues = headingNames(show(io, 'FETCH_HEAD', 'CHANGELOG.md'), m.version) && hasNpmBadge(show(io, 'FETCH_HEAD', 'README.md'));
+    const problem = why ?? (v !== m.version ? `its package.json says ${v ?? '?'}, not ${m.version}` : !cues ? `its CHANGELOG heading and README badge must name ${m.version}` : undefined);
+    steps.push({ id, state: problem === undefined ? 'todo' : 'missing', detail: problem ?? 'checks green, says ' + m.version });
+    if (problem === undefined) open.push(pr.number);
   }
   const previous = releases(io).find((r) => /-nightly\./u.test(r.tagName))?.tagName;
   steps.splice(1, 0, { id: 'what goes in this nightly', state: 'done', detail: featuresSince(io, previous).join('; ') || 'nothing merged since the last nightly release' });
@@ -137,7 +140,7 @@ export function survey(m: Manifest, io: Io, ledger: LedgerRecord[], fingerprint:
     steps.push({ id: `nightly says ${m.version} (package.json, CHANGELOG heading, README badge)`, state: version === m.version && page ? 'done' : 'missing', detail: version === m.version && page ? 'all three' : `package.json ${version ?? '?'}; the CHANGELOG heading and README badge must name ${m.version} → fix it in a PR` });
   }
   const tag = io.npmTags().nightly ?? '';
-  const out = tag.startsWith(`${m.version}-nightly.`) && tag.endsWith(`.g${short}`);
+  const out = open.length === 0 && tag.startsWith(`${m.version}-nightly.`) && tag.endsWith(`.g${short}`); // merging a PR moves the head, so the build npm has is no longer of it
   steps.push({ id: `npm nightly built from ${open.length ? 'the merged head' : short}`, state: out ? 'done' : 'todo', detail: out ? tag : `npm nightly is ${tag || 'unset'}` });
   const rel = releases(io).find((r) => r.tagName === tagFor(tag));
   steps.push({ id: 'GitHub release for it (Releases and Tags)', state: out && rel ? 'done' : 'todo', detail: out && rel ? `${rel.tagName}${rel.isLatest ? ', marked Latest' : ''}` : 'a normal release with a tag on that head; GitHub marks the newest release "Latest"' });
@@ -260,6 +263,7 @@ async function nightly(m: Manifest, io: Io, yes: boolean): Promise<number> {
     return 1;
   }
   for (const n of open) io.gh(['pr', 'merge', String(n), '--merge']);
+  const merged = open;
   io.git(['fetch', '-q', '--tags', 'origin', 'nightly']);
   const head = io.git(['rev-parse', 'origin/nightly']).trim();
   const short = head.slice(0, 7);
@@ -286,10 +290,10 @@ async function nightly(m: Manifest, io: Io, yes: boolean): Promise<number> {
     return 1;
   }
   const prior = readLedger().find((r): r is ReleaseRecord => r.phase === 'released' && r.target === 'nightly' && r.npmVersion === npmVersion);
-  const rec: ReleaseRecord = prior ?? { kind: 'release', phase: 'released', id: nextId(readLedger(), 'REL'), ts: new Date().toISOString(), version: m.version, title: m.title, target: 'nightly', head, prs: m.prs, npmVersion, checks: after.map((c) => ({ id: c.id, ok: c.ok, detail: c.detail })) };
+  const rec: ReleaseRecord = prior ?? { kind: 'release', phase: 'released', id: nextId(readLedger(), 'REL'), ts: new Date().toISOString(), version: m.version, title: m.title, target: 'nightly', head, prs: merged, npmVersion, checks: after.map((c) => ({ id: c.id, ok: c.ok, detail: c.detail })) };
   if (!prior) {
     append(rec);
-    comment(io, m.prs[m.prs.length - 1], [`**${rec.id}: released to nightly** (${m.version}, ${m.title})`, '', ...after.map((c) => `- ✔ ${c.id}: ${c.detail}`)].join('\n'));
+    comment(io, merged[merged.length - 1], [`**${rec.id}: released to nightly** (${m.version}, ${m.title})`, '', ...after.map((c) => `- ✔ ${c.id}: ${c.detail}`)].join('\n'));
   }
   console.log(`\nRELEASED to nightly: ${tagFor(npmVersion)} · GitHub Releases and Tags show it · npm nightly ${npmVersion} · receipt ${rec.id}${prior ? ' (recorded earlier)' : ''}`);
   const last = lastFormal(readLedger());
@@ -297,7 +301,7 @@ async function nightly(m: Manifest, io: Io, yes: boolean): Promise<number> {
     console.log(`\nformal ceremony on ${npmVersion}: starting (about half an hour; each job prints as it finishes)`);
     const code = runCeremony(io, npmVersion, head);
     if (code !== 0) console.log('✖ the ceremony could not run → nothing was tested');
-    comment(io, m.prs[m.prs.length - 1], ((): string => { const l = lastFormal(readLedger()); return l && l.started.version === npmVersion ? `**${l.started.id}: formal ceremony on ${npmVersion}: ${l.finished.passed ? 'passed' : 'did not pass'}** (read it: npm run agentic:release-report -- ${l.started.id})` : ''; })());
+    comment(io, merged[merged.length - 1], ((): string => { const l = lastFormal(readLedger()); return l && l.started.version === npmVersion ? `**${l.started.id}: formal ceremony on ${npmVersion}: ${l.finished.passed ? 'passed' : 'did not pass'}** (read it: npm run agentic:release-report -- ${l.started.id})` : ''; })());
   }
   console.log(['', ...statusLines(m, readLedger(), npmVersion, true)].join('\n'));
   return 0;
@@ -381,7 +385,7 @@ async function main(m: Manifest, io: Io, yes: boolean): Promise<number> {
   const rel = releases(io).find((r) => r.tagName === v);
   const latest = io.npmTags().latest;
   if (rel && latest === m.version) {
-    const rec: ReleaseRecord = { kind: 'release', phase: 'released', id: nextId(readLedger(), 'REL'), ts: new Date().toISOString(), version: m.version, title: m.title, target: 'main', head: io.git(['rev-parse', 'origin/main']).trim(), prs: m.prs, npmVersion: latest, checks: steps.map((s) => ({ id: s.id, ok: s.state === 'done', detail: s.detail })) };
+    const rec: ReleaseRecord = { kind: 'release', phase: 'released', id: nextId(readLedger(), 'REL'), ts: new Date().toISOString(), version: m.version, title: m.title, target: 'main', head: io.git(['rev-parse', 'origin/main']).trim(), prs: [], npmVersion: latest, checks: steps.map((s) => ({ id: s.id, ok: s.state === 'done', detail: s.detail })) };
     append(rec);
     console.log(`\nRELEASED to main: GitHub Release ${v}${rel.isLatest ? ' (Latest)' : ''} · npm latest ${latest} · receipt ${rec.id}`);
     return 0;

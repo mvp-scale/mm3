@@ -6,7 +6,7 @@ import { cleanLines, deadLinks, featuresSince, parseManifest, rollupProblem, sta
 
 const HEAD = 'fe932dcabcdef0123456789abcdef0123456789a';
 const NPM = '0.1.3-nightly.20261006.1827.gfe932dc';
-const M: Manifest = { version: '0.1.3', title: 'Agents get a verdict more reliably', prs: [], accept: [], include: ['README.md', 'AGENTS.md', 'package.json', 'src', 'docs'], tested: ['src'] };
+const M: Manifest = { version: '0.1.3', title: 'Agents get a verdict more reliably', accept: [], include: ['README.md', 'AGENTS.md', 'package.json', 'src', 'docs'], tested: ['src'] };
 const FILES: Record<string, string> = {
   'package.json': JSON.stringify({ version: '0.1.3' }),
   'CHANGELOG.md': '# What\'s new\n\n## Unreleased: 0.1.3, on the nightly build\n\n- a line\n\n## v0.1.2\n\n- old\n',
@@ -22,7 +22,7 @@ interface World {
   releases?: Array<{ tagName: string; isLatest?: boolean }>;
   tagTarget?: string;
   ci?: unknown[];
-  pr?: Record<number, unknown>;
+  openPrs?: Array<{ number: number; title?: string; isDraft?: boolean; statusCheckRollup?: unknown[] }>;
   log?: string;
 }
 const blob = (c: string): string => `b${c.length}${[...c].reduce((a, ch) => a + ch.charCodeAt(0), 0)}`;
@@ -33,7 +33,7 @@ function fakeIo(w: World = {}): Io {
   return {
     gh: (a) => {
       if (a[0] === 'release') return JSON.stringify(w.releases ?? [{ tagName: `v${w.tag ?? NPM}`, isLatest: true }]);
-      if (a[0] === 'pr' && a[1] === 'view') return JSON.stringify(w.pr?.[Number(a[2])] ?? { state: 'OPEN', baseRefName: 'nightly', statusCheckRollup: [{ name: 'test', status: 'COMPLETED', conclusion: 'SUCCESS' }] });
+      if (a[0] === 'pr' && a[1] === 'list') return JSON.stringify((w.openPrs ?? []).map((p) => ({ title: 'a feature', isDraft: false, statusCheckRollup: [{ name: 'test', status: 'COMPLETED', conclusion: 'SUCCESS' }], ...p })));
       if (a[0] === 'api' && a[1]!.includes('/git/ref/tags/')) {
         if (w.tagTarget === '') throw new Error('not found');
         return `${w.tagTarget ?? HEAD}\n`;
@@ -73,7 +73,7 @@ const states = (steps: Array<{ id: string; state: string }>, id: RegExp): string
 describe('the release manifest [C-277]', () => {
   it('[C-277] a good manifest parses, and each mistake stops with the field and the fix', () => {
     const good = { version: '0.1.3', title: 'T', include: ['src'], tested: ['src'] };
-    expect(parseManifest(good).manifest).toEqual({ version: '0.1.3', title: 'T', prs: [], accept: [], include: ['src'], tested: ['src'] });
+    expect(parseManifest(good).manifest).toEqual({ version: '0.1.3', title: 'T', accept: [], include: ['src'], tested: ['src'] });
     expect(parseManifest({ ...good, version: '1.3' }).stops[0]).toMatch(/^✖ version: .* → /u);
     expect(parseManifest({ ...good, title: '' }).stops[0]).toMatch(/^✖ title: .* → /u);
     expect(parseManifest({ ...good, include: [] }).stops[0]).toMatch(/^✖ include: .* → /u);
@@ -105,14 +105,25 @@ describe('the nightly stage shows every step before it runs [C-277]', () => {
     expect(states(steps, /formal ceremony/u)).toBe('todo');
     expect(steps.find((s) => /formal ceremony/u.test(s.id))!.detail).toContain('about half an hour');
   });
-  it('[C-277] an open PR that is green will be merged; one still running or failing stops the stage; a merged one is skipped', () => {
-    const green = survey({ ...M, prs: [35] }, fakeIo(), [], 'F', undefined);
-    expect(green.open).toEqual([35]);
-    expect(states(green.steps, /PR #35/u)).toBe('todo');
-    const running = survey({ ...M, prs: [35] }, fakeIo({ pr: { 35: { state: 'OPEN', baseRefName: 'nightly', statusCheckRollup: [{ name: 'CodeQL', status: 'IN_PROGRESS' }] } } }), [], 'F', undefined);
-    expect(states(running.steps, /PR #35/u)).toBe('missing');
-    const merged = survey({ ...M, prs: [35] }, fakeIo({ pr: { 35: { state: 'MERGED', baseRefName: 'nightly', statusCheckRollup: [] } } }), [], 'F', undefined);
-    expect(states(merged.steps, /PR #35/u)).toBe('done');
+  it('[C-277] every open green PR into nightly is found and will be merged, oldest first; a draft is left alone; one running or failing stops the stage', () => {
+    const two = survey(M, fakeIo({ openPrs: [{ number: 37 }, { number: 36 }, { number: 40, isDraft: true }] }), [], 'F', undefined);
+    expect(two.open).toEqual([36, 37]);
+    expect(states(two.steps, /PR #36/u)).toBe('todo');
+    expect(states(two.steps, /PR #40/u)).toBe('done');
+    const running = survey(M, fakeIo({ openPrs: [{ number: 36, statusCheckRollup: [{ name: 'CodeQL', status: 'IN_PROGRESS' }] }] }), [], 'F', undefined);
+    expect(states(running.steps, /PR #36/u)).toBe('missing');
+    expect(running.open).toEqual([]);
+    expect(survey(M, fakeIo(), [], 'F', undefined).open).toEqual([]);
+  });
+  it('[C-277] while a PR is still to be merged, publishing and the GitHub release are will-do, even if npm holds a build of the old head', () => {
+    const { steps } = survey(M, fakeIo({ openPrs: [{ number: 36 }] }), [], 'F', undefined);
+    expect(states(steps, /npm nightly built/u)).toBe('todo');
+    expect(states(steps, /GitHub release/u)).toBe('todo');
+  });
+  it('[C-277] an open PR that does not say the release version, in package.json, the CHANGELOG heading and the README badge, is not merged', () => {
+    const old = { ...FILES, 'package.json': JSON.stringify({ version: '0.1.2' }) };
+    expect(states(survey(M, fakeIo({ files: old, openPrs: [{ number: 36 }] }), [], 'F', undefined).steps, /PR #36/u)).toBe('missing');
+    expect(states(survey(M, fakeIo({ files: { ...FILES, 'README.md': 'no badge' }, openPrs: [{ number: 36 }] }), [], 'F', undefined).steps, /PR #36/u)).toBe('missing');
   });
   it('[C-277] a version the page does not show, or an edited ledger, is not done', () => {
     expect(states(survey(M, fakeIo({ files: { ...FILES, 'CHANGELOG.md': '## Unreleased\n- a\n' } }), [], 'F', undefined).steps, /nightly says/u)).toBe('missing');
