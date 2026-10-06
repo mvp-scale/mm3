@@ -95,7 +95,7 @@ describe('mm3 config --load', () => {
     const r = await mm3(root, ['config', '--load', 'bad.yaml']);
     expect(r.exit).toBe(2);
     expect(readFileSync(path.join(root, '.mm3', 'config.yaml'), 'utf8')).toBe('budget:\n  usd: 2\n');
-    expect((await mm3(root, ['config', '--load', 'missing.yaml'])).text).toBe('✖ config: cannot read "missing.yaml" → check the path\n');
+    expect((await mm3(root, ['config', '--load', 'missing.yaml'])).text).toBe('✖ config: cannot read "missing.yaml" → check the path\n→ see: mm3 agent config\n');
   });
 
 

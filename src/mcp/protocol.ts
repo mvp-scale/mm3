@@ -15,7 +15,9 @@
  * spec" read literally.
  */
 
+import { endWithAgentPointer } from '../help/agent.ts';
 import { MM3_GUIDANCE } from '../help/guidance.ts';
+import { clip } from '../util/text.ts';
 
 export interface JsonRpcRequest {
   jsonrpc?: unknown;
@@ -67,6 +69,28 @@ export function toolDefinition(): { name: string; description: string; inputSche
 const err = (id: string | number | null, code: number, message: string): JsonRpcResponse => ({ jsonrpc: '2.0', id, error: { code, message } });
 const ok = (id: string | number | null, result: unknown): JsonRpcResponse => ({ jsonrpc: '2.0', id, result });
 
+/** A protocol-level error says what it is and what to send instead, and ends with the same agent pointer every
+ *  other stop ends with: the message is the only text a client shows its agent. The numeric code is unchanged. */
+export const rpcStop = (what: string, fix: string): string => endWithAgentPointer(`✖ mcp: ${what} → ${fix}`);
+
+/** A tool result that is an error: the stop text, ending with one pointer at `mm3 agent <args[0]>` (the overview
+ *  when args names nothing `agent` has a card for). */
+const toolStop = (id: string | number | null, text: string, args?: readonly string[]): JsonRpcResponse =>
+  ok(id, { content: [{ type: 'text', text: endWithAgentPointer(text, args?.[0]) }], isError: true });
+
+/** An agent's own name for a field the tool does not take (usually the YAML under "request"): said once, naming
+ *  the one field that carries it. */
+const ignoredHint = (ignored: readonly string[]): string =>
+  `✖ arguments: ignored ${ignored.map((k) => `"${clip(k, 40)}"`).join(', ')} → the tool takes only args, stdin and project: the request YAML goes in "stdin" (args: ["class","-"])`;
+
+/** `text` (an answer that already carries its own pointer, or none) with the ignored-field line put before the
+ *  pointer, so the answer still ends with exactly one. */
+function withHintBeforePointer(text: string, hint: string): string {
+  const lines = text.trimEnd().split('\n');
+  const pointer = lines.at(-1)?.startsWith('→ see: mm3 agent') ? lines.pop() : undefined;
+  return [...lines, '', hint, ...(pointer === undefined ? [] : [pointer])].join('\n');
+}
+
 /** One JSON-RPC message in, a response out — or undefined for a notification (no `id`), which never gets one,
  *  regardless of method name (that's the JSON-RPC 2.0 rule: absence of `id` is what makes it a notification). */
 export async function handleMessage(msg: JsonRpcRequest, deps: { runOne: RunOne; serverVersion: string }): Promise<JsonRpcResponse | undefined> {
@@ -74,7 +98,7 @@ export async function handleMessage(msg: JsonRpcRequest, deps: { runOne: RunOne;
   if (!hasId) return undefined;
   const id = msg.id as string | number | null;
   const method = typeof msg.method === 'string' ? msg.method : undefined;
-  if (!method || msg.jsonrpc !== '2.0') return err(id, -32600, 'Invalid Request');
+  if (!method || msg.jsonrpc !== '2.0') return err(id, -32600, rpcStop('Invalid Request (jsonrpc is not "2.0")', 'send {"jsonrpc":"2.0","id":…,"method":…}'));
 
   if (method === 'initialize') {
     const params = (msg.params ?? {}) as { protocolVersion?: unknown };
@@ -88,28 +112,29 @@ export async function handleMessage(msg: JsonRpcRequest, deps: { runOne: RunOne;
   if (method === 'tools/list') return ok(id, { tools: [toolDefinition()] });
 
   if (method === 'tools/call') {
-    const params = (msg.params ?? {}) as { name?: unknown; arguments?: { args?: unknown; stdin?: unknown; project?: unknown } };
-    if (params.name !== TOOL_NAME) return err(id, -32602, `Unknown tool: ${String(params.name)}`);
-    const rawArgs = params.arguments?.args;
+    const params = (msg.params ?? {}) as { name?: unknown; arguments?: Record<string, unknown> };
+    if (params.name !== TOOL_NAME) return err(id, -32602, rpcStop(`Unknown tool "${clip(String(params.name), 40)}"`, `call the one tool, named "${TOOL_NAME}"`));
+    const given = params.arguments ?? {};
+    const rawArgs = given.args;
     // `args` as a string (an agent folded stdin into it) used to become [] and print the generic help, saying nothing about why.
     if (rawArgs !== undefined && !Array.isArray(rawArgs)) {
-      return ok(id, { content: [{ type: 'text', text: `✖ args: must be an array of strings, got ${typeof rawArgs} → args: ["class","-"] and the request YAML as the separate field stdin` }], isError: true });
+      return toolStop(id, `✖ args: must be an array of strings, got ${typeof rawArgs} → args: ["class","-"] and the request YAML as the separate field stdin`);
     }
     const args = Array.isArray(rawArgs) ? rawArgs.map(String) : [];
-    const stdin = typeof params.arguments?.stdin === 'string' ? params.arguments.stdin : undefined;
-    const project = typeof params.arguments?.project === 'string' ? params.arguments.project : undefined;
+    const stdin = typeof given.stdin === 'string' ? given.stdin : undefined;
+    const project = typeof given.project === 'string' ? given.project : undefined;
+    // Agents sometimes put the request YAML under a field of their own ("request"): it is dropped, so the run's own
+    // stop ("request: empty") would blame the wrong thing. A failing call says what was ignored and where the YAML goes.
+    const ignored = Object.keys(given).filter((k) => !TOOL_FIELDS.includes(k));
     try {
       const { exit, text } = await deps.runOne(args, stdin, project);
-      // Agents sometimes put the request YAML under a field of their own ("request"); it is dropped, so the run's own
-      // stop ("request: empty") would blame the wrong thing. A failing call says what was ignored and where the YAML goes.
-      const ignored = Object.keys(params.arguments ?? {}).filter((k) => !TOOL_FIELDS.includes(k));
-      const hint = exit !== 0 && ignored.length > 0 ? `\n✖ arguments: ignored ${ignored.map((k) => `"${k}"`).join(', ')} → the tool takes only args, stdin and project: the request YAML goes in "stdin" (args: ["class","-"])` : '';
-      return ok(id, { content: [{ type: 'text', text: `${text}${hint}` }], isError: exit !== 0 });
+      const shown = exit !== 0 && ignored.length > 0 ? withHintBeforePointer(text, ignoredHint(ignored)) : text;
+      return ok(id, { content: [{ type: 'text', text: exit !== 0 ? endWithAgentPointer(shown, args[0]) : shown }], isError: exit !== 0 });
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      return ok(id, { content: [{ type: 'text', text: `✖ mm3: ${message}` }], isError: true });
+      const message = (e instanceof Error ? e.message : String(e)).split('\n')[0]!.slice(0, 200);
+      return toolStop(id, `✖ mm3: ${message} → retry; if it repeats, report it with the command you ran`, args);
     }
   }
 
-  return err(id, -32601, `Method not found: ${method}`);
+  return err(id, -32601, rpcStop(`Method not found: ${clip(method, 40)}`, 'use initialize, ping, tools/list or tools/call'));
 }

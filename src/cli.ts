@@ -43,7 +43,7 @@ import { runReport } from './verbs/report.ts';
 import { runScan } from './verbs/scan.ts';
 import { runTemplate } from './verbs/template.ts';
 import { runView } from './verbs/view.ts';
-import { AGENT_EXTRAS, runAgent } from './help/agent.ts';
+import { AGENT_EXTRAS, endWithAgentPointer, runAgent } from './help/agent.ts';
 import { agentFrontDoorLines } from './help/card.ts';
 import { HELP_EXTRAS, HELP_TOPICS, runHelp } from './help/index.ts';
 import { VERBS } from './contract/types.ts';
@@ -94,15 +94,11 @@ const USAGE = `${agentFrontDoorLines().join('\n')}\nusage:\n${Object.values(LINE
 const isCommand = (c: string): c is Command => Object.hasOwn(LINES, c);
 
 // The six verbs plus the five tools `mm3 agent` also carries a card for (report/outcome/budget/template/
-// doctor) — every other command (help, agent, config, init, uninstall, mcp) has no agent card to point at, so a
-// stop from one of those never gets the pointer below (config's own runConfig hand-writes its own "→ see:
-// mm3 agent config" line instead, the same way budget.ts's own errors do — see config/config.ts; doctor's
-// own `doctor <file|->` stops hand-write "→ see: mm3 agent doctor" the same way — see verbs/doctor.ts's
-// `doctorStops` — this set only matters for doctor's OWN usage-mistake stops, e.g. an unreadable file). Every
-// stop a REQUEST can trigger already ends with this same
-// pointer via verbs/request.ts's `stopText` (C-153); the additions here close the remaining gaps that never run
-// through that path — a bare CLI usage mistake, a request file cli.ts itself couldn't even read, a missing
-// project, and outcome/budget's own argument checks.
+// doctor). A stop from one of these gets "→ see: mm3 agent <command>" right where it is made (below), the same
+// pointer every request stop ends with (verbs/request.ts's `stopText`, C-153). Any non-zero answer that still has
+// no pointer gets one at the exit (`runCli`, via help/agent.ts's `endWithAgentPointer`): the command's own card
+// when `agent` has one (config, too), else the overview `mm3 agent`. So nothing here has to remember to add it,
+// and a hand-written pointer (budget, ledger, config, doctor) is never doubled.
 const AGENT_POINTABLE = new Set<Command>([...VERBS, 'report', 'outcome', 'budget', 'template', 'doctor']);
 const withAgentPointer = (text: string, command: Command): string => (AGENT_POINTABLE.has(command) ? `${text}\n→ see: mm3 agent ${command}` : text);
 
@@ -338,7 +334,8 @@ async function dispatch(argv: string[], ctx: CliCtx): Promise<{ exit: number; te
       version: ctx.pkg.version,
       pluginInstall: pluginInstallInfo(ctx.homeDir, ctx.env),
     });
-    return finish(r.exit, r.text);
+    // doctor reports a problem and still exits 0 (it is a read): its ✖ lines point at its card all the same.
+    return finish(r.exit, r.text.includes('✖') ? endWithAgentPointer(r.text, 'doctor') : r.text);
   }
 
   // config: free, like doctor — works with or without a project (no project just means every value shown is a
@@ -372,7 +369,7 @@ async function dispatch(argv: string[], ctx: CliCtx): Promise<{ exit: number; te
       ctx.io as McpIo,
       (a, stdinText, project) => {
         const nodeStop = nodeVersionStop(ctx.nodeVersion);
-        if (nodeStop) return Promise.resolve(finish(2, nodeStop));
+        if (nodeStop) return Promise.resolve(finish(2, endWithAgentPointer(nodeStop)));
         // runCli, not dispatch: dispatch can throw (LedgerError/BudgetError/UsageStop/...), and protocol.ts's
         // own tools/call catch would then re-wrap an already-formed "✖ field: ..." message as "✖ mm3:
         // ...", doubling the glyph. runCli's own catch normalizes every throw into one clean {exit, text}
@@ -626,6 +623,12 @@ async function dispatch(argv: string[], ctx: CliCtx): Promise<{ exit: number; te
  * (src/mcp/*) gets identical error handling with no second copy of this mapping.
  */
 export async function runCli(argv: string[], ctx: CliCtx): Promise<{ exit: number; text: string }> {
+  const r = await runCaught(argv, ctx);
+  // The one exit: any non-zero answer ends with a pointer, whichever branch (or catch) produced it.
+  return r.exit === 0 ? r : { exit: r.exit, text: endWithAgentPointer(r.text, argv[0]) };
+}
+
+async function runCaught(argv: string[], ctx: CliCtx): Promise<{ exit: number; text: string }> {
   try {
     return await dispatch(argv, ctx);
   } catch (e: unknown) {

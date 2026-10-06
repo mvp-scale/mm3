@@ -110,15 +110,15 @@ export function snapshotLedgerAndBudget(root: string): Record<string, string> | 
   return out;
 }
 
-/** A failure an agent can act on: exit code, nothing on stdout, one "✖ … → …" line on stderr (a request-
- *  validation stop may carry one further "→ see: mm3 agent <verb>" line — stripped here, so every existing
+/** A failure an agent can act on: exit code, nothing on stdout, one "✖ … → …" line on stderr (a stop
+ *  ends with one further "→ see: mm3 agent [<topic>]" line — stripped here, so every existing
  *  caller keeps comparing against just the "✖ …" line; test/unit/request.test.ts pins that pointer's own exact
  *  shape), no stack frames. */
 export function expectCleanStop(r: CliResult, status: number): string {
   const problems: string[] = [];
   if (r.status !== status) problems.push(`exit ${r.status}, wanted ${status}`);
   if (r.stdout !== '') problems.push(`stdout not empty: ${JSON.stringify(r.stdout)}`);
-  const body = r.stderr.replace(/\n→ see: mm3 agent \S+\n$/u, '\n');
+  const body = r.stderr.replace(/\n→ see: mm3 agent( \S+)?\n$/u, '\n');
   if (!/^✖ [^\n]+ → [^\n]+\n$/.test(body)) problems.push(`stderr is not one "✖ … → …" line: ${JSON.stringify(r.stderr)}`);
   if (/\n\s+at /.test(r.stderr)) problems.push('stack trace on stderr');
   if (problems.length) throw new Error(problems.join('; '));

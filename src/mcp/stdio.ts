@@ -5,7 +5,7 @@
  * same as any other malformed request; a notification (no response from handleMessage) writes nothing back.
  */
 import readline from 'node:readline';
-import { handleMessage, type JsonRpcRequest, type RunOne } from './protocol.ts';
+import { handleMessage, rpcStop, type JsonRpcRequest, type RunOne } from './protocol.ts';
 
 export interface McpIo {
   input: NodeJS.ReadableStream;
@@ -24,7 +24,7 @@ export function runMcpServer(io: McpIo, runOne: RunOne, serverVersion: string): 
       try {
         msg = JSON.parse(trimmed) as JsonRpcRequest;
       } catch {
-        io.output.write(`${JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } })}\n`);
+        io.output.write(`${JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: rpcStop('Parse error (the line is not JSON)', 'send one JSON-RPC 2.0 message per line') } })}\n`);
         return;
       }
       handleMessage(msg, { runOne, serverVersion })
@@ -34,7 +34,7 @@ export function runMcpServer(io: McpIo, runOne: RunOne, serverVersion: string): 
         .catch(() => {
           // Defensive only: handleMessage's own try/catch around tools/call already covers realistic failures.
           const id = (msg as { id?: string | number | null }).id ?? null;
-          io.output.write(`${JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32603, message: 'Internal error' } })}\n`);
+          io.output.write(`${JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32603, message: rpcStop('Internal error', 'retry; if it repeats, report it with the call you sent') } })}\n`);
         });
     });
     rl.on('close', () => resolve());

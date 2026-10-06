@@ -280,7 +280,8 @@ a sweep:      1 call per layer. state = {goal, items: {"<item id>": <text or red
 - **Bare CLI usage mistakes:** every one for a pointable command. These are an unknown or duplicated flag, a missing project, and a request file the CLI itself couldn't read. They also include `outcome`'s own id/value/`--by` checks and `budget`'s own cap parsing. [C-197]
 - **How it is built:** `report`, `outcome`, `budget` and `template` are tools, not one of the six `Verb`s. So `verbs/request.ts`'s `stopText` widens to a small `AgentTarget` union (`Verb` plus the four tool names). The alternative was `verbs/` importing `help/agent.ts`'s `AGENT_TOOLS` just for a type. [C-197]
 - `budget/budget.ts` and `ledger/log.ts` sit below `verbs/` in the dependency order. So their own stops append the identical `\n→ see: mm3 agent <tool>` line as a literal suffix instead. This avoids a layering inversion. [C-197]
-- **No pointer:** a command with no agent card (`help`, `agent`, `doctor`, `init`, `uninstall`, `mcp`) never gets it. There is nothing deeper for it to point at. [C-197]
+- **The one exit:** whatever branch made a non-zero answer (and whatever the command), the CLI's single exit adds the pointer when the answer does not already end with one. It names the command's own card when `mm3 agent` has one (the six verbs, `report`, `outcome`, `budget`, `template`, `doctor`, `config`). A command with no card (`help`, `agent`, `init`, `uninstall`, `mcp`, an unknown command) points at the overview, `mm3 agent`. A stop that already ends with a pointer keeps it, and never gets a second one. `doctor` exits 0 even when it reports a problem, so its `✖` lines get the `doctor` pointer without an exit change. [C-197]
+- **The plugin's own stops:** a tool call's own stops (`args` not an array, a thrown call) and the JSON-RPC errors (unknown tool, unknown method, a line that is not JSON, a message without `"jsonrpc":"2.0"`) say `✖ mcp: <what> → <fix>` and end with the same pointer. The numeric JSON-RPC code is unchanged. [C-197]
 
 ### Every response
 
@@ -1476,10 +1477,10 @@ The Claude Code skill's own "Run this first" guidance sends a cold agent to `mm3
 
 **On an older Node:**
 
-- Every command exits 2 with exactly `✖ node: v<version> is too old → install Node 22.13 or newer (it powers the ledger index); https://nodejs.org`. [C-106]
+- Every command exits 2 with exactly `✖ node: v<version> is too old → install Node 22.13 or newer (it powers the ledger index); https://nodejs.org`, then the pointer line (`→ see: mm3 agent <command>` from the CLI, `→ see: mm3 agent` from the plugin). [C-106]
 - The exception is `doctor`. It still runs, free and with no call. It shows `node: v<version> ✖ too old → install Node 22.13+` and `index: none (needs Node 22.13+)` in its own output. Then it too exits 2 rather than 0. [C-106]
 - `mm3 mcp` still answers `initialize` and `tools/list`, so a client's handshake never hangs. [C-106]
-- Every `tools/call` comes back `isError: true` with that same line, whatever command was actually asked for, `doctor` included. The guard runs before the requested command ever does. [C-106]
+- Every `tools/call` comes back `isError: true` with that same line and the overview pointer, whatever command was actually asked for, `doctor` included. The guard runs before the requested command ever does. [C-106]
 
 **The index fallback is a backstop only:**
 
@@ -1728,7 +1729,7 @@ The key's source (`env`, `keychain` or `file`) is carried alongside it. [C-097]
 - The plugin bundles a stdio MCP server, `mm3 mcp`. It is hand-rolled, with no SDK dependency. [C-103]
 - It has one tool, `mm3`, taking `{ args: string[], stdin?: string, project?: string }`. [C-103]
 - It runs exactly what `mm3 <args…>` would run, in-process. It treats `stdin` as what real stdin would have supplied. [C-103]
-- A failing call that carried a field the tool does not take (an agent's own name for the YAML, such as `request`) ends with `✖ arguments: ignored "request" → …the request YAML goes in "stdin"`; a passing call is untouched. [C-103]
+- A failing call that carried a field the tool does not take (an agent's own name for the YAML, such as `request`) says `✖ arguments: ignored "request" → …the request YAML goes in "stdin"`, then ends with the pointer; a passing call is untouched. [C-103]
 - A call whose `args` is not an array (an agent folded the YAML into a string) stops with `✖ args: must be an array of strings, got string → args: ["class","-"] and the request YAML as the separate field stdin`, and runs nothing, instead of printing the generic help. [C-103]
 - It returns the same text output the CLI would print. It returns the exit code as `isError`, which is true when the exit code isn't 0. [C-103]
 - There is no second contract. [C-103]

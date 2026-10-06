@@ -175,7 +175,7 @@ describe('mcp protocol: tools/call [C-103]', () => {
     );
     const result = resp?.result as { content: Array<{ text: string }>; isError: boolean };
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toBe('✖ args: must be an array of strings, got string → args: ["class","-"] and the request YAML as the separate field stdin');
+    expect(result.content[0]?.text).toBe('✖ args: must be an array of strings, got string → args: ["class","-"] and the request YAML as the separate field stdin\n→ see: mm3 agent');
     expect(ran).toBe(false);
   });
 
@@ -242,7 +242,7 @@ describe('the Node ≥ 22.13 guard (owner ruling) [C-106]', () => {
     const ctx: CliCtx = { ...fakeCtx(), nodeVersion: 'v20.11.0' };
     const r = await runCli(['template', 'class'], ctx);
     expect(r.exit).toBe(2);
-    expect(r.text).toBe(`${NODE_STOP_LINE}\n`);
+    expect(r.text).toBe(`${NODE_STOP_LINE}\n→ see: mm3 agent template\n`);
   });
 
   it('a good Node runs the same command normally', async () => {
@@ -285,7 +285,7 @@ describe('the Node ≥ 22.13 guard (owner ruling) [C-106]', () => {
     for (const resp of responses) {
       const result = resp?.result as { content: Array<{ type: string; text: string }>; isError: boolean };
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toBe(`${NODE_STOP_LINE}\n`);
+      expect(result.content[0]?.text).toBe(`${NODE_STOP_LINE}\n→ see: mm3 agent\n`);
     }
   });
 });
