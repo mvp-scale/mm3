@@ -128,11 +128,15 @@ function usageOf(final: Record<string, any> | undefined): Usage {
 
 const VERB_REQUESTS = new Set(['class', 'scan', 'drill', 'loop', 'view', 'replay']);
 
+/** The MM3 verb a shell command runs, whether it names the binary (`mm3 class`, `npx mm3 class`, `/x/node_modules/.bin/mm3 class`) or
+ *  reaches it through a variable the agent set (`M=/x/mm3; $M class`): the first verb request in the command, or undefined. */
+export const shellVerb = (command: string): string | undefined => /(?:^|[\s;&|(])(?:\S*\/)?(?:mm3\S*|\$\{?[A-Za-z_]\w*\}?)(?:@\S+)? +(class|scan|drill|loop|view|replay)\b/u.exec(command)?.[1];
+
 /** The MM3 verb requests each agent made, in order, and whether each was accepted (a verdict came back). Grouped by who made them. */
 export function attemptsByAgent(calls: ClaudeCall[]): Array<{ who: string; outcomes: boolean[] }> {
   const by = new Map<string, boolean[]>();
   for (const c of calls) {
-    const verb = Array.isArray(c.input.args) ? String(c.input.args[0]) : /mm3[^ ]*(?:@[^ ]+)? +([a-z]+)/u.exec(String(c.input.command ?? ''))?.[1];
+    const verb = Array.isArray(c.input.args) ? String(c.input.args[0]) : shellVerb(String(c.input.command ?? ''));
     const isMm3 = c.tool.includes('mm3') || (c.tool === 'Bash' && /mm3/u.test(String(c.input.command ?? '')));
     if (!isMm3 || verb === undefined || !VERB_REQUESTS.has(verb)) continue;
     // `view MM3-####` looks up a run the agent already holds (a lead checking a helper's id): a check, not a request for a verdict
