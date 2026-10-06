@@ -50,6 +50,12 @@ describe('readRequestText', () => {
     expect(stops('mak: 1\n---\nmak: 2\n')).toEqual(['✖ yaml: more than one document (---) → send one request per run']);
   });
 
+  // [C-272] Trial B1 (TRL-0037, two sonnet trials): the card says to name the file in backticks, so agents wrote `goal: \`routes/login.ts\` is safe`, and a plain YAML value cannot start with one.
+  it('[C-272] a value that starts with a backtick or an @ is told to be put in quotes, not given the generic parse stop', () => {
+    expect(stops('mak:\n  goal: `routes/login.ts` is safe to ship\n')).toEqual(['✖ yaml: line 2 starts a value with a backtick → put the whole value in "quotes"']);
+    expect(stops('mak:\n  goal: @latest is safe to ship\n')).toEqual(['✖ yaml: line 2 starts a value with an @ → put the whole value in "quotes"']);
+  });
+
   it('anything else that does not parse: one stop with the line', () => {
     expect(stops('mak:\n  goal: abc\nThanks! Let me know what you think.\n')).toEqual([
       '✖ yaml: line 3 does not parse → use the indented form, and put any question with ": " or " #" in quotes',

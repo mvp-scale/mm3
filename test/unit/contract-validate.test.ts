@@ -218,6 +218,12 @@ describe('validateRequest', () => {
     expect(stopsOf(req({ ask: badPassShape }), 'class')).toEqual(['✖ mak.ask.decisions.severity.pass: scale questions need the passing levels → e.g. pass: [none, low]']);
   });
 
+  // [C-270] B3 decision paths (TRL-0053, 0056): after "give 2–5" the agent read the explanation cards and wrote its own decisions from its yes/no questions in 3 of 5 trials, and only the template had a working example.
+  it('[C-270] a request with no decisions section is sent to the template that has a working one, not left to invent its own', () => {
+    const none = req({ ask: { concerns: fullAsk(1).concerns } });
+    expect(stopsOf(none, 'class')).toEqual(['✖ mak.ask.decisions: 0 categories → copy the decisions: section from mm3 template class (2–5 categories, a scale and a choice) → see: mm3 agent probe']);
+  });
+
   it('decisions: 2-5 categories, at least one scale and one choice', () => {
     const one = req({ ask: { concerns: fullAsk(1).concerns, decisions: { severity: scaleDecision(10) } } });
     expect(stopsOf(one, 'class')).toEqual(['✖ mak.ask.decisions: 1 category → give 2–5 → see: mm3 agent probe']);

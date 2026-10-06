@@ -10,6 +10,7 @@ export interface ClaudeCall {
   id: string;
   result: string;
   turn?: number; // which model turn (in the order the stream shows them) asked for this call
+  why?: string; // the agent's own words just before the call (its last text in that turn), when it wrote any: the reason it gave for this step
 }
 
 /** One model turn, from the stream: what that turn read and wrote. Approximate (the stream reports it as it goes); the run's totals come from modelUsage and are exact. */
@@ -60,6 +61,14 @@ export interface ClaudeOptions {
   timeoutMs?: number;
 }
 
+/** The environment every agent run gets on top of the caller's: the account's claude.ai connectors (mail, drive, calendar, docs, ...) stay out, so the
+ *  agent has MM3 and nothing else. Without this a plugin run loads whatever the logged-in account has, sometimes and not others, which changed the
+ *  tools and the instructions an agent saw from one trial to the next. */
+export const isolatedEnv = (extra: Record<string, string> = {}): Record<string, string | undefined> => ({ ...process.env, ENABLE_CLAUDEAI_MCP_SERVERS: 'false', ...extra });
+
+/** Any server the agent had besides the plugin under test (the run's `mcp` list, `name:status`). A run with one is not a result. */
+export const strayServers = (mcp: readonly string[]): string[] => mcp.filter((m) => !m.startsWith('plugin:mm3:'));
+
 export function runClaude(o: ClaudeOptions): ClaudeRun {
   const args = ['-p', o.prompt, '--model', o.model, '--setting-sources', '', '--disable-slash-commands', '--no-session-persistence',
     '--output-format', 'stream-json', '--verbose', '--max-budget-usd', String(o.budgetUsd), '--tools', (o.tools ?? []).join(',') || ''];
@@ -68,7 +77,7 @@ export function runClaude(o: ClaudeOptions): ClaudeRun {
   if (o.strict) args.push('--permission-mode', 'dontAsk');
   if (o.pluginDir) args.push('--plugin-dir', o.pluginDir);
   else args.push('--strict-mcp-config');
-  const r = spawnSync('claude', args, { cwd: o.cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: o.timeoutMs ?? 600_000, env: { ...process.env, ...(o.env ?? {}) } });
+  const r = spawnSync('claude', args, { cwd: o.cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: o.timeoutMs ?? 600_000, env: isolatedEnv(o.env) });
   const events = (r.stdout ?? '').split('\n').flatMap((l) => {
     try {
       return [JSON.parse(l) as Record<string, any>];
@@ -85,6 +94,7 @@ export function runClaude(o: ClaudeOptions): ClaudeRun {
   }
   const calls: ClaudeCall[] = [];
   const turns: TurnUsage[] = [];
+  const said = new Map<string, string>(); // message id → the last text the agent wrote in that turn, kept as the reason for the calls that follow it
   const seen = new Map<string, number>(); // message id → turn number: the stream repeats a message once per content block
   for (const e of events) {
     if (e.type !== 'assistant') continue;
@@ -95,7 +105,8 @@ export function runClaude(o: ClaudeOptions): ClaudeRun {
       turns.push({ turn: turns.length + 1, agent: e.parent_tool_use_id ?? 'lead', inputTokens: u.input_tokens ?? 0, outputTokens: u.output_tokens ?? 0, cacheReadTokens: u.cache_read_input_tokens ?? 0, cacheCreationTokens: u.cache_creation_input_tokens ?? 0 });
     }
     for (const b of e.message.content as Array<Record<string, any>>) {
-      if (b.type === 'tool_use') calls.push({ tool: b.name, input: b.input ?? {}, parent: e.parent_tool_use_id ?? null, id: b.id, result: results[b.id] ?? '', turn: seen.get(id)! });
+      if (b.type === 'text' && typeof b.text === 'string' && b.text.trim()) said.set(id, b.text.trim().replace(/\s+/gu, ' ').slice(0, 200));
+      if (b.type === 'tool_use') calls.push({ tool: b.name, input: b.input ?? {}, parent: e.parent_tool_use_id ?? null, id: b.id, result: results[b.id] ?? '', turn: seen.get(id)!, ...(said.has(id) ? { why: said.get(id)! } : {}) });
     }
   }
   // the LAST result: a lead that starts background helpers answers once before they report, then answers again when they do
@@ -141,6 +152,8 @@ export function attemptsByAgent(calls: ClaudeCall[]): Array<{ who: string; outco
     if (!isMm3 || verb === undefined || !VERB_REQUESTS.has(verb)) continue;
     // `view MM3-####` looks up a run the agent already holds (a lead checking a helper's id): a check, not a request for a verdict
     if (verb === 'view' && (Array.isArray(c.input.args) ? /^MM3-\d+$/u.test(String(c.input.args[1] ?? '')) : /mm3[^ ]* +view +MM3-\d+\b/u.test(String(c.input.command ?? '')))) continue;
+    // an accepted `--dry-run` is the free validation MM3's own cards recommend: the request was fine, it just made no verdict, so it is not an attempt that failed
+    if (/--dry-run\b/u.test(JSON.stringify(c.input)) && /^\s*plan:/mu.test(c.result)) continue;
     const accepted = /\bgate: (pass|fail|unsure)/u.test(c.result) || /\bid: MM3-\d+/u.test(c.result);
     const who = c.parent ?? 'lead';
     by.set(who, [...(by.get(who) ?? []), accepted]);

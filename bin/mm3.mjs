@@ -11240,7 +11240,7 @@ var PROBE_RULES = [
     cite: "concepts/how-to-build-with-system-one.md"
   },
   {
-    text: "It's answerable from the code in where: \u2014 name the file in backticks when there's more than one, and send only the context the question needs.",
+    text: "It's answerable from the code in where: \u2014 name the file in backticks inside the sentence when there's more than one (a value that starts with a backtick must be in quotes), and send only the context the question needs.",
     cite: "concepts/how-to-build-with-system-one.md"
   },
   {
@@ -11348,7 +11348,7 @@ var WHEN = {
   loop: "a design, a plan or a feature request before any code exists."
 };
 var VERB_LINE = {
-  view: "free; what's already known, before any paid call",
+  view: "free; what's already known for a request you wrote (mm3 view <request-file>), before any paid call",
   class: "one decision on one thing (merge, choose, triage, check a fix)",
   replay: "re-check a run's questions across two git refs: after a fix, or what changed between releases or commits",
   scan: "sweep many files when the problem's location is unknown",
@@ -11388,7 +11388,7 @@ function noKeyRunLine(env, deps) {
   if (hasKey(config)) return [];
   return [inPluginContext(env) ? `run: no key (sample answers only) \u2192 ${NO_KEY_PLUGIN_HINT}` : "run: no key \u2192 mm3 init to add one"];
 }
-var PROJECT_SCOPE_RULE = "- where: resolves against the MCP `project` argument or `MM3_HOME` (CLI), never your session cwd \u2014 pass `project` (or set `MM3_HOME`) when you started elsewhere.";
+var PROJECT_SCOPE_RULE = "- where: resolves against the MCP `project` argument or, in a terminal, the project folder (the nearest .mm3 or .git above where you run mm3): run mm3 from inside the project; a session cwd outside it needs `project` (MCP) or MM3_HOME (CLI) set in the environment, never typed as a prefix on the command.";
 var PROBE_SKILL_RULE = "- before writing or editing any request, read the mm3-probe skill (or run `mm3 agent probe`): what makes a probe worth asking.";
 var CHAIN_RULES = [
   "- open goal, in order: view (free reuse) \u2192 scan (find where) \u2192 drill (go deeper on a flagged item; follow next:) \u2192 loop (check the design) \u2192 replay (after a change).",
@@ -11399,6 +11399,7 @@ var EVIDENCE_RULES = [
   "- a check done without mm3 (git diff, reading code to answer a question) is a workaround: say so; never claim none.",
   "- notes: budget: \u2026 left is headroom, not a limit: stop only at \u26A0 or exit 3, then tell the owner."
 ];
+var SEND_RULE = "- sending a request: start from `mm3 template <verb>`, save it with your file-write tool (not a shell heredoc or a chain of commands), then run one plain `mm3 <verb> <file> --dry-run` and then `mm3 <verb> <file>`; through MCP the YAML goes in `stdin`.";
 function overview(env, deps) {
   return renderCard(
     [
@@ -11407,7 +11408,7 @@ function overview(env, deps) {
       "tools:",
       ...AGENT_TOOLS.map((t) => `- ${t}: ${TOOL_LINE[t]}`)
     ],
-    [PROBE_SKILL_RULE, ...ruleLines("card"), PROJECT_SCOPE_RULE, ...CHAIN_RULES, ...EVIDENCE_RULES],
+    [PROBE_SKILL_RULE, ...ruleLines("card"), PROJECT_SCOPE_RULE, SEND_RULE, ...CHAIN_RULES, ...EVIDENCE_RULES],
     [],
     [
       "run: mm3 agent <verb|tool> \u2014 before writing that request",
@@ -12157,6 +12158,7 @@ function describeParseError(lines, code, line3) {
   if (/[{}]/u.test(at.text)) return `\u2716 yaml: line ${at.no} puts a category or question in { } \u2192 use the indented form`;
   const q = QUESTION_LINE.exec(at.text);
   if (q && /:(\s|$)/u.test(q[2] ?? "")) return `\u2716 question ${q[1]} has ": " \u2192 put it in quotes`;
+  if (/^\s*(?:-\s+)?[^:#]+:\s+[`@]/u.test(at.text)) return `\u2716 yaml: line ${at.no} starts a value with ${at.text.includes(": @") ? "an @" : "a backtick"} \u2192 put the whole value in "quotes"`;
   return `\u2716 yaml: line ${at.no} does not parse \u2192 use the indented form, and put any question with ": " or " #" in quotes`;
 }
 function readRequestText(text) {
@@ -12513,7 +12515,7 @@ function contractIssues(categories, depth, field, limits) {
     }
   }
   if (decisions.length < DECISIONS_MIN || decisions.length > DECISIONS_MAX) {
-    out.push({ field: `${field}.decisions`, problem: `${decisions.length} categor${decisions.length === 1 ? "y" : "ies"}`, fix: `give ${DECISIONS_MIN}\u2013${DECISIONS_MAX}` });
+    out.push({ field: `${field}.decisions`, problem: `${decisions.length} categor${decisions.length === 1 ? "y" : "ies"}`, fix: decisions.length === 0 ? `copy the decisions: section from mm3 template class (${DECISIONS_MIN}\u2013${DECISIONS_MAX} categories, a scale and a choice)` : `give ${DECISIONS_MIN}\u2013${DECISIONS_MAX}` });
   } else {
     const kinds = new Set(decisions.flatMap((c) => c.questions.map((q) => q.kind)));
     if (!kinds.has("scale")) out.push({ field: `${field}.decisions`, problem: "no scale question", fix: "add at least one scale: question" });

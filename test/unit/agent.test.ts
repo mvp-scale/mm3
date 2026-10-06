@@ -100,6 +100,8 @@ describe('runAgent', () => {
     expect(text).toContain('MM3_HOME');
     expect(text).toContain('project');
     expect(text.toLowerCase()).toContain('session cwd');
+    expect(text).toContain('run mm3 from inside the project');
+    expect(text).toContain('never typed as a prefix on the command');
   });
 
   // [C-230] Cold-agent trial: "what changed between release A and B?" was answered with `git diff`, never replay.
@@ -117,6 +119,20 @@ describe('runAgent', () => {
     expect(text).toContain('every number or claim you report comes from an mm3 answer (cite its id, e.g. MM3-0042) or is labelled your own estimate');
     expect(text).toContain('a check done without mm3 (git diff, reading code to answer a question) is a workaround: say so; never claim none');
     expect(text).toContain('budget: … left is headroom, not a limit: stop only at ⚠ or exit 3');
+  });
+
+  // [C-269] Trial B1 (cli route): a chained heredoc-and-run shell command was refused and the agent stopped.
+  it('[C-269] the overview says to save the request with a file tool and run one plain command, and that MCP takes it in stdin', () => {
+    const text = runAgent().text;
+    expect(text).toContain('start from `mm3 template <verb>`, save it with your file-write tool (not a shell heredoc or a chain of commands)');
+    expect(text).toContain('then run one plain `mm3 <verb> <file> --dry-run` and then `mm3 <verb> <file>`');
+    expect(text).toContain('through MCP the YAML goes in `stdin`');
+  });
+
+  // [C-276] Decision paths (TRL-0059, 0061): agents called a bare `view` first, and wrote `goal: \`file.ts\` ...`, which YAML cannot read.
+  it('[C-276] the view bullet says it needs a request file, and the backtick advice says a value that starts with one must be quoted', () => {
+    expect(runAgent().text).toContain('- view: free; what\'s already known for a request you wrote (mm3 view <request-file>), before any paid call');
+    expect(runAgent('probe').text).toContain('a value that starts with a backtick must be in quotes');
   });
 
   // [C-196] The overview's closing run: block now has a third line pointing at the new verdict topic.

@@ -99,6 +99,7 @@ export function describeParseError(lines: readonly string[], code: string, line:
   if (/[{}]/u.test(at.text)) return `✖ yaml: line ${at.no} puts a category or question in { } → use the indented form`;
   const q = QUESTION_LINE.exec(at.text);
   if (q && /:(\s|$)/u.test(q[2] ?? '')) return `✖ question ${q[1]} has ": " → put it in quotes`;
+  if (/^\s*(?:-\s+)?[^:#]+:\s+[`@]/u.test(at.text)) return `✖ yaml: line ${at.no} starts a value with ${at.text.includes(": @") ? "an @" : "a backtick"} → put the whole value in "quotes"`;
   return `✖ yaml: line ${at.no} does not parse → use the indented form, and put any question with ": " or " #" in quotes`;
 }
 

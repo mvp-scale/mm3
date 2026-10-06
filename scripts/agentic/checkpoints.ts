@@ -202,7 +202,7 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
     short: 's',
     label: 'stays on MM3',
     fix: 'End every MM3 stop with the one command to run next, so the agent does not leave MM3 to explore or give up.',
-    text: 'After every MM3 stop, the agent\'s very next call is MM3 again (never a file read, a shell command or a hand-off)',
+    text: 'After every MM3 stop, the agent\'s very next call is MM3 again, or an edit to its request file followed by MM3 (never a file read, a shell command or a hand-off)',
     means: 'an agent that hit a stop left MM3 instead of fixing the request (the stop did not point it back)',
     check: (e) => {
       const r = recoveryOf(e.calls);
