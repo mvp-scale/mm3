@@ -1,8 +1,8 @@
 {
-  "fingerprint": "008be3e0c21396ebcc01897224e060d9d7cd6d1db614d1948eb8b3b76a1f8b43",
+  "fingerprint": "3f44e6d04dc27b23be2ee55aa8f8e193bdbfd809657f587e215d8ca69d287208",
   "surfaces": {
     "mcp/instructions": {
-      "sha256": "7988df23176f416b0a413b73e487141a60b8cadefac2a5def01af4a271d866aa",
+      "sha256": "5b0182cb62918c854cb5fdd9ed9701d2a171644b24c52257833a35b780d0ef9d",
       "lines": 10
     },
     "mcp/tool-definition": {
@@ -10,7 +10,7 @@
       "lines": 28
     },
     "agents-md/block": {
-      "sha256": "61a60e395660543899e523385c49b52913f85f64bc9c90886d91bb629a1e5b7b",
+      "sha256": "c638b8d6f0e007aa45b0d827f86e0ed60761d07e3f04ab17647c5a6117f1a2f3",
       "lines": 10
     },
     "agent/overview": {
@@ -82,7 +82,7 @@
       "lines": 8
     },
     "agent/delegate": {
-      "sha256": "27be218c2338e884f2f898d2729a322e1d22fd7451fbcaa3601ad77544a4a494",
+      "sha256": "cecf7525a2a2f69fa3ed590daad2a971c9ea8fde10e244178b35020230c0de94",
       "lines": 16
     },
     "help/view": {
@@ -186,7 +186,7 @@
       "lines": 9
     },
     "skills/mm3/SKILL.md": {
-      "sha256": "bd911f99f66d24e6a04168477e1248ec4106023c1bef7940a68fa451ffa787b9",
+      "sha256": "a2d0f3fe1ee95f8ce641939d0c8ceeb40ca08a3ea57a3bb7dc98446a016f3002",
       "lines": 35
     },
     "skills/mm3/references/request.schema.json": {

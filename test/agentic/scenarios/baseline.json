@@ -244,7 +244,7 @@
       "id": "F6-guidance-reaches-helper",
       "title": "Pass the guidance to a helper",
       "story": "A developer asks the lead agent: \"Have one helper check routes/login.ts with MM3, and tell me the MM3 run id the helper got.\" The helper does not share the lead's instructions; whatever it knows about MM3 has to come from the lead.",
-      "success": "The lead's prompt to the helper carries the delegate card, the helper makes its own MM3 request and gets a verdict, and the run id the lead reports really exists in the ledger.",
+      "success": "The lead's prompt to the helper carries the delegate card or tells the helper to fetch it with `mm3 agent delegate`, the helper makes its own MM3 request and gets a verdict, and the run id the lead reports really exists in the ledger.",
       "matters": "Helpers do not inherit the plugin's guidance. `mm3 agent delegate` is the only way it reaches them, so if leads do not hand it over, helpers start blind or skip MM3.",
       "goal": "A lead agent hands one helper the delegate card, and the helper uses MM3 and reports a run id the lead passes on.",
       "prompt": "Have one helper agent check routes/login.ts for access-control problems with MM3, and tell me the MM3 run id the helper got.",

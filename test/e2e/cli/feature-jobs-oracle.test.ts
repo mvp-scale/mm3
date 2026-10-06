@@ -127,6 +127,22 @@ describe('the feature jobs can be passed [C-266]', () => {
     expect(id).toBeDefined();
     calls.push({ tool: 'SubagentHandback', input: { message: `${id}: gate fail. I did not run any other verb.` }, parent: 'helper1', id: 'back1', result: '', turn: calls.length + 1 });
     expect(failed(s, evidence(root, calls, `The helper checked routes/login.ts: run ${id}, gate fail.`, s))).toEqual([]);
+    // a pointer works as well as a paste: the helper's own first call fetches the same card
+    const { root: viaPointer } = tempProject({ ...FILES, 'routes/login.ts': USER_TS });
+    const pointed: ClaudeCall[] = [];
+    pointed.push({ tool: 'Agent', input: { prompt: 'Check routes/login.ts with MM3 and report the run id. First call the mm3 tool with args ["agent","delegate"] and follow it.' }, parent: null, id: 'helper2', result: '', turn: 1 });
+    sh(viaPointer, pointed, ['agent', 'delegate'], { parent: 'helper2' });
+    sh(viaPointer, pointed, ['template', 'class'], { parent: 'helper2' });
+    const pointedId = /id: (MM3-\d+)/u.exec(sh(viaPointer, pointed, ['class', '-'], { input: GOOD, parent: 'helper2' }))?.[1];
+    pointed.push({ tool: 'SubagentHandback', input: { message: `${pointedId}: gate fail.` }, parent: 'helper2', id: 'back2', result: '', turn: pointed.length + 1 });
+    expect(failed(s, evidence(viaPointer, pointed, `The helper checked routes/login.ts: run ${pointedId}, gate fail.`, s))).toEqual([]);
+    // a prompt with neither the card nor a pointer to it leaves the helper without guidance
+    const { root: bare } = tempProject({ ...FILES, 'routes/login.ts': USER_TS });
+    const none: ClaudeCall[] = [];
+    none.push({ tool: 'Agent', input: { prompt: 'Check routes/login.ts for access-control problems and report the run id.' }, parent: null, id: 'helper3', result: '', turn: 1 });
+    const bareId = /id: (MM3-\d+)/u.exec(sh(bare, none, ['class', '-'], { input: GOOD, parent: 'helper3' }))?.[1];
+    none.push({ tool: 'SubagentHandback', input: { message: `${bareId}: gate fail.` }, parent: 'helper3', id: 'back3', result: '', turn: none.length + 1 });
+    expect(failed(s, evidence(bare, none, `The helper checked routes/login.ts: run ${bareId}, gate fail.`, s))).toEqual(['delegate-card-in-prompts']);
     // a lead that does the MM3 work itself, with no helper, is not this job
     const lone: ClaudeCall[] = [];
     const { root: other } = tempProject({ ...FILES, 'routes/login.ts': USER_TS });

@@ -19,7 +19,7 @@ const BODY: readonly string[] = [
   '- Before writing a request run `mm3 agent probe` (distinct roles per probe, a "none fits" option on every choice) and tag it with mdl (`uses`, `area`).',
   '- Before a judgment call about code or a design (safe to merge? is it fixed? which option?), get an MM3 verdict: a call costs a fraction of a cent and every run is recorded, so the next decision starts from evidence, not from scratch.',
   '- Cite the run id (MM3-####) for every claim that comes from MM3, and mark the rest as your own reading.',
-  '- Delegating? Give helpers `mm3 agent delegate`, and check their reports against the ledger: a helper can report work it did not do.',
+  '- Delegating? Give helpers `mm3 agent delegate`, and check their reports against the ledger with `mm3 view MM3-####`: a helper can report work it did not do.',
 ];
 
 const LEAD = 'Run `mm3 agent` first for the commands and rules, then `mm3 agent <verb>` before writing a request.';

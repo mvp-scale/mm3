@@ -252,9 +252,9 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
     fix: "Make `mm3 agent delegate` the first step of delegating: move its line up in the guidance and name it in the skill.",
     short: 'd',
     label: 'card in prompts',
-    text: "Every helper's prompt carries the `mm3 agent delegate` card",
-    means: 'the lead delegated without the card, so helpers start without MM3 guidance',
-    check: (e) => e.calls.filter((c) => c.tool === 'Agent').every((c) => /never read \.mm3\/log\.jsonl|MM3 run id with its gate/u.test(String(c.input.prompt ?? ''))) && e.calls.some((c) => c.tool === 'Agent'),
+    text: "Every helper's prompt carries the `mm3 agent delegate` card, or tells the helper to fetch it (a pointer works: the helper's own first call gets the same card)",
+    means: 'the lead delegated with neither the card nor a pointer to it, so helpers start without MM3 guidance',
+    check: (e) => e.calls.filter((c) => c.tool === 'Agent').every((c) => /never read \.mm3\/log\.jsonl|MM3 run id with its gate|["']agent["']\s*,\s*["']delegate["']|agent delegate/u.test(String(c.input.prompt ?? ''))) && e.calls.some((c) => c.tool === 'Agent'),
   },
   'helper-made-the-call': {
     id: 'helper-made-the-call',
