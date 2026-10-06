@@ -12147,6 +12147,13 @@ function sourceLine(lines, line3) {
   }
   return { no: line3, text: "" };
 }
+function startsValueWithIndicator(text) {
+  const colon = text.indexOf(":");
+  if (colon < 1) return false;
+  const key2 = text.slice(0, colon);
+  if (key2.includes("#") || key2.trim() === "") return false;
+  return /^\s+[`@]/u.test(text.slice(colon + 1));
+}
 function describeParseError(lines, code, line3) {
   if (code === "MULTIPLE_DOCS") return "\u2716 yaml: more than one document (---) \u2192 send one request per run";
   const at = sourceLine(lines, line3);
@@ -12158,7 +12165,7 @@ function describeParseError(lines, code, line3) {
   if (/[{}]/u.test(at.text)) return `\u2716 yaml: line ${at.no} puts a category or question in { } \u2192 use the indented form`;
   const q = QUESTION_LINE.exec(at.text);
   if (q && /:(\s|$)/u.test(q[2] ?? "")) return `\u2716 question ${q[1]} has ": " \u2192 put it in quotes`;
-  if (/^\s*(?:-\s+)?[^:#]+:\s+[`@]/u.test(at.text)) return `\u2716 yaml: line ${at.no} starts a value with ${at.text.includes(": @") ? "an @" : "a backtick"} \u2192 put the whole value in "quotes"`;
+  if (startsValueWithIndicator(at.text)) return `\u2716 yaml: line ${at.no} starts a value with ${at.text.includes(": @") ? "an @" : "a backtick"} \u2192 put the whole value in "quotes"`;
   return `\u2716 yaml: line ${at.no} does not parse \u2192 use the indented form, and put any question with ": " or " #" in quotes`;
 }
 function readRequestText(text) {
