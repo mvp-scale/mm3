@@ -11659,9 +11659,13 @@ async function handleMessage(msg, deps) {
       return toolStop(id, `\u2716 args: must be an array of strings, got ${typeof rawArgs} \u2192 args: ["class","-"] and the request YAML as the separate field stdin`);
     }
     const args2 = Array.isArray(rawArgs) ? rawArgs.map(String) : [];
+    if (given.stdin !== void 0 && typeof given.stdin !== "string") {
+      return toolStop(id, `\u2716 stdin: must be text, got ${given.stdin === null ? "null" : Array.isArray(given.stdin) ? "array" : typeof given.stdin} \u2192 send the request YAML as one string in stdin`, args2);
+    }
     const stdin = typeof given.stdin === "string" ? given.stdin : void 0;
     const project = typeof given.project === "string" ? given.project : void 0;
     const ignored = Object.keys(given).filter((k) => !TOOL_FIELDS.includes(k));
+    if (ignored.length > 0 && args2.includes("-") && !stdin?.trim()) return toolStop(id, ignoredHint(ignored), args2);
     try {
       const { exit, text } = await deps.runOne(args2, stdin, project);
       const shown2 = exit !== 0 && ignored.length > 0 ? withHintBeforePointer(text, ignoredHint(ignored)) : text;

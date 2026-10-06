@@ -121,11 +121,18 @@ export async function handleMessage(msg: JsonRpcRequest, deps: { runOne: RunOne;
       return toolStop(id, `✖ args: must be an array of strings, got ${typeof rawArgs} → args: ["class","-"] and the request YAML as the separate field stdin`);
     }
     const args = Array.isArray(rawArgs) ? rawArgs.map(String) : [];
+    // A non-string stdin used to be dropped, and the run then blamed an empty request.
+    if (given.stdin !== undefined && typeof given.stdin !== 'string') {
+      return toolStop(id, `✖ stdin: must be text, got ${given.stdin === null ? 'null' : Array.isArray(given.stdin) ? 'array' : typeof given.stdin} → send the request YAML as one string in stdin`, args);
+    }
     const stdin = typeof given.stdin === 'string' ? given.stdin : undefined;
     const project = typeof given.project === 'string' ? given.project : undefined;
     // Agents sometimes put the request YAML under a field of their own ("request"): it is dropped, so the run's own
-    // stop ("request: empty") would blame the wrong thing. A failing call says what was ignored and where the YAML goes.
+    // stop ("request: empty") would blame the wrong thing. Fields are checked BEFORE the request is read: a call that
+    // reads stdin ("-") with none given stops here, with one block saying what was ignored and where the YAML goes.
+    // Any other failing call gets the same line before its pointer.
     const ignored = Object.keys(given).filter((k) => !TOOL_FIELDS.includes(k));
+    if (ignored.length > 0 && args.includes('-') && !stdin?.trim()) return toolStop(id, ignoredHint(ignored), args);
     try {
       const { exit, text } = await deps.runOne(args, stdin, project);
       const shown = exit !== 0 && ignored.length > 0 ? withHintBeforePointer(text, ignoredHint(ignored)) : text;

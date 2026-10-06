@@ -93,7 +93,8 @@ describe('the feature jobs can be passed [C-266]', () => {
     const yaml = s.prompt.slice(s.prompt.lastIndexOf('\nmak:\n') + 1); // the very request the agent is handed (the stop above it also says "mak:")
     // the real plugin bundle, sent the YAML under "request": this is the stop the job starts the agent at
     const [stop] = await viaTool(root, [], [{ args: ['class', '-'], extra: { request: yaml } }]);
-    expect(stop).toContain('✖ arguments: ignored "request" → the tool takes only args, stdin and project: the request YAML goes in "stdin" (args: ["class","-"])');
+    // one block, not two: it names "stdin" and ends with the pointer; the run never reads the empty request, so "request: empty" is not said
+    expect(stop).toBe('✖ arguments: ignored "request" → the tool takes only args, stdin and project: the request YAML goes in "stdin" (args: ["class","-"])\n→ see: mm3 agent class');
     // the seeded text cannot drift from the product: the prompt carries the whole reply character for character, and the context test's quote is part of it
     expect(s.prompt).toContain(`and it answered:\n\n${stop}\n\nCarry on`);
     const quoted = spec.context.find((c) => c.id === 'stop-ignored-field')!.situation.split('It answered: ')[1];

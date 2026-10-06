@@ -167,6 +167,37 @@ describe('mcp protocol: tools/call [C-103]', () => {
     expect((ok?.result as { content: Array<{ text: string }> }).content[0]?.text).not.toContain('ignored'); // a passing call is untouched
   });
 
+  it('[C-103] the wrong field is checked before the request is read: a "-" call with no stdin stops once, names "stdin", ends with the pointer, and runs nothing', async () => {
+    let ran = false;
+    const resp = await handleMessage(
+      { jsonrpc: '2.0', id: 15, method: 'tools/call', params: { name: 'mm3', arguments: { args: ['class', '-'], request: 'mak:\n  goal: x\n' } } },
+      { runOne: async () => { ran = true; return { exit: 2, text: '✖ request: empty → start with "mak:"' }; }, serverVersion: '0.0.0-test' },
+    );
+    const result = resp?.result as { content: Array<{ text: string }>; isError: boolean };
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toBe('✖ arguments: ignored "request" → the tool takes only args, stdin and project: the request YAML goes in "stdin" (args: ["class","-"])\n→ see: mm3 agent class');
+    expect(ran).toBe(false);
+  });
+
+  it('[C-103] an unknown field next to a real stdin still runs the call; its own stop comes first, the ignored line next, one pointer last', async () => {
+    const resp = await handleMessage(
+      { jsonrpc: '2.0', id: 16, method: 'tools/call', params: { name: 'mm3', arguments: { args: ['class', '-'], stdin: 'x', yaml: 'x' } } },
+      { runOne: async () => ({ exit: 2, text: '✖ request: x → y\n→ see: mm3 agent class' }), serverVersion: '0.0.0-test' },
+    );
+    const text = (resp?.result as { content: Array<{ text: string }> }).content[0]!.text;
+    expect(text).toBe('✖ request: x → y\n\n✖ arguments: ignored "yaml" → the tool takes only args, stdin and project: the request YAML goes in "stdin" (args: ["class","-"])\n→ see: mm3 agent class');
+  });
+
+  it('[C-103] a stdin that is not text stops with that said, not with an empty request', async () => {
+    const resp = await handleMessage(
+      { jsonrpc: '2.0', id: 17, method: 'tools/call', params: { name: 'mm3', arguments: { args: ['class', '-'], stdin: { goal: 'x' } } } },
+      { runOne: async () => ({ exit: 0, text: 'ran' }), serverVersion: '0.0.0-test' },
+    );
+    const result = resp?.result as { content: Array<{ text: string }>; isError: boolean };
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toBe('✖ stdin: must be text, got object → send the request YAML as one string in stdin\n→ see: mm3 agent class');
+  });
+
   it('[C-103] args that is not an array (a string with the YAML folded into it) stops with the fix instead of the generic help, and runs nothing', async () => {
     let ran = false;
     const resp = await handleMessage(
