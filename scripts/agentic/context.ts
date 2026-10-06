@@ -53,7 +53,7 @@ export function runContext(scenarios: ContextScenario[] = loadContextScenarios()
 }
 
 /** pass counts per knowledge level: the table that says which carrier carries. */
-export const byLevel = (rows: ContextRow[]): Record<Level, { pass: number; total: number }> =>
+export const byLevel = (rows: Array<{ level: string; pass: boolean }>): Record<Level, { pass: number; total: number }> =>
   Object.fromEntries(LEVELS.map((l) => [l, { pass: rows.filter((r) => r.level === l && r.pass).length, total: rows.filter((r) => r.level === l).length }])) as Record<Level, { pass: number; total: number }>;
 
 if (process.argv[1]?.endsWith('context.ts')) {

@@ -3,7 +3,7 @@
 // back into its context (the result), approximated as characters ÷ 4; per model turn it keeps the stream's own usage. The
 // ledger stores the per-kind summary; the transcript holds every call; `npm run agentic:trace <transcript>` prints them.
 import { readFileSync } from 'node:fs';
-import type { ClaudeCall, TurnUsage } from './claude.ts';
+import { shellVerb, type ClaudeCall, type TurnUsage } from './claude.ts';
 
 export type Kind = 'mm3' | 'bash' | 'files' | 'agent' | 'other';
 export const KINDS: readonly Kind[] = ['mm3', 'bash', 'files', 'agent', 'other'];
@@ -54,7 +54,7 @@ export interface Recovery {
 
 export const isStop = (c: ClaudeCall): boolean => kindOf(c) === 'mm3' && /^(✖|Exit code [1-9])/u.test(c.result.trimStart());
 export const isVerdict = (c: ClaudeCall): boolean => kindOf(c) === 'mm3' && /\bgate: (pass|fail|unsure)/u.test(c.result);
-export const isVerbRequest = (c: ClaudeCall): boolean => (Array.isArray(c.input.args) ? ['class', 'scan', 'drill', 'loop', 'view', 'replay'].includes(String(c.input.args[0])) : /\bmm3\s+(class|scan|drill|loop|view|replay)\b/u.test(String(c.input.command ?? '')));
+export const isVerbRequest = (c: ClaudeCall): boolean => (Array.isArray(c.input.args) ? ['class', 'scan', 'drill', 'loop', 'view', 'replay'].includes(String(c.input.args[0])) : shellVerb(String(c.input.command ?? '')) !== undefined);
 
 export function recoveryOf(calls: ClaudeCall[]): Recovery {
   const r: Recovery = { stops: 0, onTrack: 0, fixedNext: 0 };

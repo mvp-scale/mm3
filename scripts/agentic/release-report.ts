@@ -111,6 +111,7 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
   const invalid = invalidReason(records, started.id);
   const decision = decide(started, end, { chainOk: !chainProblem(), gaps, ...(recOf(gate) ? { gateRecovery: recOf(gate)! } : {}), ...(invalid ? { invalid } : {}) });
   const sum = (rows: Row[]): string => `${rows.filter((r) => r.pass).length}/${rows.length}`;
+  const carried = (id: string): string => { const from = l3.find((r) => r.id === id)?.carriedFrom; return from ? ` (carried from ${from}, not re-run)` : ''; };
   const h = (sc: StartedRecord['definition']['scenarios'][number]) => ({ title: sc.title ?? names?.scenarios[sc.id]?.title ?? sc.id, story: sc.story ?? names?.scenarios[sc.id]?.story, success: sc.success ?? names?.scenarios[sc.id]?.success, matters: sc.matters ?? names?.scenarios[sc.id]?.matters });
   const purpose = started.definition.purpose ?? names?.purpose;
   const notTested = started.definition.notTested ?? names?.notTested ?? [];
@@ -119,6 +120,7 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
     `${started.kind === 'trial' ? 'AGENTIC FEATURE TRIAL REPORT' : 'AGENTIC RELEASE REPORT'} · ${started.id} · MM3 ${started.version}`,
     `RESULT  ${status}${started.formal ? '' : started.kind === 'trial' ? ' · a TRIAL of one job on a local build: recorded, and it never counts toward the release gate' : ' · a REHEARSAL: recorded, but it does not count toward the release gate'}${started.mode === 'paid' ? ` · PAID run: $${end?.spentUsd ?? 0} of an approved $${started.paid?.approvedUsd ?? '?'} real TypeSafe spend` : ''}`,
     `DECISION  ${decision.headline}  (reasoning at the end)`,
+    ...(started.carry ? [`CARRIED  ${started.carry.jobs.length} job(s) were not re-run here; their rows are copied unchanged from ${started.carry.from} (marked "carried" below): ${started.carry.jobs.join(', ')}.${started.carry.note ? ` Note: ${started.carry.note}` : ''}`] : []),
     '',
     'WHAT THIS TESTS',
     ...(purpose ? wrap('  ', purpose, 100) : ['  (this run was recorded before the question was written down)']),
@@ -132,7 +134,7 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
     const t = h(sc);
     const g = gate.filter((r) => r.id === sc.id);
     const f = floor.filter((r) => r.id === sc.id);
-    out.push('', `  ${i + 1}. ${t.title}`, ...(t.story ? wrap('     ', t.story, 100) : []), ...(t.success ? wrap('     Success: ', t.success, 100) : []));
+    out.push('', `  ${i + 1}. ${t.title}${carried(sc.id)}`, ...(t.story ? wrap('     ', t.story, 100) : []), ...(t.success ? wrap('     Success: ', t.success, 100) : []));
     out.push(`     Result: ${gateName} ${sum(g)} ${g.every((r) => r.pass) ? '✔' : '✖'} (tries ${tries(g)} · ${g.map((r) => r.route).join('/')})   ${rules.floorModel ?? 'smaller'}* ${sum(f)} (tries ${tries(f)})`);
     for (const m of wrong(g)) out.push(...wrap('       ✖ ', `${gateName}: ${m}`, 100));
     if (t.matters) out.push(...wrap('     Why it matters: ', t.matters, 100));
@@ -155,7 +157,7 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
   if (l1.length) out.push(`  free checks ${l1.filter((r) => r.ok).length}/${l1.length}: ${l1.map((r) => `${r.ok ? '✔' : '✖'} ${r.name.split(',')[0]!.replace('unit', 'tests').replace('CLI end to end', 'e2e')} ${/\d[\d,]*(\/\d+)?/u.exec(r.detail)?.[0] ?? ''}`.trim()).join(' · ')}`);
   if (l2.length) out.push(`  context test (next step from text alone, not gated): ${(['none', 'some', 'detailed'] as const).map((lv) => `${lv === 'some' ? 'with instructions' : lv === 'detailed' ? 'with cards too' : 'no guidance'} ${l2.filter((r) => r.level === lv && r.pass).length}/${l2.filter((r) => r.level === lv).length}`).join(' · ')}`);
   for (const sc of started.definition.scenarios) {
-    out.push('', `  ${h(sc).title} (${sc.id})`, `  ${sc.checkpoints.map((c) => `${CHECKPOINTS[c.id]?.short ?? '?'} ${CHECKPOINTS[c.id]?.label ?? c.id}${CHECKPOINTS[c.id]?.severity === 'exception' ? ' (exception-level)' : ''}`).join(' · ')}`);
+    out.push('', `  ${h(sc).title} (${sc.id})${carried(sc.id)}`, `  ${sc.checkpoints.map((c) => `${CHECKPOINTS[c.id]?.short ?? '?'} ${CHECKPOINTS[c.id]?.label ?? c.id}${CHECKPOINTS[c.id]?.severity === 'exception' ? ' (exception-level)' : ''}`).join(' · ')}`);
     out.push(`  ${'route'.padEnd(5)} ${'model'.padEnd(7)} ${sc.checkpoints.map((c) => CHECKPOINTS[c.id]?.short ?? '?').join(' ')}   ${'tries'.padEnd(9)} ${'tokens in/out'.padEnd(13)} calls  context path`);
     for (const r of l3.filter((x) => x.id === sc.id)) {
       const mark = sc.checkpoints.map((c) => (r.failed.includes(c.id) ? '✖' : '✔')).join(' ');

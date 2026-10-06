@@ -66,6 +66,13 @@ const sameCommandBothWays = (e: Evidence): Array<{ terminal: string; plugin: str
     return t ? [{ terminal: t.text, plugin: squash(plain(c)) }] : [];
   });
 };
+/** Does the answer claim the two outputs differ? "I saw no differences" and "one note that does not change the content" do not; "the two answers differ" does.
+ *  Negated phrases are dropped first; "differ" and "disagree" count anywhere; "difference", "mismatch" and "inconsistent" only in the first sentence, which is the verdict (an answer may note a mismatch between the card and the environment). */
+export const saysTheyDiffer = (answer: string): boolean => {
+  const kept = answer.replace(/\b(?:no|not|zero|without|nothing|never|n't)\b(?:\s+\w+){0,2}?\s+(?:differences?|differ(?:s|ed|ing)?|disagree\w*|mismatch\w*|inconsisten\w*)\b/giu, ' ');
+  const first = kept.split(/(?<=[.!?])\s|\n/u)[0] ?? '';
+  return /\b(?:differ(?:s|ed)?|disagree\w*)\b/iu.test(kept) || /\b(?:differences?|mismatch\w*|inconsisten\w*)\b/iu.test(first) || /\b(?:not|n't|never)\s+(?:agree|match|identical|the same)/iu.test(first);
+};
 const mm3Calls = (e: Evidence): ClaudeCall[] => e.calls.filter(isMm3);
 const verdict = (c: ClaudeCall): boolean => /\bgate: (pass|fail|unsure)/u.test(c.result);
 export const CHECKPOINTS: Record<string, Checkpoint> = {
@@ -187,7 +194,7 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
     fix: "If the two texts differ, that is a bug in one route: make the terminal and the plugin return the same text.",
     text: 'The two answers were the same text, and the final answer says they agree',
     means: 'the two routes returned different text for the same command (a real inconsistency), or the agent reported a difference that is not there, or no agreement at all',
-    check: (e) => sameCommandBothWays(e).some((p) => p.terminal === p.plugin && p.terminal !== '') && /\b(agree|same|identical|match)/iu.test(e.answer) && !/\b(differ|disagree|mismatch|inconsisten)|\b(not|n't|never)\s+(agree|match|identical|the same)/iu.test(e.answer),
+    check: (e) => sameCommandBothWays(e).some((p) => p.terminal === p.plugin && p.terminal !== '') && /\b(agree|same|identical|match)/iu.test(e.answer) && !saysTheyDiffer(e.answer),
   },
   'stays-on-mm3': {
     id: 'stays-on-mm3',

@@ -81,6 +81,7 @@ export interface StartedRecord {
   formal: boolean; // counts toward the release gate
   formalReason: string; // why it does or does not
   backfilled?: boolean;
+  carry?: { from: string; jobs: string[]; only: string[]; note?: string }; // jobs whose level 3 rows come from the earlier formal run `from`; `only` are the jobs run fresh here
 }
 
 export interface FinishedRecord {
@@ -94,7 +95,7 @@ export interface FinishedRecord {
   reason?: string; // aborted: why
   level1?: Array<{ name: string; ok: boolean; detail: string }>;
   level2?: Array<{ id: string; level: string; pass: boolean }>;
-  level3?: Array<{ id: string; route: string; model: string; resolvedModel?: string | null; trial: number; pass: boolean; failed: string[]; attempts: number[]; firstRequestAccepted: boolean; mm3Calls: number; usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; turns: number }; economics?: Economics; recovery?: Recovery; adapters?: Record<string, number>; transcript: string; transcriptSha256?: string }>;
+  level3?: Array<{ id: string; route: string; model: string; resolvedModel?: string | null; trial: number; pass: boolean; failed: string[]; attempts: number[]; firstRequestAccepted: boolean; mm3Calls: number; usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; turns: number }; economics?: Economics; recovery?: Recovery; adapters?: Record<string, number>; transcript: string; transcriptSha256?: string; carriedFrom?: string }>; // carriedFrom: this row was not run here, it is the earlier run's row, copied unchanged
   firstRequestAcceptedRate?: number;
   spentUsd?: number; // paid trials only: the real TypeSafe spend, read from the project's own ledger
   decision?: Pick<Decision, 'verdict' | 'formal' | 'blockers' | 'exceptions' | 'improvements'>; // what the release report concluded, with every improvement it saw
@@ -184,6 +185,7 @@ export function recordGaps(started: StartedRecord, finished?: FinishedRecord): s
   need(finished.usage, 'the run\'s token totals');
   if (started.kind !== 'trial') need(finished.firstRequestAcceptedRate !== undefined, 'the first-request rate');
   if ((started.schema ?? 0) >= 2) need(finished.decision, 'the decision and its improvements');
+  if (started.carry) for (const sc of started.definition.scenarios) need(finished.level3?.some((r) => r.id === sc.id), `a level 3 row for ${sc.id} (neither run nor carried)`);
   for (const r of finished.level3 ?? []) {
     const who = `${r.id}/${r.route}/${r.model}/${r.trial}`;
     need(r.usage, `${who}: tokens`);
