@@ -17,7 +17,7 @@ const row = (id: string, o: object = {}): NonNullable<FinishedRecord['level3']>[
 const rows = (id: string, o: object = {}): ReturnType<typeof row>[] => [1, 2, 3].map((trial) => row(id, { trial, ...o }));
 const srcStarted = (o: Partial<StartedRecord> = {}): StartedRecord => ({ kind: 'ceremony', phase: 'started', schema: 2, guidance: { surfaces: 58, snapshot: 's' }, environment: { node: 'v22', vitest: '5', claude: '2.1', os: 'Linux' }, artifact: { npmIntegrity: 'sha512-x', npmShasum: 'abc', pluginCommit: 'abc1234' }, id: 'CER-0001', ts: '2026-10-05T10:00:00.000Z', version: '0.1.2-nightly.one', versionCommit: 'abc1234', head: 'abc1234', dirty: false, fingerprint: 'f'.repeat(64), definition: definitionOf(spec(), FIX), mode: 'free', trialsOverride: null, formal: true, formalReason: 'ok', ...o });
 const srcFinished = (o: Partial<FinishedRecord> = {}): FinishedRecord => ({ kind: 'ceremony', phase: 'finished', schema: 2, startedId: 'CER-0001', ts: '2026-10-05T10:30:00.000Z', passed: false, level1: [{ name: 'x', ok: true, detail: 'ok' }], level2: [{ id: 'a', level: 'none', pass: true }], level3: [...rows('A'), ...rows('B', { pass: false, failed: ['engaged'] }), ...rows('C')], usage: { ...USAGE, claudeRuns: 1, mm3Calls: 1 }, firstRequestAcceptedRate: 1, ...o });
-const input = (o: Partial<CarryInput> = {}): CarryInput => ({ id: 'CER-0001', source: { started: srcStarted(), finished: srcFinished() }, only: ['B'], fingerprint: 'f'.repeat(64), definition: definitionOf(spec(), FIX), changed: ['scripts/ceremony.ts', 'test/unit/x.test.ts', 'docs/contract.md', '.github/workflows/ci.yml', 'CHANGELOG.md', 'BACKLOG.md'], ...o });
+const input = (o: Partial<CarryInput> = {}): CarryInput => ({ id: 'CER-0001', source: { started: srcStarted(), finished: srcFinished() }, only: ['B'], fingerprint: 'f'.repeat(64), definition: definitionOf(spec(), FIX), changed: ['scripts/ceremony.ts', 'test/unit/x.test.ts', 'docs/contract.md', '.github/workflows/ci.yml', 'CHANGELOG.md', 'BACKLOG.md', 'AGENTS.md'], ...o });
 
 describe('agentic carry [C-267]', () => {
   it('[C-267] a carry is allowed when the source passed those jobs, nothing an agent reads changed and only harness, docs and tests moved', () => {
@@ -45,7 +45,7 @@ describe('agentic carry [C-267]', () => {
     expect(carryProblem(input({ definition: definitionOf(spec(), { ...FIX, tag: 'v2.0.0' }) }))).toMatch(/rules or the pinned fixture differ/u);
   });
   it('[C-267] a carry is refused when anything outside the harness, tests, docs and workflows changed since the source commit', () => {
-    for (const p of ['src/verbs/class.ts', 'skills/mm3/SKILL.md', 'hooks/x.json', 'bin/mm3.mjs', '.claude-plugin/plugin.json', 'package.json', 'AGENTS.md', 'README.md']) {
+    for (const p of ['src/verbs/class.ts', 'skills/mm3/SKILL.md', 'hooks/x.json', 'bin/mm3.mjs', '.claude-plugin/plugin.json', 'package.json', 'README.md']) {
       expect(carryProblem(input({ changed: ['scripts/a.ts', p] }))).toMatch(new RegExp(`^✖ carry: ${p.replace(/[.]/gu, '\\.')} changed since CER-0001's commit abc1234, and an agent may run or read it → `, 'u'));
     }
     expect(carryProblem(input({ changed: undefined }))).toMatch(/^✖ carry: cannot list what changed since abc1234 → /u);

@@ -6,7 +6,8 @@ import type { Definition, FinishedRecord, StartedRecord } from './ledger.ts';
 import { level3Passes, type Rules } from './run.ts';
 
 /** Paths that cannot change what an agent runs or reads (guidance text is checked on its own, through the fingerprint). */
-const HARMLESS = [/^scripts\//u, /^test\//u, /^docs\//u, /^\.github\//u, /^CHANGELOG\.md$/u, /^BACKLOG\.md$/u];
+// AGENTS.md is this repo's own contributor guide: the agents under test work in the pinned sample project, and a plugin root's instruction files are not loaded as context.
+const HARMLESS = [/^scripts\//u, /^test\//u, /^docs\//u, /^\.github\//u, /^CHANGELOG\.md$/u, /^BACKLOG\.md$/u, /^AGENTS\.md$/u];
 
 export interface CarryInput {
   id: string; // the source run asked for
