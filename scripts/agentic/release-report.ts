@@ -6,7 +6,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import type { ClaudeCall, TurnUsage } from './claude.ts';
-import { chainProblem, readLedger, recordGaps, type FinishedRecord, type LedgerRecord, type StartedRecord } from './ledger.ts';
+import { chainProblem, invalidReason, readLedger, recordGaps, type FinishedRecord, type LedgerRecord, type StartedRecord } from './ledger.ts';
 import { CHECKPOINTS } from './checkpoints.ts';
 import { decide } from './decision.ts';
 import { addRecovery, approxTokens, economicsLine, kindOf, recoveryOf, type Recovery } from './trace.ts';
@@ -90,7 +90,7 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
   const starts = records.filter((r): r is StartedRecord => r.phase === 'started');
   const started = id ? starts.find((s) => s.id === id) : starts[starts.length - 1];
   if (!started) return [id ? `✖ release report: no run ${id} in the ledger → npm run agentic:runs lists them` : '✖ release report: the ledger has no runs yet → npm run ceremony -- --version <exact version>'];
-  const end = records.find((r): r is FinishedRecord => r.phase !== 'started' && r.startedId === started.id);
+  const end = records.find((r): r is FinishedRecord => (r.phase === 'finished' || r.phase === 'aborted') && r.startedId === started.id);
   if (rowKey) {
     const [sid, route, model, trial] = rowKey.split('/');
     const row = end?.level3?.find((r) => r.id === sid && r.route === route && r.model === model && String(r.trial) === trial);
@@ -108,15 +108,16 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
     const parts = rows.map((r) => r.recovery ?? (load(r.transcript) ? recoveryOf(load(r.transcript)!.calls) : undefined));
     return parts.length && parts.every((p) => p) ? (parts as Recovery[]).reduce(addRecovery, { stops: 0, onTrack: 0, fixedNext: 0 }) : undefined;
   };
-  const decision = decide(started, end, { chainOk: !chainProblem(), gaps, ...(recOf(gate) ? { gateRecovery: recOf(gate)! } : {}) });
+  const invalid = invalidReason(records, started.id);
+  const decision = decide(started, end, { chainOk: !chainProblem(), gaps, ...(recOf(gate) ? { gateRecovery: recOf(gate)! } : {}), ...(invalid ? { invalid } : {}) });
   const sum = (rows: Row[]): string => `${rows.filter((r) => r.pass).length}/${rows.length}`;
   const h = (sc: StartedRecord['definition']['scenarios'][number]) => ({ title: sc.title ?? names?.scenarios[sc.id]?.title ?? sc.id, story: sc.story ?? names?.scenarios[sc.id]?.story, success: sc.success ?? names?.scenarios[sc.id]?.success, matters: sc.matters ?? names?.scenarios[sc.id]?.matters });
   const purpose = started.definition.purpose ?? names?.purpose;
   const notTested = started.definition.notTested ?? names?.notTested ?? [];
-  const status = end ? (end.phase === 'aborted' ? `ABORTED (${end.reason})` : end.passed ? 'PASSED' : 'FAILED') : 'INCOMPLETE';
+  const status = decision.verdict === 'INVALID' ? 'INVALID (disqualified: not a result)' : end ? (end.phase === 'aborted' ? `ABORTED (${end.reason})` : end.passed ? 'PASSED' : 'FAILED') : 'INCOMPLETE';
   const out: string[] = [
-    `AGENTIC RELEASE REPORT · ${started.id} · MM3 ${started.version}`,
-    `RESULT  ${status}${started.formal ? '' : ' · a REHEARSAL: recorded, but it does not count toward the release gate'}`,
+    `${started.kind === 'trial' ? 'AGENTIC FEATURE TRIAL REPORT' : 'AGENTIC RELEASE REPORT'} · ${started.id} · MM3 ${started.version}`,
+    `RESULT  ${status}${started.formal ? '' : started.kind === 'trial' ? ' · a TRIAL of one job on a local build: recorded, and it never counts toward the release gate' : ' · a REHEARSAL: recorded, but it does not count toward the release gate'}${started.mode === 'paid' ? ` · PAID run: $${end?.spentUsd ?? 0} of an approved $${started.paid?.approvedUsd ?? '?'} real TypeSafe spend` : ''}`,
     `DECISION  ${decision.headline}  (reasoning at the end)`,
     '',
     'WHAT THIS TESTS',
@@ -137,6 +138,7 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
     if (t.matters) out.push(...wrap('     Why it matters: ', t.matters, 100));
   });
   const rate = Math.round((end.firstRequestAcceptedRate ?? 0) * 100);
+  if (started.mode === 'paid' && (end?.spentUsd ?? 0) === 0) out.push('', '  ⚠ This was labelled PAID but recorded no spend: the live classifier may never have been reached. Check the trace for "adapter fake".');
   out.push('', 'WHAT THIS MEANS FOR THE RELEASE');
   out.push(...wrap('  - ', gate.every((r) => r.pass) ? `${gateName}, the model that decides, completed every job on every route. Agents can get MM3 ${started.version.split('-')[0]} to work.` : `${gateName}, the model that decides, missed at least one job (marked ✖ above). That blocks the release until it is understood.`, 100));
   out.push(...wrap('  - ', `The agent's first request to MM3 was accepted ${rate}% of the time (target 80%). ${rate < 80 ? 'Agents usually needed a retry, so the instructions and error messages still cost them effort.' : 'The instructions work.'}`, 100));
@@ -145,13 +147,13 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
   const rf = recOf(floor);
   const recText = (x: Recovery | undefined): string => (x ? (x.stops === 0 ? 'hit no stops' : `after ${x.stops} stop(s) stayed on MM3 ${x.onTrack} time(s) and got a verdict on the next MM3 request ${x.fixedNext} time(s)`) : 'recovery not measurable for this run');
   out.push(...wrap('  - ', `Recovery, the test of a good error message: ${gateName} ${recText(rg)}.${rf ? ` ${rules.floorModel ?? 'The smaller model'}* ${recText(rf)}.` : ''} The goal is every stop followed by MM3 and fixed on the next request.`, 100));
-  out.push(...wrap('  - ', started.formal ? 'This is a formal run: the release gate reads it.' : 'This is a rehearsal: it ran from a checkout that is not the published build\'s own commit, with one trial per job. A formal run on the published commit is still needed.', 100));
+  out.push(...wrap('  - ', started.formal ? 'This is a formal run: the release gate reads it.' : started.kind === 'trial' ? 'This is a development trial of one job on a local build. It tells you whether the feature works for an agent; the release ceremony on the published nightly is what decides a release.' : 'This is a rehearsal: it ran from a checkout that is not the published build\'s own commit, with one trial per job. A formal run on the published commit is still needed.', 100));
   out.push(...wrap('  - ', 'It does not say the 0.1.2 features work or that MM3\'s verdicts are right (see "Not covered here").', 100));
 
   const max = Math.max(1, ...l3.flatMap((r) => (load(r.transcript)?.turns ?? []).map((x) => x.inputTokens + x.cacheReadTokens + x.cacheCreationTokens)));
   out.push('', 'THE DATA   (the whole definition of success is in the ledger line that was written before the run)');
-  out.push(`  free checks ${l1.filter((r) => r.ok).length}/${l1.length}: ${l1.map((r) => `${r.ok ? '✔' : '✖'} ${r.name.split(',')[0]!.replace('unit', 'tests').replace('CLI end to end', 'e2e')} ${/\d[\d,]*(\/\d+)?/u.exec(r.detail)?.[0] ?? ''}`.trim()).join(' · ')}`);
-  out.push(`  context test (next step from text alone, not gated): ${(['none', 'some', 'detailed'] as const).map((lv) => `${lv === 'some' ? 'with instructions' : lv === 'detailed' ? 'with cards too' : 'no guidance'} ${l2.filter((r) => r.level === lv && r.pass).length}/${l2.filter((r) => r.level === lv).length}`).join(' · ')}`);
+  if (l1.length) out.push(`  free checks ${l1.filter((r) => r.ok).length}/${l1.length}: ${l1.map((r) => `${r.ok ? '✔' : '✖'} ${r.name.split(',')[0]!.replace('unit', 'tests').replace('CLI end to end', 'e2e')} ${/\d[\d,]*(\/\d+)?/u.exec(r.detail)?.[0] ?? ''}`.trim()).join(' · ')}`);
+  if (l2.length) out.push(`  context test (next step from text alone, not gated): ${(['none', 'some', 'detailed'] as const).map((lv) => `${lv === 'some' ? 'with instructions' : lv === 'detailed' ? 'with cards too' : 'no guidance'} ${l2.filter((r) => r.level === lv && r.pass).length}/${l2.filter((r) => r.level === lv).length}`).join(' · ')}`);
   for (const sc of started.definition.scenarios) {
     out.push('', `  ${h(sc).title} (${sc.id})`, `  ${sc.checkpoints.map((c) => `${CHECKPOINTS[c.id]?.short ?? '?'} ${CHECKPOINTS[c.id]?.label ?? c.id}${CHECKPOINTS[c.id]?.severity === 'exception' ? ' (exception-level)' : ''}`).join(' · ')}`);
     out.push(`  ${'route'.padEnd(5)} ${'model'.padEnd(7)} ${sc.checkpoints.map((c) => CHECKPOINTS[c.id]?.short ?? '?').join(' ')}   ${'tries'.padEnd(9)} ${'tokens in/out'.padEnd(13)} calls  context path`);
@@ -186,10 +188,13 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
   return out;
 }
 
+/** The run id on the command line: a ceremony (CER-####) or a trial (TRL-####). Anything else is not an id. */
+export const runIdArg = (args: string[]): string | undefined => args.find((a) => /^(CER|TRL)-\d{4,}$/u.test(a));
+
 if (process.argv[1]?.endsWith('release-report.ts')) {
   const args = process.argv.slice(2);
   const rowAt = args.indexOf('--row');
-  const id = args.find((a) => /^CER-\d+$/u.test(a));
+  const id = runIdArg(args);
   const broken = chainProblem();
   if (broken) console.log(broken);
   const load = (file: string): Transcript | undefined => {

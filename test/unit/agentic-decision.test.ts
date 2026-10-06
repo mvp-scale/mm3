@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ClaudeCall, ClaudeRun } from '../../scripts/agentic/claude.ts';
 import { noUsage } from '../../scripts/agentic/claude.ts';
-import { decide } from '../../scripts/agentic/decision.ts';
+import { decide, providerContradiction } from '../../scripts/agentic/decision.ts';
 import { definitionOf, type FinishedRecord, type StartedRecord } from '../../scripts/agentic/ledger.ts';
 import { grade, type FullScenario } from '../../scripts/agentic/run.ts';
 import { recoveryOf } from '../../scripts/agentic/trace.ts';
@@ -81,5 +81,24 @@ describe('the decision [C-264]', () => {
   it('[C-264] a rehearsal says so: the verdict is for the record only and a formal run has to confirm it', () => {
     const d = decide(started({ formal: false }), end([row()]), ok);
     expect(d.headline).toBe('REHEARSAL, for the record only: this would be SHIP; a formal run on the published commit has to confirm it');
+  });
+
+  it('[C-264] a paid run answered by the sample provider is INVALID: paid and fake cannot coexist, so it is neither a pass nor a fail', () => {
+    const paid = started({ mode: 'paid', paid: { approvedUsd: 0.05 } });
+    const d = decide(paid, end([row({ adapters: { fake: 2 } })]), ok);
+    expect(d.verdict).toBe('INVALID');
+    expect(d.headline).toContain('INVALID, not a result');
+    expect(d.headline).toContain('paid and fake cannot both be true');
+    expect(d.improvements).toEqual([]); // nothing is learned from a contradiction
+    expect(providerContradiction(paid, [row({ adapters: { typesafe: 3 } })])).toBeUndefined(); // a live paid run is fine
+  });
+  it('[C-264] a free run that reached the live classifier is INVALID too: real spend was not approved', () => {
+    expect(decide(started(), end([row({ adapters: { typesafe: 1 } })]), ok).verdict).toBe('INVALID');
+    expect(providerContradiction(started(), [row({ adapters: { fake: 4 } })])).toBeUndefined();
+  });
+  it('[C-264] a run a later line has disqualified is INVALID whatever its rows say', () => {
+    const d = decide(started(), end([row()]), { ...ok, invalid: 'labelled paid but answered by the sample provider' });
+    expect(d.verdict).toBe('INVALID');
+    expect(d.blockers).toEqual(['labelled paid but answered by the sample provider']);
   });
 });

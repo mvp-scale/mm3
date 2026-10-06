@@ -54,6 +54,7 @@ export interface ClaudeOptions {
   tools?: string[]; // the tools that exist for the run; [] means none
   allowedTools?: string[]; // pre-approved (headless runs cannot ask)
   pluginDir?: string;
+  strict?: boolean; // deny anything not pre-approved (dontAsk): without it Claude Code lets read-only shell commands through whatever was approved
   env?: Record<string, string>;
   budgetUsd: number;
   timeoutMs?: number;
@@ -64,6 +65,7 @@ export function runClaude(o: ClaudeOptions): ClaudeRun {
     '--output-format', 'stream-json', '--verbose', '--max-budget-usd', String(o.budgetUsd), '--tools', (o.tools ?? []).join(',') || ''];
   if (o.system !== undefined) args.push('--system-prompt', o.system);
   if (o.allowedTools?.length) args.push('--allowedTools', ...o.allowedTools);
+  if (o.strict) args.push('--permission-mode', 'dontAsk');
   if (o.pluginDir) args.push('--plugin-dir', o.pluginDir);
   else args.push('--strict-mcp-config');
   const r = spawnSync('claude', args, { cwd: o.cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: o.timeoutMs ?? 600_000, env: { ...process.env, ...(o.env ?? {}) } });

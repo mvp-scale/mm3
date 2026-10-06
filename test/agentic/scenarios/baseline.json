@@ -153,7 +153,7 @@
       "id": "F2-spend-cap",
       "title": "Hit the spend cap and carry on",
       "story": "MM3 is limited to one run in this project, and the developer is the owner: \"Check whether routes/login.ts is safe to ship, then whether routes/basket.ts is. If MM3 stops you, raise its run cap to 5 yourself and carry on.\"",
-      "success": "The second check is stopped by the budget; the agent raises the cap in the config file and loads it, and the check then goes through. It reports what happened and both run ids.",
+      "success": "Both checks get done: the agent raises the cap in the config file the way MM3 says, loads it so it is recorded, and reports what happened and both run ids. Seeing the cap first and raising it before the stop is just as good as being stopped.",
       "matters": "The budget stop is what protects a user's spend. If an agent cannot get past it the right way, or does so without a recorded change, the cap means nothing.",
       "goal": "An agent hits the run cap, raises it through the config file the way the stop says, and finishes the work.",
       "prompt": "MM3 is limited to one run in this project and I am the owner. Check whether routes/login.ts is safe to ship, then whether routes/basket.ts is. If MM3 stops you, raise its run cap to 5 yourself and carry on. Tell me what happened and both MM3 run ids.",
@@ -166,8 +166,8 @@
       "promise": 3,
       "checkpoints": [
         "engaged",
-        "budget-stop-seen",
         "cap-raised-in-config",
+        "two-verdicts",
         "continued-after-stop",
         "answer-cites-run-id",
         "run-id-in-ledger",
@@ -177,13 +177,13 @@
     {
       "id": "F3-install-health",
       "title": "Check the install is healthy",
-      "story": "A developer asks: \"Is my MM3 install healthy? If something needs updating, tell me which copy and how.\" Claude's own record shows the plugin at an older commit than the MM3 copy the agent has.",
+      "story": "A developer asks: \"Is my MM3 install healthy? MM3 is the mm3 command here. If something needs updating, tell me which copy and how.\" The agent can ask MM3 itself; Claude's own record shows the plugin at an older commit than the MM3 copy the agent has.",
       "success": "The agent runs doctor, finds the versions warning, and gives the right fix: update the plugin, or install the nightly copy, and never the older latest.",
       "matters": "The versions line exists so a user knows which copy to update. A fix that downgrades a nightly copy would be worse than no advice.",
       "goal": "An agent finds the version mismatch with doctor and reports the right fix.",
-      "prompt": "Is my MM3 install healthy? If something needs updating, tell me which copy and how.",
+      "prompt": "Is my MM3 install healthy? MM3 is the mm3 command here. If something needs updating, tell me which copy and how.",
       "setup": "plugin-record-mismatch",
-      "setupNote": "Before the agent starts, a fake Claude config folder (CLAUDE_CONFIG_DIR) records an mm3 plugin install at commit f337f61, version 0.1.1.",
+      "setupNote": "Before the agent starts, a fake Claude config folder (outside the project) records an mm3 plugin install at commit f337f61, version 0.1.1, and the agent's shell may run only mm3.",
       "model": "sonnet",
       "routes": [
         "cli"
@@ -194,7 +194,8 @@
         "doctor-versions-seen",
         "right-fix-reported",
         "stays-on-mm3"
-      ]
+      ],
+      "shell": "mm3-only"
     },
     {
       "id": "F4-set-up-project",
@@ -228,7 +229,7 @@
   "preconditions": [
     "The provider is the sample (fake) one: no TypeSafe key, no spend. Verdicts are canned; nothing here grades whether a verdict is right.",
     "The project is a fresh copy of the pinned Juice Shop checkout with no .mm3/ in it.",
-    "The agent gets only the task prompt below: no hints, no expected outcome. Only Read/Glob/Grep (plus Write and a shell on the CLI route, the Agent tool for delegation) exist.",
+    "The agent gets only the task prompt below: no hints, no expected outcome. Only Read/Glob/Grep, Write and Edit (plus a shell on the CLI route, the Agent tool for delegation) exist.",
     "Counted as a verb request: class, scan, drill, loop, view or replay. Calls to agent, template, help, probe or doctor are discovery, not attempts."
   ],
   "purpose": "Can an agent get a useful answer out of MM3 on its own? A developer tells an agent to use MM3 to check some code. We watch whether the agent succeeds without a person stepping in, using only what MM3 itself gives it: its instructions, its help and its error messages. The project the agents look at (OWASP Juice Shop) is sample material; it is not what is being tested. Two kinds of job: the first three check that agents can use MM3 at all; the last four check the features that are new since the last release.",

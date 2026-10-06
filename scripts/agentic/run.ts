@@ -22,6 +22,7 @@ export interface FullScenario {
   helpers?: number;
   promise: number;
   setup?: 'config-runs-1' | 'plugin-record-mismatch'; // what the project (or the environment) is set up with before the agent starts
+  shell?: 'mm3-only'; // the agent's shell may run only mm3: for a job about asking MM3 itself, so it cannot read the machine around it
   checkpoints: string[];
 }
 
@@ -40,6 +41,8 @@ export interface FullRow {
   usage: Usage;
   economics: Economics; // where the tokens went, by kind of call
   recovery: Recovery; // after each stop: did the agent stay on MM3, and did its next MM3 request fix it
+  spentUsd?: number; // paid trials: the real TypeSafe dollars this run spent
+  adapters?: Record<string, number>; // which providers answered this run's MM3 requests, read from the project ledger
   transcript?: string; // file name under lab/archive/agentic
   transcriptSha256?: string; // digest of that file, so the record can say which transcript it means
 }
@@ -91,6 +94,14 @@ export function installPackage(version: string): string {
   return path.join(prefix, 'node_modules', '.bin');
 }
 
+/** For the install-health job on the CLI route: Claude Code uses CLAUDE_CONFIG_DIR for its own login, so the fake plugin record cannot be set for the whole session.
+ *  A small `mm3` on the path sets it for MM3 alone and runs the real one. Returns the folder to put first on PATH. */
+export function shimMm3(realBin: string, claudeDir: string): string {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'mm3-agentic-shim-'));
+  writeFileSync(path.join(dir, 'mm3'), `#!/bin/sh\nCLAUDE_CONFIG_DIR=${JSON.stringify(claudeDir)} exec ${JSON.stringify(path.join(realBin, 'mm3'))} "$@"\n`, { mode: 0o755 });
+  return dir;
+}
+
 /** The state a job starts from, written before the agent runs. Returns any extra environment it needs. Plain files, nothing hidden from the agent. */
 export function applySetup(setup: FullScenario['setup'], project: string): Record<string, string> {
   if (setup === 'config-runs-1') {
@@ -100,7 +111,7 @@ export function applySetup(setup: FullScenario['setup'], project: string): Recor
   }
   if (setup === 'plugin-record-mismatch') {
     // Claude's own record of an installed mm3 plugin, at an older commit than the copy under test
-    const claude = path.join(project, '.claude-fake');
+    const claude = mkdtempSync(path.join(os.tmpdir(), 'mm3-agentic-claude-')); // outside the project, so the agent does not find the fixture by looking around
     const install = path.join(claude, 'plugins', 'cache', 'mm3', 'mm3', 'f337f612ebb4');
     mkdirSync(install, { recursive: true });
     writeFileSync(path.join(install, 'package.json'), JSON.stringify({ name: '@mvpscale/mm3', version: '0.1.1' }));
@@ -122,34 +133,112 @@ export function grade(s: FullScenario, run: ClaudeRun, project: string, route: '
   return { id: s.id, route, model, resolvedModel: run.model, trial, pass: run.ok && checks.every((c) => c.pass || CHECKPOINTS[c.id]?.severity === 'exception'), checks, attempts, firstRequestAccepted: m.firstRequestAccepted, mm3Calls: m.mm3Calls, problems, usage: run.usage, economics: economics(run.calls), recovery: recoveryOf(run.calls) };
 }
 
-/** Gate rows (the gate model, several trials) and floor rows (the other model, once). */
-export function runFull(scenarios: FullScenario[], version: string, rules: Rules, log: (s: string) => void = () => undefined, trialsOverride?: number): FullRow[] {
+/** The real TypeSafe dollars a project's own ledger recorded, summed over its runs. */
+export function spentUsd(ledger: string): number {
+  return ledger.split('\n').filter((l) => l.includes('"kind":"run"')).reduce((sum, l) => {
+    try {
+      const c = (JSON.parse(l) as { costUsd?: unknown }).costUsd;
+      return sum + (typeof c === 'number' ? c : 0);
+    } catch {
+      return sum;
+    }
+  }, 0);
+}
+
+/** Which providers answered the runs in a project's ledger. A paid trial that shows `fake` here never reached the live classifier, whatever it was labelled. */
+export function adapters(ledger: string): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const l of ledger.split('\n').filter((x) => x.includes('"kind":"run"'))) {
+    try {
+      const a = (JSON.parse(l) as { adapter?: unknown }).adapter;
+      if (typeof a === 'string') out[a] = (out[a] ?? 0) + 1;
+    } catch {
+      /* a line that is not json is not a run */
+    }
+  }
+  return out;
+}
+
+/** Puts a dollar cap into the project's config file so MM3's own budget enforces it, keeping whatever the job's setup already wrote. */
+export function setCap(project: string, usd: number): void {
+  const file = path.join(project, '.mm3', 'config.yaml');
+  mkdirSync(path.dirname(file), { recursive: true });
+  let text = '';
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch {
+    /* no config file yet: start one */
+  }
+  // one pure rewrite and one write: no "does it exist" check between reading and writing the same file
+  const next = /^\s{2}usd:/mu.test(text)
+    ? text.replace(/^(\s{2}usd:).*$/mu, `$1 ${usd}`)
+    : /^budget:/mu.test(text)
+      ? text.replace(/^budget:.*$/mu, `budget:\n  usd: ${usd}`)
+      : `${text}${text && !text.endsWith('\n') ? '\n' : ''}budget:\n  usd: ${usd}\n`;
+  writeFileSync(file, next);
+}
+
+export interface RunOptions {
+  build?: { bin: string; plugin: string }; // a build to test that is not a published version (a trial's working tree); skips the install and the checkout
+  models?: Array<'haiku' | 'sonnet'>; // run exactly these models, `trials` times each, and no floor (a trial picks its model)
+  trials?: number;
+  paid?: { approvedUsd: number }; // use the live classifier within this many real dollars; the free path is the default
+}
+
+/** Gate rows (the gate model, several trials) and floor rows (the other model, once); or, with `models`, exactly those. */
+export function runFull(scenarios: FullScenario[], version: string, rules: Rules, log: (s: string) => void = () => undefined, trialsOverride?: number, opts: RunOptions = {}): FullRow[] {
   const commit = commitOf(version);
   const rows: FullRow[] = [];
-  const bin = scenarios.some((s) => s.routes.includes('cli')) ? installPackage(version) : '';
-  const plugin = scenarios.some((s) => s.routes.includes('mcp')) ? (commit ? checkoutPlugin(commit) : (() => { throw new Error(`cannot find the commit in version ${version}; the MCP route needs it`); })()) : '';
-  const plan = scenarios.flatMap((s) => s.routes.flatMap((route) => [
-    ...Array.from({ length: trialsOverride ?? rules.trialsPerScenario }, (_, i) => ({ s, route, model: rules.gateModel, trial: i + 1 })),
-    { s, route, model: rules.floorModel, trial: 1 },
-  ]));
+  const bin = opts.build?.bin ?? (scenarios.some((s) => s.routes.includes('cli')) ? installPackage(version) : '');
+  const plugin = opts.build?.plugin ?? (scenarios.some((s) => s.routes.includes('mcp')) ? (commit ? checkoutPlugin(commit) : (() => { throw new Error(`cannot find the commit in version ${version}; the MCP route needs it`); })()) : '');
+  const trials = opts.trials ?? trialsOverride ?? rules.trialsPerScenario;
+  const plan = scenarios.flatMap((s) => s.routes.flatMap((route) => opts.models
+    ? opts.models.flatMap((model) => Array.from({ length: trials }, (_, i) => ({ s, route, model, trial: i + 1 })))
+    : [...Array.from({ length: trials }, (_, i) => ({ s, route, model: rules.gateModel, trial: i + 1 })), { s, route, model: rules.floorModel, trial: 1 }]));
+  let spent = 0;
   for (const { s, route, model, trial } of plan) {
+    if (opts.paid && spent >= opts.paid.approvedUsd) {
+      log(`  ■ stopped: the approved $${opts.paid.approvedUsd} is spent ($${spent.toFixed(4)}); ${plan.length - rows.length} planned run(s) not made`);
+      break;
+    }
     const project = prepareProject();
-    const isolated = { MM3_PROVIDER: 'fake', TYPESAFE_API_KEY: '', AI_GATEWAY_API_KEY: '', XDG_CONFIG_HOME: path.join(project, '.no-config'), MM3_ACTOR: 'agentic', ...applySetup(s.setup, project) };
+    const setupEnv = applySetup(s.setup, project);
+    if (opts.paid) setCap(project, opts.paid.approvedUsd - spent);
+    // free: the sample provider and no key. paid: the owner's own key and settings, never read or printed here; MM3's budget holds the cap.
+    // paid is forced onto the live provider: with no key MM3 stops instead of answering from the sample provider, so paid and fake cannot coexist
+    const env: Record<string, string> = opts.paid ? { MM3_ACTOR: 'agentic', MM3_PROVIDER: 'typesafe', ...setupEnv } : { MM3_PROVIDER: 'fake', TYPESAFE_API_KEY: '', AI_GATEWAY_API_KEY: '', XDG_CONFIG_HOME: path.join(project, '.no-config'), MM3_ACTOR: 'agentic', ...setupEnv };
+    const strict = opts.paid !== undefined; // paid runs deny anything not pre-approved, so the approved list is the real boundary (a strict free run also blocks harmless piping, which real agents do)
     const base = ['Read', 'Glob', 'Grep'];
-    const shell = ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)', 'Bash(command -v *)', 'Bash(which *)', 'Bash(cat *)', 'Bash(echo *)', 'Bash(printf *)', 'Bash(ls *)', 'Bash(pwd)', 'Bash(grep *)', 'Bash(find *)'];
+    // a paid run gets only the mm3 command in the shell: nothing that could print a stored key
+    const shell = opts.paid || s.shell === 'mm3-only' ? ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)', 'Bash(which *)', 'Bash(head *)', 'Bash(tail *)', 'Bash(echo *)'] : ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)', 'Bash(command -v *)', 'Bash(which *)', 'Bash(cat *)', 'Bash(echo *)', 'Bash(printf *)', 'Bash(ls *)', 'Bash(pwd)', 'Bash(grep *)', 'Bash(find *)'];
+    // the fake plugin record must reach MM3 only: Claude Code itself reads CLAUDE_CONFIG_DIR for its login
+    const claudeDir = env.CLAUDE_CONFIG_DIR;
+    const shim = route === 'cli' && claudeDir ? shimMm3(bin, claudeDir) : undefined;
+    if (shim) delete env.CLAUDE_CONFIG_DIR;
     const run = route === 'cli'
-      ? runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Bash'], allowedTools: [...base, 'Write', ...shell], env: { ...isolated, PATH: `${bin}:${process.env.PATH}` }, budgetUsd: 2 })
-      : runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Agent'], allowedTools: [...base, 'Agent', 'mcp__plugin_mm3_mm3__mm3'], pluginDir: plugin, env: isolated, budgetUsd: 2 });
+      ? runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Edit', 'Bash'], allowedTools: [...base, 'Write', 'Edit', ...shell], env: { ...env, PATH: `${shim ? `${shim}:` : ''}${bin}:${process.env.PATH}` }, budgetUsd: 2, strict })
+      : runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Edit', 'Agent'], allowedTools: [...base, 'Write', 'Edit', 'Agent', 'mcp__plugin_mm3_mm3__mm3'], pluginDir: plugin, env, budgetUsd: 2, strict }); // both routes get the file tools a Claude Code user has: some jobs change a setting in the project's own files
     const row = grade(s, run, project, route, model, trial);
+    const logFile = path.join(project, '.mm3', 'log.jsonl');
+    const ledgerText = existsSync(logFile) ? readFileSync(logFile, 'utf8') : '';
+    row.adapters = adapters(ledgerText);
+    if (opts.paid) {
+      row.spentUsd = spentUsd(ledgerText);
+      spent += row.spentUsd;
+      if ((adapters(ledgerText).fake ?? 0) > 0) {
+        row.pass = false;
+        row.problems.unshift('the paid trial ran on the sample provider (adapter fake): the key never reached MM3 on this route → store it with `mm3 init` (keychain) for the MCP route, or use --route cli');
+      }
+    }
     rows.push(row);
     // every transcript is kept (gitignored lab/archive) so a red row can be read, not guessed at
     mkdirSync('lab/archive/agentic', { recursive: true });
-    const file = `${version}-${s.id}-${route}-${model}-${trial}.json`;
+    const file = `${version.replace(/[^A-Za-z0-9._+-]/gu, '_')}-${s.id}-${route}-${model}-${trial}.json`;
     const body = JSON.stringify({ row, answer: run.answer, plugins: run.plugins, mcp: run.mcp, turns: run.turns, calls: run.calls }, null, 1);
     writeFileSync(`lab/archive/agentic/${file}`, body);
     row.transcript = file;
     row.transcriptSha256 = createHash('sha256').update(body).digest('hex');
-    log(`  ${row.pass ? '✔' : '✖'} ${s.id} · ${route} · ${model} · trial ${trial}: attempts ${JSON.stringify(row.attempts)}${row.problems.length ? ` — ${row.problems.join(' | ')}` : ''}`);
+    log(`  ${row.pass ? '✔' : '✖'} ${s.id} · ${route} · ${model} · trial ${trial}: attempts ${JSON.stringify(row.attempts)}${row.problems.length ? ` — ${row.problems.join(' | ')}` : ''}${opts.paid ? ` · spent $${(row.spentUsd ?? 0).toFixed(4)} (running total $${spent.toFixed(4)} of $${opts.paid.approvedUsd})` : ''}`);
   }
   return rows;
 }

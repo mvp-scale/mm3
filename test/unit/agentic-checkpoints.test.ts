@@ -71,20 +71,26 @@ describe('feature job checkpoints [C-266]', () => {
     expect(run(['config-file-has-cap'], ev([], { read: files({ '.mm3/config.yaml': '#   usd: 3\n' }) }))['config-file-has-cap']).toBe(false); // a commented-out line is not a setting
   });
 
-  it('[C-266] the spend cap: the stop was seen, the cap raised in the file AND recorded, and a verdict followed the stop', () => {
+  it('[C-266] the spend cap: the cap raised in the file AND recorded, two verdicts, and a verdict after any stop', () => {
     const stop = mm3(['class', '-'], '✖ budget: cap reached ($0.00 of $5.00 · 1 of 1 runs) → ask the owner to raise budget.runs in .mm3/config.yaml');
-    const calls = [mm3(['class', '-'], OK), stop, mm3(['config', '--load'], '✔ valid'), mm3(['class', '-'], OK)];
-    const good = ev(calls, { read: files({ '.mm3/config.yaml': 'budget:\n  runs: 5\n' }), ledger: cfg(5, 5) });
-    expect(run(['budget-stop-seen', 'cap-raised-in-config', 'continued-after-stop'], good)).toEqual({ 'budget-stop-seen': true, 'cap-raised-in-config': true, 'continued-after-stop': true });
+    const second = mm3(['class', '-'], 'mak:\n  id: MM3-0002\n  gate: fail');
+    const stopped = ev([mm3(['class', '-'], OK), stop, mm3(['config', '--load'], '✔ valid'), second], { read: files({ '.mm3/config.yaml': 'budget:\n  runs: 5\n' }), ledger: cfg(5, 5) });
+    expect(run(['cap-raised-in-config', 'two-verdicts', 'continued-after-stop'], stopped)).toEqual({ 'cap-raised-in-config': true, 'two-verdicts': true, 'continued-after-stop': true });
+    // an agent that read the cap first and raised it before the stop never meets the stop: that is as good
+    const anticipated = ev([mm3(['budget'], 'budget: 1 of 1 runs left'), mm3(['class', '-'], OK), mm3(['config', '--load'], '✔ valid'), second], { read: files({ '.mm3/config.yaml': 'budget:\n  runs: 5\n' }), ledger: cfg(5, 5) });
+    expect(run(['cap-raised-in-config', 'two-verdicts', 'continued-after-stop'], anticipated)).toEqual({ 'cap-raised-in-config': true, 'two-verdicts': true, 'continued-after-stop': true });
     const stuck = ev([mm3(['class', '-'], OK), stop], { read: files({ '.mm3/config.yaml': 'budget:\n  runs: 1\n' }), ledger: '' });
-    expect(run(['budget-stop-seen', 'cap-raised-in-config', 'continued-after-stop'], stuck)).toEqual({ 'budget-stop-seen': true, 'cap-raised-in-config': false, 'continued-after-stop': false });
-    expect(run(['budget-stop-seen'], ev([mm3(['class', '-'], OK)]))['budget-stop-seen']).toBe(false); // never reached the cap
+    expect(run(['cap-raised-in-config', 'two-verdicts', 'continued-after-stop'], stuck)).toEqual({ 'cap-raised-in-config': false, 'two-verdicts': false, 'continued-after-stop': false });
+    expect(run(['two-verdicts'], ev([mm3(['class', '-'], OK), mm3(['class', '-'], OK)]))['two-verdicts']).toBe(false); // the same run twice is one verdict
   });
 
-  it('[C-266] install health: the warning was seen, and the fix is the right one (never @latest)', () => {
-    const doctor = mm3(['doctor'], 'versions: "⚠ the plugin is 0.1.1 (f337f61) and this copy is 0.1.2-nightly.x → /plugin update … @nightly"');
-    expect(run(['doctor-versions-seen', 'right-fix-reported'], ev([doctor], { answer: 'Run /plugin update, or npm install -g @mvpscale/mm3@nightly.' }))).toEqual({ 'doctor-versions-seen': true, 'right-fix-reported': true });
-    expect(run(['right-fix-reported'], ev([doctor], { answer: 'npm install -g @mvpscale/mm3@latest' }))['right-fix-reported']).toBe(false);
+  it('[C-266] install health: the warning was seen, the older copy is named with how to update it, and a nightly copy is never sent to @latest', () => {
+    const doctor = mm3(['doctor'], 'versions: "⚠ the plugin is 0.1.1 (f337f61) and this copy is 0.1.2-nightly.x → update the older one: /plugin update in Claude Code, or npm install -g @mvpscale/mm3@nightly"');
+    expect(run(['doctor-versions-seen', 'right-fix-reported'], ev([doctor], { answer: 'The plugin is the older copy. Run /plugin update in Claude Code.' }))).toEqual({ 'doctor-versions-seen': true, 'right-fix-reported': true });
+    expect(run(['right-fix-reported'], ev([doctor], { answer: 'Run /plugin update, or npm install -g @mvpscale/mm3@latest' }))['right-fix-reported']).toBe(false); // would downgrade a nightly copy
+    expect(run(['right-fix-reported'], ev([doctor], { answer: 'Update something.' }))['right-fix-reported']).toBe(false);
+    const localDoctor = mm3(['doctor'], 'versions: "⚠ the plugin is 0.1.1 (f337f61) and this copy is 0.1.2 → update the older one: /plugin update in Claude Code, or npm install -g @mvpscale/mm3@latest"');
+    expect(run(['right-fix-reported'], ev([localDoctor], { answer: 'Run /plugin update (doctor also lists npm install -g @mvpscale/mm3@latest).' }))['right-fix-reported']).toBe(true); // a non-nightly copy: quoting doctor's own line is fine
     expect(run(['doctor-versions-seen'], ev([mm3(['doctor'], 'versions: ✔ the plugin and this copy are both 0.1.2')]))['doctor-versions-seen']).toBe(false);
   });
 

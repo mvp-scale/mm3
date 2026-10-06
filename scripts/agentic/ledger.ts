@@ -20,6 +20,7 @@ export interface SpecScenario {
   success?: string; // what success means, in plain words
   setup?: string; // the state the job starts from
   setupNote?: string; // that state, in words
+  shell?: string; // restricted shell, when the job is about asking MM3 itself
   matters?: string; // what a failure means for a release
   goal: string;
   prompt: string;
@@ -54,11 +55,11 @@ export interface Definition {
   preconditions: string[];
   fixture: { tag: string; sha: string };
   context: SpecContext[];
-  scenarios: Array<{ id: string; title?: string; story?: string; success?: string; matters?: string; setup?: string; setupNote?: string; goal: string; prompt: string; model: string; routes: string[]; helpers: number; promise: number; checkpoints: Array<{ id: string; text: string }> }>;
+  scenarios: Array<{ id: string; title?: string; story?: string; success?: string; matters?: string; setup?: string; setupNote?: string; shell?: string; goal: string; prompt: string; model: string; routes: string[]; helpers: number; promise: number; checkpoints: Array<{ id: string; text: string }> }>;
 }
 
 export interface StartedRecord {
-  kind: 'ceremony';
+  kind: 'ceremony' | 'trial'; // a ceremony is the release test; a trial is a development check of one job, never formal
   phase: 'started';
   schema?: number; // absent: written before the schema existed (the backfilled run)
   prev?: string; // sha256 of the previous line
@@ -73,7 +74,8 @@ export interface StartedRecord {
   definition: Definition; // success, stated before the run
   environment?: { node: string; vitest: string; claude: string; os: string };
   artifact?: { npmIntegrity: string | null; npmShasum: string | null; pluginCommit: string | null; note?: string }; // the bits that were tested
-  mode: 'free'; // sample provider, no key, no TypeSafe spend; a paid mode needs explicit approval and does not exist yet
+  mode: 'free' | 'paid'; // free: sample provider, no key, no TypeSafe spend. paid: the live classifier, only on a trial, only with an approved dollar cap
+  paid?: { approvedUsd: number }; // the cap the owner approved on the command line; MM3's own budget enforces it and the harness stops when it is reached
   trialsOverride: number | null;
   formal: boolean; // counts toward the release gate
   formalReason: string; // why it does or does not
@@ -81,7 +83,7 @@ export interface StartedRecord {
 }
 
 export interface FinishedRecord {
-  kind: 'ceremony';
+  kind: 'ceremony' | 'trial';
   phase: 'finished' | 'aborted';
   schema?: number;
   prev?: string;
@@ -91,14 +93,27 @@ export interface FinishedRecord {
   reason?: string; // aborted: why
   level1?: Array<{ name: string; ok: boolean; detail: string }>;
   level2?: Array<{ id: string; level: string; pass: boolean }>;
-  level3?: Array<{ id: string; route: string; model: string; resolvedModel?: string | null; trial: number; pass: boolean; failed: string[]; attempts: number[]; firstRequestAccepted: boolean; mm3Calls: number; usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; turns: number }; economics?: Economics; recovery?: Recovery; transcript: string; transcriptSha256?: string }>;
+  level3?: Array<{ id: string; route: string; model: string; resolvedModel?: string | null; trial: number; pass: boolean; failed: string[]; attempts: number[]; firstRequestAccepted: boolean; mm3Calls: number; usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; turns: number }; economics?: Economics; recovery?: Recovery; adapters?: Record<string, number>; transcript: string; transcriptSha256?: string }>;
   firstRequestAcceptedRate?: number;
+  spentUsd?: number; // paid trials only: the real TypeSafe spend, read from the project's own ledger
   decision?: Pick<Decision, 'verdict' | 'formal' | 'blockers' | 'exceptions' | 'improvements'>; // what the release report concluded, with every improvement it saw
   usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; turns: number; claudeRuns: number; mm3Calls: number }; // what the run asked of the model
   notionalCostUsd?: number; // legacy: the first two lines recorded a dollar figure; a subscription has no per-call price, so new lines record usage instead
 }
 
-export type LedgerRecord = StartedRecord | FinishedRecord;
+/** A run disqualified after the fact. The ledger is append-only, so a wrong record is corrected the way accounts are: a later line says it does not count, and why. */
+export interface InvalidatedRecord {
+  kind: 'ceremony' | 'trial';
+  phase: 'invalidated';
+  schema?: number;
+  prev?: string;
+  startedId: string;
+  ts: string;
+  passed: false;
+  reason: string;
+}
+
+export type LedgerRecord = StartedRecord | FinishedRecord | InvalidatedRecord;
 
 export const sha = (s: string): string => createHash('sha256').update(s).digest('hex');
 
@@ -111,7 +126,7 @@ export function plainDefinition(d: Pick<Definition, 'scenarios' | 'rules' | 'fix
 
 /** Success as the scenario file, the checkpoint registry and the fixture pin state it now. The hash covers all of it: a changed prompt, model, route, checkpoint, rule or pin changes the hash. */
 export function definitionOf(spec: Spec, fixture: { tag: string; sha: string } = { tag: '?', sha: '?' }): Definition {
-  const scenarios = spec.full.map((s) => ({ id: s.id, ...(s.title ? { title: s.title } : {}), ...(s.story ? { story: s.story } : {}), ...(s.success ? { success: s.success } : {}), ...(s.matters ? { matters: s.matters } : {}), ...(s.setup ? { setup: s.setup } : {}), ...(s.setupNote ? { setupNote: s.setupNote } : {}), goal: s.goal, prompt: s.prompt, model: s.model, routes: s.routes, helpers: s.helpers ?? 0, promise: s.promise, checkpoints: s.checkpoints.map((c) => ({ id: c, text: CHECKPOINTS[c]?.text ?? `UNKNOWN ${c}` })) }));
+  const scenarios = spec.full.map((s) => ({ id: s.id, ...(s.title ? { title: s.title } : {}), ...(s.story ? { story: s.story } : {}), ...(s.success ? { success: s.success } : {}), ...(s.matters ? { matters: s.matters } : {}), ...(s.setup ? { setup: s.setup } : {}), ...(s.setupNote ? { setupNote: s.setupNote } : {}), ...(s.shell ? { shell: s.shell } : {}), goal: s.goal, prompt: s.prompt, model: s.model, routes: s.routes, helpers: s.helpers ?? 0, promise: s.promise, checkpoints: s.checkpoints.map((c) => ({ id: c, text: CHECKPOINTS[c]?.text ?? `UNKNOWN ${c}` })) }));
   const body = { ...(spec.purpose ? { purpose: spec.purpose } : {}), ...(spec.notTested ? { notTested: spec.notTested } : {}), scenarios, rules: spec.rules, preconditions: spec.preconditions ?? [], fixture, context: spec.context ?? [] };
   return { hash: sha(JSON.stringify(body)), plain: plainDefinition({ scenarios, rules: spec.rules, fixture }), ...body };
 }
@@ -120,8 +135,11 @@ const lines = (file: string): string[] => (existsSync(file) ? readFileSync(file,
 
 export const readLedger = (file = LEDGER): LedgerRecord[] => lines(file).map((l) => JSON.parse(l) as LedgerRecord);
 
-/** One past the highest number used, so an id is never reused even when earlier runs were archived out of the file. */
-export const nextId = (records: LedgerRecord[]): string => `CER-${String(Math.max(0, ...records.filter((r) => r.phase === 'started').map((r) => Number(/\d+/u.exec(r.id)?.[0] ?? 0))) + 1).padStart(4, '0')}`;
+/** One past the highest number used for that kind of run, so an id is never reused even when earlier runs were archived out of the file. CER-#### are ceremonies, TRL-#### are trials. */
+export function nextId(records: LedgerRecord[], prefix: 'CER' | 'TRL' = 'CER'): string {
+  const used = records.filter((r): r is StartedRecord => r.phase === 'started' && r.id.startsWith(`${prefix}-`)).map((r) => Number(/\d+/u.exec(r.id)?.[0] ?? 0));
+  return `${prefix}-${String(Math.max(0, ...used) + 1).padStart(4, '0')}`;
+}
 
 /** Appends a record, stamping the schema and the hash of the line before it. */
 export function append(r: LedgerRecord, file = LEDGER): void {
@@ -157,11 +175,13 @@ export function recordGaps(started: StartedRecord, finished?: FinishedRecord): s
   need(started.formalReason, 'why the run is or is not formal');
   if (finished === undefined) return [...gaps, 'the closing line (the run never finished)'];
   if (finished.phase === 'aborted') return gaps;
-  need(finished.level1?.length, 'the level 1 results');
-  need(finished.level2?.length, 'the level 2 results');
+  if (started.kind !== 'trial') {
+    need(finished.level1?.length, 'the level 1 results');
+    need(finished.level2?.length, 'the level 2 results');
+  }
   need(finished.level3?.length, 'the level 3 results');
   need(finished.usage, 'the run\'s token totals');
-  need(finished.firstRequestAcceptedRate !== undefined, 'the first-request rate');
+  if (started.kind !== 'trial') need(finished.firstRequestAcceptedRate !== undefined, 'the first-request rate');
   if ((started.schema ?? 0) >= 2) need(finished.decision, 'the decision and its improvements');
   for (const r of finished.level3 ?? []) {
     const who = `${r.id}/${r.route}/${r.model}/${r.trial}`;
@@ -176,9 +196,10 @@ export function recordGaps(started: StartedRecord, finished?: FinishedRecord): s
 
 /** The newest formal run that finished, with its closing line; undefined when none. */
 export function lastFormal(records: LedgerRecord[]): { started: StartedRecord; finished: FinishedRecord } | undefined {
-  const starts = records.filter((r): r is StartedRecord => r.phase === 'started' && r.formal);
+  const starts = records.filter((r): r is StartedRecord => r.phase === 'started' && r.formal && r.kind === 'ceremony');
   for (const started of starts.reverse()) {
-    const finished = records.find((r): r is FinishedRecord => r.phase !== 'started' && r.startedId === started.id && r.phase === 'finished');
+    const finished = records.find((r): r is FinishedRecord => r.phase === 'finished' && r.startedId === started.id);
+    if (invalidReason(records, started.id)) continue; // a disqualified run never feeds the gate
     if (finished) return { started, finished };
   }
   return undefined;
@@ -187,6 +208,9 @@ export function lastFormal(records: LedgerRecord[]): { started: StartedRecord; f
 /** Runs that began and never closed. */
 export const incomplete = (records: LedgerRecord[]): StartedRecord[] =>
   records.filter((r): r is StartedRecord => r.phase === 'started').filter((s) => !records.some((r) => r.phase !== 'started' && r.startedId === s.id));
+
+/** Why a run was disqualified, if a later line says so. */
+export const invalidReason = (records: LedgerRecord[], id: string): string | undefined => records.find((r): r is InvalidatedRecord => r.phase === 'invalidated' && r.startedId === id)?.reason;
 
 /** What changed between two runs, in words: the build, the guidance, the definition of success, and the results. */
 export function compareRuns(a: { started: StartedRecord; finished?: FinishedRecord }, b: { started: StartedRecord; finished?: FinishedRecord }): string[] {

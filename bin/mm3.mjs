@@ -7455,7 +7455,8 @@ var package_default = {
     "agentic:compare": "tsx scripts/agentic/compare.ts",
     "agentic:trace": "tsx scripts/agentic/trace.ts",
     "agentic:release-report": "tsx scripts/agentic/release-report.ts",
-    "agentic:patterns": "tsx scripts/agentic/patterns.ts"
+    "agentic:patterns": "tsx scripts/agentic/patterns.ts",
+    "agentic:feature": "tsx scripts/agentic/trial.ts"
   },
   devDependencies: {
     "@types-floor/node": "npm:@types/node@22.19.18",

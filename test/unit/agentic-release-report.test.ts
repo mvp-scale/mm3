@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { ClaudeCall } from '../../scripts/agentic/claude.ts';
 import { definitionOf, type FinishedRecord, type StartedRecord } from '../../scripts/agentic/ledger.ts';
-import { tellRun } from '../../scripts/agentic/release-report.ts';
+import { runIdArg, tellRun } from '../../scripts/agentic/release-report.ts';
 
 const spec = { full: [{ id: 'S1', goal: 'a goal', prompt: 'Is it safe?', model: 'sonnet', routes: ['mcp'], promise: 3, checkpoints: ['engaged', 'answer-cites-run-id'] }], rules: { gateModel: 'sonnet', floorModel: 'haiku', mustPassTrials: 2, trialsPerScenario: 3, firstAttemptTarget: 0.8 } };
 const started: StartedRecord = { kind: 'ceremony', phase: 'started', id: 'CER-0007', ts: '2026-10-06T09:00:00.000Z', version: '0.1.2-nightly.test', versionCommit: 'abc1234', head: 'abc1234def', dirty: false, fingerprint: 'f'.repeat(64), definition: definitionOf(spec, { tag: 'v1', sha: 'a'.repeat(40) }), mode: 'free', trialsOverride: null, formal: true, formalReason: 'ok' };
@@ -92,5 +92,20 @@ describe('agentic release report [C-263]', () => {
     const open = tellRun([started], 'CER-0007', undefined).join('\n');
     expect(open).toContain('RESULT  INCOMPLETE');
     expect(open).toContain('the run never closed');
+  });
+
+  it('[C-263] a run the ledger disqualifies reports INVALID at the top and in the decision, and never as passed or failed', () => {
+    const inv = { kind: 'ceremony' as const, phase: 'invalidated' as const, startedId: 'CER-0007', ts: 't', passed: false as const, reason: 'labelled paid but answered by the sample provider' };
+    const t = tellRun([started, finished({ passed: true }), inv], 'CER-0007', undefined, undefined, names).join('\n');
+    expect(t).toContain('RESULT  INVALID (disqualified: not a result)');
+    expect(t).toContain('DECISION  INVALID, not a result: labelled paid but answered by the sample provider');
+    expect(t).not.toMatch(/RESULT  (PASSED|FAILED)/u);
+  });
+
+  it('[C-263] the command line takes a ceremony id or a trial id, and ignores anything else', () => {
+    expect(runIdArg(['CER-0003'])).toBe('CER-0003');
+    expect(runIdArg(['TRL-0013', '--row', 'a/b/c/1'])).toBe('TRL-0013'); // a trial id used to be ignored, silently showing the latest run
+    expect(runIdArg(['--row', 'x/y/z/1'])).toBeUndefined();
+    expect(runIdArg(['TRL-13', 'run-0001'])).toBeUndefined();
   });
 });
