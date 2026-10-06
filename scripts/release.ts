@@ -146,8 +146,8 @@ export function survey(m: Manifest, io: Io, ledger: LedgerRecord[], fingerprint:
   const rel = releases(io).find((r) => r.tagName === tagFor(tag));
   steps.push({ id: 'GitHub release for it (Releases and Tags)', state: out && rel ? 'done' : 'todo', detail: out && rel ? `${rel.tagName}${rel.isLatest ? ', marked Latest' : ''}` : 'a normal release with a tag on that head; GitHub marks the newest release "Latest"' });
   const cer = lastFormal(ledger);
-  const cerOn = cer && cer.started.version === tag;
-  steps.push({ id: 'formal ceremony on this build', state: cerOn ? 'done' : 'todo', detail: cerOn ? `${cer.started.id}, ${cer.finished.passed ? 'passed' : 'did not pass'}` : 'will run last, in a clean worktree: about half an hour, free path, its progress prints below (main needs it)' });
+  const cerOn = open.length === 0 && cer !== undefined && cer.started.version === tag; // a PR still to merge means a new build, which no ceremony has seen
+  steps.push({ id: 'formal ceremony on this build', state: cerOn ? (cer.finished.passed ? 'done' : 'missing') : 'todo', detail: cerOn ? `${cer.started.id} ${cer.finished.passed ? 'passed' : 'did not pass → the evidence prints under STATUS; fix it in a PR, and the next nightly re-runs it'}` : 'will run last, in a clean worktree: about half an hour, free path, its progress prints below (main needs it)' });
   return { steps, open };
 }
 
@@ -261,7 +261,7 @@ function comment(io: Io, pr: number | undefined, body: string): void {
 async function nightly(m: Manifest, io: Io, yes: boolean): Promise<number> {
   const { steps, open } = survey(m, io, readLedger(), manifestOf(collectSurfaces()).fingerprint, chainProblem());
   console.log([`RELEASE ${m.version} to nightly · ${m.title}`, '', ...steps.map(stepLine)].join('\n'));
-  const blocked = steps.filter((s) => s.state === 'missing' && !/agent trials/u.test(s.id));
+  const blocked = steps.filter((s) => s.state === 'missing' && !/agent trials|formal ceremony/u.test(s.id));
   if (blocked.length) {
     console.log(`\n✖ stopped before changing anything: ${blocked.map((s) => s.id).join('; ')}`);
     return 1;

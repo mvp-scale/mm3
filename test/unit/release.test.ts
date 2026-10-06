@@ -129,6 +129,12 @@ describe('the nightly stage shows every step before it runs [C-277]', () => {
     expect(states(survey(M, fakeIo({ files: { ...FILES, 'CHANGELOG.md': '## Unreleased\n- a\n' } }), [], 'F', undefined).steps, /nightly says/u)).toBe('missing');
     expect(states(survey(M, fakeIo(), [], 'F', '✖ ledger: line 3 does not follow line 2').steps, /ledger chain/u)).toBe('missing');
   });
+  it('[C-277] a ceremony on the current build that did not pass is shown as not done, with where the evidence is; a PR still to merge means no ceremony has seen the new build', () => {
+    const failed = survey(M, fakeIo(), [trial('F'), ...ceremony({ passed: false })], 'F', undefined).steps;
+    expect(states(failed, /formal ceremony/u)).toBe('missing');
+    expect(failed.find((s) => /formal ceremony/u.test(s.id))!.detail).toContain('evidence prints under STATUS');
+    expect(states(survey(M, fakeIo({ openPrs: [{ number: 37 }] }), [trial('F'), ...ceremony()], 'F', undefined).steps, /formal ceremony/u)).toBe('todo');
+  });
   it('[C-277] checks still running, or failed, are named; skipped ones pass', () => {
     expect(rollupProblem([{ name: 'a', status: 'COMPLETED', conclusion: 'SUCCESS' }, { name: 'b', status: 'COMPLETED', conclusion: 'SKIPPED' }])).toBeUndefined();
     expect(rollupProblem([{ name: 'CodeQL', status: 'IN_PROGRESS' }])).toMatch(/still running: CodeQL/u);
