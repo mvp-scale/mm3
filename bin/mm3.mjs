@@ -10536,7 +10536,8 @@ var BODY = [
   "- Pilot first: send one small request, read the answer, fix the questions, then widen. Send no more than a few before you have read one.",
   "- A sweep that says `gate: fail` is normal (any file failing any concern fails it): read the failing categories and the `next:` line; do not stop and do not repeat it.",
   '- Before writing a request run `mm3 agent probe` (distinct roles per probe, a "none fits" option on every choice) and tag it with mdl (`uses`, `area`).',
-  "- Do not ration: a call costs a fraction of a cent. Cite the run id (MM3-####) for every claim that comes from MM3, and mark the rest as your own reading.",
+  "- Before a judgment call about code or a design (safe to merge? is it fixed? which option?), get an MM3 verdict: a call costs a fraction of a cent and every run is recorded, so the next decision starts from evidence, not from scratch.",
+  "- Cite the run id (MM3-####) for every claim that comes from MM3, and mark the rest as your own reading.",
   "- Delegating? Give helpers `mm3 agent delegate`, and check their reports against the ledger: a helper can report work it did not do."
 ];
 var LEAD = "Run `mm3 agent` first for the commands and rules, then `mm3 agent <verb>` before writing a request.";
@@ -11614,7 +11615,7 @@ var TOOL_FIELDS = ["args", "stdin", "project"];
 function toolDefinition() {
   return {
     name: TOOL_NAME,
-    description: 'First call args: ["agent"] to learn the commands and rules, then args: ["agent", "<command>"] before writing a request. Otherwise runs any mm3 CLI command in this project \u2014 the same arguments and stdin the mm3 CLI takes (e.g. args: ["class","-"], stdin: <request YAML>, or args: ["doctor"]). Returns the same text output mm3 would print, and marks the result an error when the exit code is not 0.',
+    description: 'Quick, citable evidence for judgment calls on code or a design (safe to merge? is it fixed? which option?). First call args: ["agent"] to learn the commands and rules, then args: ["agent", "<command>"] before writing a request. Otherwise runs any mm3 CLI command in this project \u2014 the same arguments and stdin the mm3 CLI takes (e.g. args: ["class","-"], stdin: <request YAML>, or args: ["doctor"]). Returns the same text output mm3 would print, and marks the result an error when the exit code is not 0.',
     inputSchema: {
       type: "object",
       properties: {

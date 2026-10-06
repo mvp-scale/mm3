@@ -50,6 +50,7 @@ export function toolDefinition(): { name: string; description: string; inputSche
   return {
     name: TOOL_NAME,
     description:
+      'Quick, citable evidence for judgment calls on code or a design (safe to merge? is it fixed? which option?). ' +
       'First call args: ["agent"] to learn the commands and rules, then args: ["agent", "<command>"] before ' +
       'writing a request. Otherwise runs any mm3 CLI command in this project — the same arguments and ' +
       'stdin the mm3 CLI takes (e.g. args: ["class","-"], stdin: <request YAML>, or args: ["doctor"]). ' +

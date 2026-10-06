@@ -63,9 +63,10 @@ describe('mcp protocol: tools/list', () => {
     expect(TOOL_NAME).toBe('mm3');
   });
 
-  it('[C-186] the tool description opens with the agent directive, before anything else', () => {
+  it('[C-186] the tool description opens with when to use it, then the agent directive, before anything else', () => {
     const { description } = toolDefinition();
-    expect(description).toMatch(/^First call args: \["agent"\] to learn the commands and rules/);
+    expect(description).toMatch(/^Quick, citable evidence for judgment calls on code or a design[^.]*\. First call args: \["agent"\] to learn the commands and rules/);
+    expect(description.indexOf('First call args')).toBeLessThan(140);
     expect(description).toContain('args: ["agent", "<command>"]');
   });
 });
