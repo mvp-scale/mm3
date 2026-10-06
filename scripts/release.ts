@@ -409,7 +409,11 @@ async function main(m: Manifest, io: Io, yes: boolean): Promise<number> {
       const keep = m.include.filter((p) => io.git(['ls-tree', '--name-only', head, '--', p]).trim() !== '');
       g('checkout', head, '--', ...keep);
       const notes = path.join(tree, 'CHANGELOG.md');
-      if (existsSync(notes)) writeFileSync(notes, readFileSync(notes, 'utf8').replace(/^## Unreleased.*$/mu, `## ${v}, ${new Date().toISOString().slice(0, 10)}`));
+      try {
+        writeFileSync(notes, readFileSync(notes, 'utf8').replace(/^## Unreleased.*$/mu, `## ${v}, ${new Date().toISOString().slice(0, 10)}`)); // one read, one write: no exists-then-read gap
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; // a clean copy with no changelog has no heading to rewrite
+      }
       g('add', '-A');
       g('-c', 'core.hooksPath=/dev/null', 'commit', '-q', '-m', `release: ${v}, a clean copy of nightly ${head.slice(0, 7)} (${tested?.slice(0, 7)} was tested)`);
       g('push', '-q', '--force-with-lease', 'origin', `HEAD:refs/heads/release/${v}`);
