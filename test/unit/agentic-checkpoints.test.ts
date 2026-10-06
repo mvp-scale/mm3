@@ -52,6 +52,19 @@ describe('agentic checkpoints [C-261]', () => {
     expect(ids(oneHelper, ['helpers-spawned', 'verdict-in-promise'])).toEqual({ 'helpers-spawned': false, 'verdict-in-promise': false });
   });
 
+  // [C-279] CER-0006 on Claude Code 2.1.292: the stream no longer carries a helper's own report as a call, only a short summary, so 6 correct runs failed this check.
+  it('[C-279] with no helper report in the stream, helpers cite ids when each got a verdict and the lead\'s answer carries it', () => {
+    const spawn = (n: number): ClaudeCall => ({ tool: 'Agent', input: { prompt: 'go. never read .mm3/log.jsonl' }, parent: null, id: `a${n}`, result: 'Async agent launched successfully.' });
+    const helper = (n: number): ClaudeCall => mm3(['class', '-'], `mak:\n  id: MM3-000${n}\n  gate: fail`, `a${n}`);
+    const run = (answer: string, calls: ClaudeCall[], helpers = 3): boolean => ids(ev(calls, { helpers, answer }), ['helpers-cite-ids'])['helpers-cite-ids']!;
+    const three = [spawn(1), spawn(2), spawn(3), helper(1), helper(2), helper(3)];
+    expect(run('MM3-0001, MM3-0002 and MM3-0003', three)).toBe(true);
+    expect(run('MM3-0001 and MM3-0003', three)).toBe(false); // helper 2's id never reached the developer
+    expect(run('MM3-0001, MM3-0002 and MM3-0003', [spawn(1), spawn(2), helper(1), helper(2)])).toBe(false); // only two helpers got that far
+    expect(run('MM3-0001', [spawn(1), mm3(['class', '-'], STOP, 'a1')], 1)).toBe(false); // a helper that never got a verdict
+    expect(run('MM3-0001', [spawn(1), helper(1)], 1)).toBe(true);
+  });
+
   it('[C-261] an unknown checkpoint name is an error, not a silent pass', () => {
     expect(() => evaluate(['no-such-checkpoint'], ev([]))).toThrow(/unknown checkpoint/u);
   });

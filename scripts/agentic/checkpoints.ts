@@ -277,11 +277,15 @@ export const CHECKPOINTS: Record<string, Checkpoint> = {
     fix: "Put the report rule at the top of the delegate card so helpers cite run ids.",
     short: 'x',
     label: 'helpers cite ids',
-    text: "Each helper's report cites an MM3 run id",
-    means: 'helpers did not follow the report rule on the card',
+    text: "Each helper's MM3 run id reaches the developer: in the helper's own report, or in the lead's answer",
+    means: 'a helper got a verdict but its run id was not reported, or a helper never got one',
     check: (e) => {
+      // an older Claude Code stream carries each helper's own report as a call, and every one must cite an id
       const back = e.calls.filter((c) => /Handback/u.test(c.tool));
-      return back.length >= e.helpers && back.every((c) => MM3_ID.test(JSON.stringify(c.input)) && ((MM3_ID.lastIndex = 0), true));
+      if (back.length > 0) return back.length >= e.helpers && back.every((c) => MM3_ID.test(JSON.stringify(c.input)) && ((MM3_ID.lastIndex = 0), true));
+      // the current stream reports a finished helper only as a short summary, so the end-to-end promise is read instead: every helper got a verdict and the lead's answer carries its id
+      const helpers = [...new Set(e.calls.map((c) => c.parent).filter((p): p is string => p !== null))];
+      return helpers.length >= e.helpers && helpers.every((h) => e.calls.filter((c) => c.parent === h && /\bgate: (pass|fail|unsure)/u.test(c.result)).flatMap((c) => [...c.result.matchAll(/\bid: (MM3-\d+)/gu)].map((m) => m[1]!)).some((id) => e.answer.includes(id)));
     },
   },
   'answer-cites-run-id': {

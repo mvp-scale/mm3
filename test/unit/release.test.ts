@@ -2,7 +2,7 @@
 // yet, read GitHub's Releases and Tags back before saying "RELEASED", and let main be built only from a tested, certified, clean copy.
 import { describe, expect, it } from 'vitest';
 import type { LedgerRecord } from '../../scripts/agentic/ledger.ts';
-import { cleanLines, deadLinks, featuresSince, parseManifest, rollupProblem, statusLines, survey, surveyMain, unreleasedNotes, verify, type Io, type Manifest } from '../../scripts/release.ts';
+import { briefLines, cleanLines, deadLinks, featuresSince, parseManifest, rollupProblem, statusLines, survey, surveyMain, unreleasedNotes, verify, type Io, type Manifest } from '../../scripts/release.ts';
 
 const HEAD = 'fe932dcabcdef0123456789abcdef0123456789a';
 const NPM = '0.1.3-nightly.20261006.1827.gfe932dc';
@@ -129,6 +129,12 @@ describe('the nightly stage shows every step before it runs [C-277]', () => {
     expect(states(survey(M, fakeIo({ files: { ...FILES, 'CHANGELOG.md': '## Unreleased\n- a\n' } }), [], 'F', undefined).steps, /nightly says/u)).toBe('missing');
     expect(states(survey(M, fakeIo(), [], 'F', '✖ ledger: line 3 does not follow line 2').steps, /ledger chain/u)).toBe('missing');
   });
+  it('[C-277] a ceremony on the current build that did not pass is shown as not done, with where the evidence is; a PR still to merge means no ceremony has seen the new build', () => {
+    const failed = survey(M, fakeIo(), [trial('F'), ...ceremony({ passed: false })], 'F', undefined).steps;
+    expect(states(failed, /formal ceremony/u)).toBe('missing');
+    expect(failed.find((s) => /formal ceremony/u.test(s.id))!.detail).toContain('evidence prints under STATUS');
+    expect(states(survey(M, fakeIo({ openPrs: [{ number: 37 }] }), [trial('F'), ...ceremony()], 'F', undefined).steps, /formal ceremony/u)).toBe('todo');
+  });
   it('[C-277] checks still running, or failed, are named; skipped ones pass', () => {
     expect(rollupProblem([{ name: 'a', status: 'COMPLETED', conclusion: 'SUCCESS' }, { name: 'b', status: 'COMPLETED', conclusion: 'SKIPPED' }])).toBeUndefined();
     expect(rollupProblem([{ name: 'CodeQL', status: 'IN_PROGRESS' }])).toMatch(/still running: CodeQL/u);
@@ -148,6 +154,15 @@ describe('every nightly run ends with the state in three lines [C-277]', () => {
   });
   it('[C-277] a ceremony on an older build does not count for this one', () => {
     expect(statusLines(M, ceremony({ version: '0.1.2-nightly.old' }), NPM, true)[2]).toContain('NOT RUN');
+  });
+});
+
+describe('what a failed ceremony prints under STATUS [C-277] [C-278]', () => {
+  it('[C-278] nothing for a build with no ceremony, or one on an older build; the brief for the build it ran on', () => {
+    expect(briefLines([], NPM)).toEqual([]);
+    expect(briefLines(ceremony({ version: '0.1.2-nightly.old' }), NPM)).toEqual([]);
+    const full = ceremony().map((r) => ('startedId' in r ? { ...r, level3: [], decision: { verdict: 'SHIP', exceptions: [] } } : { ...r, fingerprint: 'F', environment: { claude: '2.1.292 (Claude Code)' }, definition: { hash: 'H', rules: { gateModel: 'sonnet', mustPassTrials: 2 }, scenarios: [] } })) as unknown as LedgerRecord[];
+    expect(briefLines(full, NPM)[0]).toContain('CEREMONY CER-0001');
   });
 });
 
