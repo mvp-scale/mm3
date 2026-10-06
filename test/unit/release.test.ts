@@ -2,7 +2,7 @@
 // yet, read GitHub's Releases and Tags back before saying "RELEASED", and let main be built only from a tested, certified, clean copy.
 import { describe, expect, it } from 'vitest';
 import type { LedgerRecord } from '../../scripts/agentic/ledger.ts';
-import { briefLines, ceremonyCost, cleanLines, deadLinks, featuresSince, parseManifest, releaseNotes, rollupProblem, statusLines, stepLine, survey, surveyMain, unreleasedNotes, verify, versionProblem, type Io, type Manifest } from '../../scripts/release.ts';
+import { briefLines, ceremonyCost, ceremonyStands, cleanLines, deadLinks, featuresSince, parseManifest, releaseNotes, rollupProblem, statusLines, stepLine, survey, surveyMain, unreleasedNotes, verify, versionProblem, type Io, type Manifest } from '../../scripts/release.ts';
 
 const HEAD = 'fe932dcabcdef0123456789abcdef0123456789a';
 const NPM = '0.1.3';
@@ -99,7 +99,7 @@ describe('the nightly stage shows every step before it runs [C-277]', () => {
   });
   it('[C-277] a version npm does not have yet is the step the stage will do: it publishes exactly that number', () => {
     const { steps } = survey(M, fakeIo({ tag: '0.1.2' }), [], 'F', undefined);
-    expect(steps.filter((s) => s.state === 'todo').map((s) => s.id)).toEqual(['npm nightly is 0.1.3, built from fe932dc', 'formal ceremony on this build']);
+    expect(steps.filter((s) => s.state === 'todo').map((s) => s.id)).toEqual(['npm nightly is 0.1.3, built from fe932dc', 'formal ceremony on this release']);
     expect(steps.find((s) => /npm nightly is/u.test(s.id))!.detail).toBe("will publish exactly 0.1.3 to npm's nightly tag");
   });
   it('[C-277] a version already on npm from another commit cannot be released again: the step says to bump it', () => {
@@ -151,7 +151,19 @@ describe('the nightly stage shows every step before it runs [C-277]', () => {
     const failed = survey(M, fakeIo(), [trial('F'), ...ceremony({ passed: false })], 'F', undefined).steps;
     expect(states(failed, /formal ceremony/u)).toBe('missing');
     expect(failed.find((s) => /formal ceremony/u.test(s.id))!.detail).toContain('evidence prints under STATUS');
-    expect(states(survey(M, fakeIo({ openPrs: [{ number: 37 }] }), [trial('F'), ...ceremony()], 'F', undefined).steps, /formal ceremony/u)).toBe('todo');
+    const changed = { fe932dc: FILES, [HEAD]: { ...FILES, 'src/a.ts': 'changed' } };
+    expect(states(survey(M, fakeIo({ refs: changed, openPrs: [{ number: 37 }] }), [trial('F'), ...ceremony()], 'F', undefined).steps, /formal ceremony/u)).toBe('todo'); // the PR changes what the ceremony tested
+    expect(states(survey(M, fakeIo({ openPrs: [{ number: 37 }] }), [trial('F'), ...ceremony()], 'F', undefined).steps, /formal ceremony/u)).toBe('done'); // it changes only a version, docs or scripts
+  });
+  it('[C-277] a passed ceremony stands while the code and agent-read text it tested are unchanged: a version number, docs or scripts do not repeat half an hour of agents', () => {
+    const same = ceremonyStands(M, fakeIo(), ceremony(), HEAD);
+    expect(same).toEqual({ id: 'CER-0001', version: NPM, commit: 'fe932dc' });
+    const base = { ...FILES };
+    expect(ceremonyStands(M, fakeIo({ refs: { fe932dc: base, [HEAD]: { ...base, 'docs/guide.md': 'new words', 'scripts/s.ts': 'x', 'package.json': JSON.stringify({ version: '0.1.3' }) } } }), ceremony(), HEAD)).toBeDefined();
+    expect(ceremonyStands(M, fakeIo({ refs: { fe932dc: base, [HEAD]: { ...base, 'src/a.ts': 'changed' } } }), ceremony(), HEAD)).toBeUndefined();
+    expect(ceremonyStands(M, fakeIo(), ceremony({ passed: false }), HEAD)).toBeUndefined();
+    expect(ceremonyStands(M, fakeIo(), ceremony({ version: '0.1.2-nightly.old' }), HEAD)).toBeUndefined();
+    expect(ceremonyStands(M, fakeIo(), ceremony({ version: '0.1.3-nightly.20261006.2210.g918365d' }), HEAD)).toBeDefined(); // built before the plain number was cut: same release
   });
   it('[C-277] checks still running, or failed, are named; skipped ones pass', () => {
     expect(rollupProblem([{ name: 'a', status: 'COMPLETED', conclusion: 'SUCCESS' }, { name: 'b', status: 'COMPLETED', conclusion: 'SKIPPED' }])).toBeUndefined();
@@ -167,7 +179,7 @@ describe('every step says what it costs [C-277]', () => {
     const costs = Object.fromEntries(steps.map((s) => [s.id, s.cost]));
     expect(costs['ledger chain']).toBe('free');
     expect(costs['npm nightly is 0.1.3, built from fe932dc']).toBe('free: GitHub Actions on a public repo');
-    expect(costs['formal ceremony on this build']).toBe('$0 TypeSafe; Claude quota, about 5M tokens');
+    expect(costs['formal ceremony on this release']).toBe('$0 TypeSafe; Claude quota, about 5M tokens');
     expect(costs['agent trials on the current guidance']).toContain('$0 TypeSafe unless you pass --paid');
   });
   it('[C-277] the last ceremony\'s own usage is quoted, and the cost shows in brackets on the step line', () => {

@@ -116,6 +116,24 @@ export function featuresSince(io: Io, since: string | undefined): string[] {
 
 const trialOn = (ledger: LedgerRecord[], fingerprint: string): StartedRecord | undefined => [...ledger].reverse().find((r): r is StartedRecord => r.phase === 'started' && r.kind === 'trial' && r.fingerprint === fingerprint);
 
+/** A ceremony counts for a release when it ran on that version, or on a build of the same x.y.z before the plain number was cut. */
+export const onLine = (ceremonyVersion: string, version: string): boolean => ceremonyVersion === version || ceremonyVersion.startsWith(`${version}-nightly.`);
+
+/** The passed ceremony whose evidence still stands at `ref`: it ran on this release, and nothing it tested (the code and the text agents read) differs between the commit it ran on and `ref`. A version number, docs, scripts or workflow changing is not a reason to spend half an hour and millions of tokens again. */
+export function ceremonyStands(m: Manifest, io: Io, ledger: LedgerRecord[], ref: string): { id: string; version: string; commit: string } | undefined {
+  const last = lastFormal(ledger);
+  const commit = last?.started.versionCommit;
+  if (!last || !commit || !last.finished.passed || !onLine(last.started.version, m.version)) return undefined;
+  return JSON.stringify(cleanLines(io, commit, m.tested)) === JSON.stringify(cleanLines(io, ref, m.tested)) ? { id: last.started.id, version: last.started.version, commit } : undefined;
+}
+
+/** A ceremony already ran on this release's code and did not pass: running it again on the same code would only repeat it. */
+function ceremonyOnThisCode(m: Manifest, io: Io, ledger: LedgerRecord[], ref: string): boolean {
+  const last = lastFormal(ledger);
+  const commit = last?.started.versionCommit;
+  return last !== undefined && commit != null && onLine(last.started.version, m.version) && JSON.stringify(cleanLines(io, commit, m.tested)) === JSON.stringify(cleanLines(io, ref, m.tested));
+}
+
 /** What a ceremony costs, in the owner's terms: no TypeSafe dollars (the sample provider answers), Claude subscription quota for the agents, and the size of the last one so the number is not a guess. */
 export function ceremonyCost(ledger: LedgerRecord[]): string {
   const u = [...ledger].reverse().find((r): r is FinishedRecord => r.phase === 'finished' && r.kind === 'ceremony' && r.usage !== undefined)?.usage;
@@ -129,6 +147,7 @@ export function survey(m: Manifest, io: Io, ledger: LedgerRecord[], fingerprint:
   const short = io.git(['rev-parse', 'origin/nightly']).trim().slice(0, 7);
   const steps: Step[] = [{ id: 'ledger chain', state: chain === undefined ? 'done' : 'missing', detail: chain ?? 'intact', cost: 'free' }];
   const open: number[] = [];
+  let ahead = io.git(['rev-parse', 'origin/nightly']).trim(); // what nightly will be once the PRs are merged: the last PR's head, which carries nightly
   const prs = (JSON.parse(io.gh(['pr', 'list', '--base', 'nightly', '--state', 'open', '--limit', '30', '--json', 'number,title,isDraft,statusCheckRollup,headRefOid'])) as Array<{ number: number; title: string; isDraft: boolean; statusCheckRollup: Array<{ name?: string; status?: string; conclusion?: string }> }>).sort((x, y) => x.number - y.number);
   for (const pr of prs) {
     const id = `PR #${pr.number} merged into nightly (${pr.title.slice(0, 60)})`;
@@ -138,6 +157,7 @@ export function survey(m: Manifest, io: Io, ledger: LedgerRecord[], fingerprint:
     }
     const why = rollupProblem(pr.statusCheckRollup ?? []);
     io.git(['fetch', '-q', 'origin', `pull/${pr.number}/head`]);
+    if (!why) ahead = io.git(['rev-parse', 'FETCH_HEAD']).trim();
     const v = pkgVersion(show(io, 'FETCH_HEAD', 'package.json'));
     const cues = headingNames(show(io, 'FETCH_HEAD', 'CHANGELOG.md'), m.version) && hasNpmBadge(show(io, 'FETCH_HEAD', 'README.md'));
     const problem = why ?? (v !== m.version ? `its package.json says ${v ?? '?'}, not ${m.version}` : !cues ? `its CHANGELOG heading and README badge must name ${m.version}` : undefined);
@@ -162,15 +182,16 @@ export function survey(m: Manifest, io: Io, ledger: LedgerRecord[], fingerprint:
   const taken = builtFrom !== '' && !out; // that version is on npm already, from some other commit: npm will never take it twice
   steps.push({ id: `npm nightly is ${m.version}, built from ${open.length ? 'the merged head' : short}`, cost: 'free: GitHub Actions on a public repo', state: label || taken ? 'missing' : out ? 'done' : 'todo', detail: label ?? (taken ? `${m.version} is already on npm from ${builtFrom.slice(0, 7)}; nightly is at ${open.length ? 'a new head' : short} → bump the version in a PR (and in release.json) to release again` : out ? `${tag}, built from ${short}` : `will publish exactly ${m.version} to npm's nightly tag`) });
   const cer = lastFormal(ledger);
-  const cerOn = open.length === 0 && cer !== undefined && out && cer.started.version === m.version; // a PR still to merge means a new build, which no ceremony has seen
-  steps.push({ id: 'formal ceremony on this build', cost: ceremonyCost(ledger), state: cerOn ? (cer.finished.passed ? 'done' : 'missing') : 'todo', detail: cerOn ? `${cer.started.id} ${cer.finished.passed ? 'passed' : 'did not pass → the evidence prints under STATUS; fix it in a PR, and the next nightly re-runs it'}` : 'will run last, in a clean worktree: about half an hour, free path, its progress prints below (main needs it)' });
+  const stands = ceremonyStands(m, io, ledger, ahead);
+  const sameCode = cer !== undefined && cer.started.versionCommit != null && onLine(cer.started.version, m.version) && JSON.stringify(cleanLines(io, cer.started.versionCommit, m.tested)) === JSON.stringify(cleanLines(io, ahead, m.tested));
+  steps.push({ id: 'formal ceremony on this release', cost: stands ? 'free' : ceremonyCost(ledger), state: stands ? 'done' : sameCode ? 'missing' : 'todo', detail: stands ? `${stands.id} (${stands.version}) passed, and ${m.tested.join(', ')} are unchanged since ${stands.commit} → its evidence stands, no re-run` : sameCode ? `${cer!.started.id} did not pass on this same code → the evidence prints under STATUS; fix it in a PR` : `will run last, in a clean worktree: about half an hour, free path, its progress prints below (the code or the text agents read changed since ${cer?.started.versionCommit ?? 'the last ceremony'})` });
   return { steps, open };
 }
 
 /** The three lines every nightly run ends with, so the state is never in the middle of a paragraph: what is released, whether the build is certified, whether main can go. */
 export function statusLines(m: Manifest, ledger: LedgerRecord[], npmVersion: string, released: boolean): string[] {
   const cer = lastFormal(ledger);
-  const on = cer && cer.started.version === npmVersion ? cer : undefined;
+  const on = cer && onLine(cer.started.version, m.version) ? cer : undefined;
   const passed = on && (on.finished.passed || m.accept.includes(on.started.id));
   return [
     'STATUS',
@@ -183,7 +204,7 @@ export function statusLines(m: Manifest, ledger: LedgerRecord[], npmVersion: str
 /** The ceremony's evidence for this build, as lines to print under STATUS: the score, what blocked it and why, what changed since the last pass, impact, blast radius, the commands. Empty when no ceremony ran on it. */
 export function briefLines(ledger: LedgerRecord[], npmVersion: string): string[] {
   const cer = lastFormal(ledger);
-  if (!cer || cer.started.version !== npmVersion) return [];
+  if (!cer || !(cer.started.version === npmVersion || cer.started.version.startsWith(`${npmVersion}-nightly.`))) return [];
   const before = ledger.filter((r): r is StartedRecord => r.phase === 'started' && r.kind === 'ceremony' && r.formal && r.id !== cer.started.id).reverse().find((s) => ledger.some((f) => f.phase === 'finished' && f.startedId === s.id && f.passed));
   return ceremonyBrief(cer.started, cer.finished, before);
 }
@@ -322,8 +343,9 @@ async function nightly(m: Manifest, io: Io, yes: boolean): Promise<number> {
     comment(io, merged[merged.length - 1], [`**${rec.id}: released to nightly** (${m.version}, ${m.title})`, '', ...after.map((c) => `- ✔ ${c.id}: ${c.detail}`)].join('\n'));
   }
   console.log(`\nRELEASED to nightly: ${npmVersion} · the branch and npm's nightly tag say ${npmVersion}, built from ${short} · receipt ${rec.id}${prior ? ' (recorded earlier)' : ''}`);
-  const last = lastFormal(readLedger());
-  if (!(last && last.started.version === npmVersion)) {
+  const standing = ceremonyStands(m, io, readLedger(), head);
+  if (standing) console.log(`\nformal ceremony: ${standing.id} stands (${standing.version} passed; ${m.tested.join(', ')} unchanged since ${standing.commit}), not re-run`);
+  else if (!ceremonyOnThisCode(m, io, readLedger(), head)) {
     console.log(`\nformal ceremony on ${npmVersion}: starting (about half an hour; each job prints as it finishes)`);
     const code = runCeremony(io, npmVersion, head);
     if (code !== 0) console.log('✖ the ceremony could not run → nothing was tested');
