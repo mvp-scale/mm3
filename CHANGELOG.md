@@ -2,7 +2,7 @@
 
 Newest first. Each entry says what you can now do, and the number is the pull request that shipped it. Releases are tagged; the top section is what the `nightly` build on npm already has.
 
-## Unreleased (nightly)
+## v0.1.2, 2026-10-06
 
 **One file for your settings, a spend cap you can trust, and agents that pick MM3 up without being told.**
 
@@ -31,6 +31,9 @@ Newest first. Each entry says what you can now do, and the number is the pull re
 
 ### Same answer, any way in
 - **The terminal and the plugin are tested against each other.** The same command through both gives the same text and the same run id, and the plugin's startup instructions are checked against the source on every test run. Every command, flag and stop is also driven through the built CLI and through real MCP, on Node 22 and 24. (#23, #24)
+
+### Known limit
+- **Agents often need a retry on their first request.** In the release agent tests the first request was accepted about half the time (target 80%), and one of six "ask a plain question" runs needed four requests instead of three. Every stop said the fix and the run recovered, but starting each request from `mm3 template <verb>` is not yet said in the main guidance. It is the next improvement.
 
 ## v0.1.1, 2026-10-01
 
