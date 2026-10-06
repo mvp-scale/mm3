@@ -3,16 +3,19 @@
 // the commit, the guidance fingerprint and the definition of success (every scenario's goal and checkpoints, hashed); a
 // `finished` line closes it (an `aborted` line if it stops early). A run counts toward the release gate (formal) only when
 // this checkout is the clean commit the version was built from and the rules' full trial count is used; anything else is
-// recorded too, marked not formal, with the reason. It uses the sample provider: no key, no TypeSafe spend. A paid mode
+// recorded too, marked not formal, with the reason. `--only <jobs> --carry CER-####` re-runs just those jobs and copies the other
+// jobs' rows (and the context test) from that earlier formal run, tagged `carriedFrom`, but only when scripts/agentic/carry.ts finds
+// nothing an agent runs or reads has changed; a refused carry stops before anything is recorded. It uses the sample provider: no key, no TypeSafe spend. A paid mode
 // does not exist yet and will need explicit approval on the command line.
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import { readFileSync } from 'node:fs';
 import { collectSurfaces, manifestOf } from '../test/helpers/guidance-surfaces.ts';
 import { byLevel, LEVELS, runContext, type ContextRow } from './agentic/context.ts';
+import { carriedJobs, carryProblem } from './agentic/carry.ts';
 import { decide, providerContradiction } from './agentic/decision.ts';
 import { toLedgerRows } from './agentic/record.ts';
-import { append, chainProblem, definitionOf, nextId, readLedger, type FinishedRecord, type Spec, type StartedRecord } from './agentic/ledger.ts';
+import { append, chainProblem, definitionOf, invalidReason, nextId, readLedger, type FinishedRecord, type Spec, type StartedRecord } from './agentic/ledger.ts';
 import { addUsage, noUsage } from './agentic/claude.ts';
 import { addEconomics, economicsLine, emptyEconomics } from './agentic/trace.ts';
 import { cells, commitOf, level3Passes, runFull, usageLine, type FullRow, type FullScenario, type Rules } from './agentic/run.ts';
@@ -20,10 +23,20 @@ import { cells, commitOf, level3Passes, runFull, usageLine, type FullRow, type F
 const args = process.argv.slice(2);
 const flag = (name: string): string | undefined => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 const version = flag('--version');
-if (!version || version.startsWith('--')) throw new Error('usage: npm run ceremony -- --version <exact npm version> [--trials N]');
+if (!version || version.startsWith('--')) throw new Error('usage: npm run ceremony -- --version <exact npm version> [--trials N] [--only <jobId,jobId> [--carry CER-#### [--note "<text>"]]]');
 if (args.includes('--paid')) throw new Error('--paid: the keyed suite (verdict quality, capped real spend) is not built yet; the free path is the only path');
 if (args.includes('--dry')) throw new Error('--dry is gone: every ceremony run is recorded; a quick look is `--trials 1`, recorded as not formal');
 const trialsOverride = flag('--trials') === undefined ? undefined : Number(flag('--trials'));
+const valueOf = (name: string): string | undefined => {
+  const v = flag(name);
+  if (args.includes(name) && (!v || v.startsWith('--'))) throw new Error(`✖ ${name}: needs a value → see the usage line above`);
+  return v;
+};
+const only = valueOf('--only')?.split(',').filter(Boolean);
+const carryId = valueOf('--carry');
+const note = valueOf('--note');
+if (carryId && !only) throw new Error('✖ carry: --carry needs --only → name the jobs that changed: --only <jobId,jobId> --carry CER-####');
+if (note && !carryId) throw new Error('✖ note: --note records a carry → add --carry CER-####');
 
 const out = (s = ''): void => console.log(s);
 const run = (cmd: string, a: string[]): { ok: boolean; text: string } => {
@@ -38,10 +51,26 @@ const fixture = JSON.parse(readFileSync('test/agentic/fixture.json', 'utf8')) as
 const broken = chainProblem();
 if (broken) throw new Error(broken);
 const rules = spec.rules;
+const unknownJob = only?.find((id) => !spec.full.some((s) => s.id === id));
+if (unknownJob) throw new Error(`✖ only: no job ${unknownJob} → the jobs are ${spec.full.map((s) => s.id).join(', ')}`);
 const versionCommit = commitOf(version) ?? null;
 const head = run('git', ['rev-parse', 'HEAD']).text.trim();
 const dirty = run('git', ['status', '--porcelain']).text.trim() !== '';
 const fingerprint = manifestOf(collectSurfaces()).fingerprint;
+const records = readLedger();
+const definition = definitionOf(spec, fixture);
+const source = carryId ? records.find((r): r is StartedRecord => r.phase === 'started' && r.id === carryId) : undefined;
+const sourceEnd = carryId ? records.find((r): r is FinishedRecord => (r.phase === 'finished' || r.phase === 'aborted') && r.startedId === carryId) : undefined;
+if (carryId) {
+  const diff = source?.versionCommit ? run('git', ['diff', '--name-only', source.versionCommit, 'HEAD']) : undefined;
+  const refused = carryProblem({ id: carryId, source: source ? { started: source, finished: sourceEnd } : undefined, invalid: invalidReason(records, carryId), only: only!, fingerprint, definition, changed: diff?.ok ? diff.text.split('\n').filter(Boolean) : undefined });
+  if (refused) {
+    console.error(refused);
+    process.exit(1);
+  }
+}
+const carriedRows = (sourceEnd?.level3 ?? []).filter((r) => !only!.includes(r.id)).map((r) => ({ ...r, carriedFrom: r.carriedFrom ?? carryId }));
+const carry = carryId ? { from: carryId, jobs: carriedJobs(definition, only!), only: only!, ...(note ? { note } : {}) } : undefined;
 // which bits are being tested: the published tarball's own integrity hash, and the commit the plugin route checks out
 const npmView = run('npm', ['view', `@mvpscale/mm3@${version}`, 'dist.integrity', 'dist.shasum', '--json']);
 let npmInfo: { 'dist.integrity'?: string; 'dist.shasum'?: string } = {};
@@ -49,18 +78,18 @@ try { npmInfo = JSON.parse(npmView.text) as typeof npmInfo; } catch { /* not pub
 const reasons = [
   ...(versionCommit === null ? ['the version names no commit'] : head.startsWith(versionCommit) ? [] : [`this checkout (${head.slice(0, 7)}) is not the commit ${version} was built from (${versionCommit})`]),
   ...(dirty ? ['uncommitted changes'] : []),
+  ...(only && !carryId ? [`--only ${only.join(',')} without --carry: a partial run cannot stand alone`] : []),
   ...(trialsOverride !== undefined ? [`--trials ${trialsOverride} instead of the rules' ${rules.trialsPerScenario}`] : []),
 ];
 const formal = reasons.length === 0;
-const records = readLedger();
 const env = { node: process.version, vitest: grab(readFileSync('package.json', 'utf8'), /"vitest": "([^"]+)"/u), claude: run('claude', ['--version']).text.trim(), os: `${os.type()} ${os.release()} ${os.arch()}` };
-const definition = definitionOf(spec, fixture);
 const started: StartedRecord = {
   kind: 'ceremony', phase: 'started', id: nextId(records), ts: new Date().toISOString(), version, versionCommit, head: head.slice(0, 12), dirty, fingerprint,
   guidance: { surfaces: Object.keys(collectSurfaces()).length, snapshot: 'test/golden/guidance/surfaces.txt' },
   definition, environment: env,
   artifact: { npmIntegrity: npmInfo['dist.integrity'] ?? null, npmShasum: npmInfo['dist.shasum'] ?? null, pluginCommit: versionCommit, ...(npmInfo['dist.integrity'] ? {} : { note: `npm view found no published ${version} (offline, or not published)` }) },
-  mode: 'free', trialsOverride: trialsOverride ?? null, formal, formalReason: formal ? 'this checkout is the clean commit the version was built from, at the rules\' full trial count' : reasons.join('; '),
+  mode: 'free', trialsOverride: trialsOverride ?? null, formal, formalReason: formal ? `this checkout is the clean commit the version was built from, at the rules' full trial count${carry ? `, with ${carry.jobs.length} job(s) carried from ${carry.from}` : ''}` : reasons.join('; '),
+  ...(carry ? { carry } : {}),
 };
 append(started);
 out(`AGENTIC CEREMONY ${started.id} · ${version} · free path (sample provider, no key)`);
@@ -95,30 +124,33 @@ try {
   }
 
   // 3. level 2
-  out('\n3. LEVEL 2 · context test (Haiku, no tools; next step from text alone)');
-  const l2: ContextRow[] = runContext(undefined, 'haiku', (s) => out(s.replace(/^ {2}/u, '   ')));
-  const lv = byLevel(l2);
+  out(`\n3. LEVEL 2 · context test (Haiku, no tools; next step from text alone)${carry ? ` · NOT re-run: taken from ${carry.from}` : ''}`);
+  const l2: ContextRow[] = carry ? [] : runContext(undefined, 'haiku', (s) => out(s.replace(/^ {2}/u, '   ')));
+  const l2rec = carry ? (sourceEnd?.level2 ?? []) : l2.map((r) => ({ id: r.id, level: r.level, pass: r.pass }));
+  const lv = byLevel(l2rec);
   out(`   → ${LEVELS.map((l) => `${l} ${lv[l].pass}/${lv[l].total}`).join(' · ')} (recorded; does not gate)`);
 
   // 4. level 3
   out('\n4. LEVEL 3 · full agentic baseline (real agents, real tool, the pinned project, the sample provider)');
+  if (carry) out(`   running only ${carry.only.join(', ')}; carrying ${carry.jobs.length} job(s) unchanged from ${carry.from}: ${carry.jobs.join(', ')}`);
   out(`   gate: ${rules.gateModel} passes at least ${rules.mustPassTrials} of ${rules.trialsPerScenario} trials of every scenario on every route; ${rules.floorModel} runs once and is reported, not gated`);
-  const l3: FullRow[] = runFull(spec.full, version, rules, (s) => out(s.replace(/^ {2}/u, '   ')), trialsOverride);
-  const gateRows = l3.filter((r) => r.model === rules.gateModel);
+  const l3: FullRow[] = runFull(only ? (spec.full as FullScenario[]).filter((s) => only.includes(s.id)) : spec.full, version, rules, (s) => out(s.replace(/^ {2}/u, '   ')), trialsOverride);
+  const all = [...toLedgerRows(l3), ...carriedRows]; // the rows the gate reads: what ran here, then what was carried
+  const gateRows = all.filter((r) => r.model === rules.gateModel);
   const asked = gateRows.filter((r) => r.attempts.length > 0); // jobs with no verb request (a setting, a health check) say nothing about first requests
   const first = asked.length ? asked.filter((r) => r.firstRequestAccepted).length / asked.length : 0;
-  for (const c of cells(l3)) out(`   ${c.id} · ${c.route} · ${c.model}: ${c.passed}/${c.trials}${c.model === rules.gateModel ? '' : ' (floor, not gating)'}`);
+  for (const c of cells(all)) out(`   ${c.id} · ${c.route} · ${c.model}: ${c.passed}/${c.trials}${c.model === rules.gateModel ? '' : ' (floor, not gating)'}`);
   out(`   → first request accepted in ${(first * 100).toFixed(0)}% of gate trials (target ${(rules.firstAttemptTarget * 100).toFixed(0)}%, reported)`);
 
   // 5. gate and record
-  const passed = l1.every((r) => r.ok) && level3Passes(l3, rules) && !providerContradiction(started, l3);
+  const passed = l1.every((r) => r.ok) && level3Passes(all, rules) && !providerContradiction(started, all);
   const usage = [...l2.map((r) => r.usage), ...l3.map((r) => r.usage)].reduce(addUsage, noUsage());
   const calls = l2.length + l3.length;
   const record: Omit<FinishedRecord, 'kind' | 'startedId' | 'ts'> = {
     phase: 'finished', passed,
     level1: l1,
-    level2: l2.map((r) => ({ id: r.id, level: r.level, pass: r.pass })),
-    level3: toLedgerRows(l3),
+    level2: l2rec,
+    level3: all,
     firstRequestAcceptedRate: Number(first.toFixed(2)),
     usage: { ...usage, claudeRuns: calls, mm3Calls: l3.reduce((a, r) => a + r.mm3Calls, 0) },
   };

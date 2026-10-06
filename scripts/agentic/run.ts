@@ -250,8 +250,8 @@ export const usageLine = (u: Usage, runs: number): string => `${runs} runs · ${
 export interface Cell { id: string; route: string; model: string; passed: number; trials: number }
 
 /** Passes per scenario × route × model. */
-export function cells(rows: FullRow[]): Cell[] {
-  const key = (r: FullRow): string => `${r.id}|${r.route}|${r.model}`;
+export function cells(rows: Array<{ id: string; route: string; model: string; pass: boolean }>): Cell[] {
+  const key = (r: { id: string; route: string; model: string }): string => `${r.id}|${r.route}|${r.model}`;
   return [...new Set(rows.map(key))].map((k) => {
     const rs = rows.filter((r) => key(r) === k);
     return { id: rs[0]!.id, route: rs[0]!.route, model: rs[0]!.model, passed: rs.filter((r) => r.pass).length, trials: rs.length };
@@ -259,7 +259,7 @@ export function cells(rows: FullRow[]): Cell[] {
 }
 
 /** The level 3 gate: the gate model passes at least `mustPassTrials` of its trials in every scenario × route. The floor model never gates. */
-export function level3Passes(rows: FullRow[], rules: Rules): boolean {
+export function level3Passes(rows: Array<{ id: string; route: string; model: string; pass: boolean }>, rules: Rules): boolean {
   const gate = cells(rows).filter((c) => c.model === rules.gateModel);
   return gate.length > 0 && gate.every((c) => c.passed >= Math.min(rules.mustPassTrials, c.trials));
 }
