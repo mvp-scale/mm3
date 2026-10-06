@@ -29,9 +29,9 @@ function lineRange(lines: string): { start: number; end: number } | undefined {
 }
 
 /** The sweep's first layer: a glob becomes whole-file items, id = the relative path. */
-function readFiles(root: string, spec: string, notes: string[]): Resolved[] {
-  const { files, truncated } = expandGlob(root, spec);
-  if (truncated) notes.push(`${spec}: matched more than ${MAX_FILES} files, using the first ${MAX_FILES}`);
+function readFiles(root: string, spec: string, notes: string[], maxFiles: number): Resolved[] {
+  const { files, truncated } = expandGlob(root, spec, maxFiles);
+  if (truncated) notes.push(`${spec}: matched more than ${maxFiles} files, using the first ${maxFiles}`);
   const out: Resolved[] = [];
   for (const rel of files) {
     const full = path.join(root, rel);
@@ -78,9 +78,9 @@ function readCalls(parent: Item): Resolved[] {
 }
 
 /** One Resolver for every depth of scan's chain: file -> function -> call. */
-export function createCodeResolver(root: string, notes: string[]): Resolver {
+export function createCodeResolver(root: string, notes: string[], maxFiles: number = MAX_FILES): Resolver {
   return (_layer: string, spec: string, parent: Item | null): Resolved[] => {
-    if (parent === null) return readFiles(root, spec, notes);
+    if (parent === null) return readFiles(root, spec, notes, maxFiles);
     if (parent.unit!.kind === 'file') return readFunctions(parent);
     return readCalls(parent);
   };
@@ -94,7 +94,7 @@ export function createCodeResolver(root: string, notes: string[]): Resolver {
  *  expandGlob uses (globToRegExp), so a pattern written the usual way (relative to the project root) still
  *  works whether or not the containing repo IS the project root. A repo that can't be found, or a ref git can't
  *  read there, yields no files — a note, never a stop, same as readFiles' own unreadable-file handling. */
-function readFilesAt(root: string, ref: string, spec: string, notes: string[], wherePaths: readonly string[]): Resolved[] {
+function readFilesAt(root: string, ref: string, spec: string, notes: string[], wherePaths: readonly string[], maxFiles: number): Resolved[] {
   const clean = spec.replace(/^\.\//u, '');
   if (path.isAbsolute(clean) || clean.split('/').includes('..')) return [];
   const repoRoot = repoRootFor(root, wherePaths);
@@ -110,9 +110,9 @@ function readFilesAt(root: string, ref: string, spec: string, notes: string[], w
     if (re.test(rel)) matched.push(rel);
   }
   matched.sort();
-  const truncated = matched.length > MAX_FILES;
-  if (truncated) notes.push(`${spec}: matched more than ${MAX_FILES} files, using the first ${MAX_FILES}`);
-  const files = truncated ? matched.slice(0, MAX_FILES) : matched;
+  const truncated = matched.length > maxFiles;
+  if (truncated) notes.push(`${spec}: matched more than ${maxFiles} files, using the first ${maxFiles}`);
+  const files = truncated ? matched.slice(0, maxFiles) : matched;
 
   const out: Resolved[] = [];
   for (const rel of files) {
@@ -135,9 +135,9 @@ function readFilesAt(root: string, ref: string, spec: string, notes: string[], w
  *  resolves the containing repo the same way resolveRefSha's own callers do — pass the sweep parent's own item
  *  paths so a nested repo (a monorepo package, a vendored project) is found the same way C-147 already finds it
  *  for one-subject replay. */
-export function createCodeResolverAt(root: string, ref: string, notes: string[], wherePaths: readonly string[] = []): Resolver {
+export function createCodeResolverAt(root: string, ref: string, notes: string[], wherePaths: readonly string[] = [], maxFiles: number = MAX_FILES): Resolver {
   return (_layer: string, spec: string, parent: Item | null): Resolved[] => {
-    if (parent === null) return readFilesAt(root, ref, spec, notes, wherePaths);
+    if (parent === null) return readFilesAt(root, ref, spec, notes, wherePaths, maxFiles);
     if (parent.unit!.kind === 'file') return readFunctions(parent);
     return readCalls(parent);
   };

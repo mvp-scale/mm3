@@ -26,6 +26,12 @@
 | Check the committed bundle matches a fresh build | `npm run check:plugin` |
 | README drift check: story phrases, every request example dry-runs, links, badges, old names (builds first) | `npm run check:readme` |
 | README quality grading by MM3; one paid call; pre-release only, not in CI | `npm run judge:readme` |
+| Agentic ceremony on a published build: free checks, context test, real agents, decision; always recorded in `test/agentic/ledger.jsonl` (free path, sample provider; use the version's own commit for a formal run) | `npm run ceremony -- --version <exact version>` |
+| Re-run only the jobs a fix touched and carry the other jobs' passing rows from an earlier formal ceremony (refused with one line unless nothing an agent runs or reads changed; `--only` alone is a not-formal partial run) | `npm run ceremony -- --version <exact version> --only <jobId,jobId> --carry CER-#### [--note "<text>"]` |
+| Read a ceremony run: the release report (plain words first, decision last), one trial call by call, the list, a comparison, repeated improvements | `npm run agentic:release-report -- CER-####` · `... --row <job>/<route>/<model>/<trial>` · `npm run agentic:runs` · `npm run agentic:compare -- CER-#### CER-####` · `npm run agentic:patterns` |
+| Manual sheet for one job, from the same definition the harness grades | `npm run agentic:sheet -- <version> <job> <cli\|mcp>` |
+| Release gate for the agentic stage (fails with no formal run, a failed, stale or incomplete one, or a broken ledger chain) | `npm run check:agentic` |
+| Take a change to any text an agent reads on purpose (snapshots under `test/golden/guidance/`), then re-run the ceremony | `npm run guidance:accept` |
 
 ## Rules
 
@@ -39,6 +45,7 @@
 8. **Match the surrounding code.** Give each module a short header comment saying why it exists. Keep runtime dependencies minimal.
 9. **Public repo.** Local notes go in `lab/`, which is gitignored and blocked by the pre-commit hook. Never commit machine paths, keys, or internal tracker IDs.
 10. **Trace new claims.** A new test for a claim in `docs/contract.md` carries its `[C-###]` tag (title or a comment above the assertion); `npm run check:trace` checks this, but it is not wired into the pre-commit hook (it scans the whole `test/` tree, which `check-clean.sh` intentionally keeps fast) — run it by hand before a PR that touches the contract.
+11. **Close out every PR.** The PR template's Scope, Done when and Evidence are filled in, and the PR adds its one-line "What's new" entry to `CHANGELOG.md` under Unreleased (value first, with the PR number). A merged branch is deleted (GitHub does it); the record stays in the PR. Before any other branch is deleted: its tip is an ancestor of `origin/nightly` (`git merge-base --is-ancestor`), or its PR is Closed and `refs/pull/<n>/head` equals the tip; the tip, PR, state and date are written to `lab/closeout.md` first; remote deletes wait for the owner. A branch with no PR and no such proof stays.
 
 ## Layout
 
@@ -71,6 +78,18 @@ This section is for any agent that has MM3 installed as a dependency in its own 
 ## What MM3 is
 
 MM3 turns a short numbered yes/no checklist into a calibrated pass/fail/unsure verdict — evidence, never a command. Every request has a `mak:` block (**make**: the request itself, one goal, then plumbing) and an optional `mdl:` block (**model**: why you're here, so the ledger learns). The six verbs split into MAK³ (use what is proven: `view`, `class`, `replay`) and MDL³ (learn what is missing: `scan`, `drill`, `loop`), each across Know, Judge and Prove.
+
+## Use it well
+
+IMPORTANT: work top-down. Ask a few high-leverage questions per layer and drill only where MM3 flags something. "Exhaustive" means every layer covered through that funnel, not every file.
+
+- Open goal, in order: `view` (free reuse) → `scan` only when you do not know where to look → `drill` the flagged item → `loop` to check a design. Known location: `class` on the representative code.
+- Pilot first: send one small request, read the answer, fix the questions, then widen. Send no more than a few before you have read one.
+- A sweep that says `gate: fail` is normal (any file failing any concern fails it): read the failing categories and the `next:` line; do not stop and do not repeat it.
+- Before writing a request run `mm3 agent probe` (distinct roles per probe, a "none fits" option on every choice) and tag it with mdl (`uses`, `area`).
+- Before a judgment call about code or a design (safe to merge? is it fixed? which option?), get an MM3 verdict: a call costs a fraction of a cent and every run is recorded, so the next decision starts from evidence, not from scratch.
+- Cite the run id (MM3-####) for every claim that comes from MM3, and mark the rest as your own reading.
+- Delegating? Give helpers `mm3 agent delegate`, and check their reports against the ledger with `mm3 view MM3-####`: a helper can report work it did not do.
 
 ## Run this first
 

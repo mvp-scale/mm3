@@ -6,7 +6,7 @@
  * and the response carries an extra scanned: {layer: count, ...} line.
  */
 import { providerIdentity } from '../classifier/select.ts';
-import { resolveConfig } from '../config/load.ts';
+import { configOf } from '../config/load.ts';
 import { gradeItems, goalGate, sweepGate, worstFirst } from '../contract/grade.ts';
 import { m, type Value } from '../contract/emit.ts';
 import type { Category } from '../contract/types.ts';
@@ -17,7 +17,7 @@ import { createCodeResolver } from '../evidence/units.ts';
 import type { NewContractRun } from '../ledger/log.ts';
 import { cacheTelemetry, reusedAgeNotes } from '../ledger/reuse.ts';
 import { actorOf, createdNote, preflight } from './pay.ts';
-import { loadRequest } from './request.ts';
+import { contractLimits, loadRequest } from './request.ts';
 import { commonNotes, COST_ESTIMATED_NOTE, probeWarnings, respondText, reusedIds, sweepEntry, sweepNext, mdlRecorded } from './respond.ts';
 import { itemRecords, planNeedsBudget, plannedCallCount, planSweep, recordSweep, runSweep, sweepDryRun } from './sweep.ts';
 import type { VerbContext, VerbResult } from './types.ts';
@@ -43,9 +43,9 @@ function whereFromItems(items: readonly { unit?: { path: string } }[]): string[]
 /** Entrypoint/config files that exist in the project but were never one of this scan's own items (at any
  *  layer — unit.path is the same original file path all the way down file -> function -> call). undefined
  *  when there's nothing to say. */
-function unlookedEntrypoints(root: string, items: readonly { unit?: { path: string } }[]): string | undefined {
+function unlookedEntrypoints(root: string, items: readonly { unit?: { path: string } }[], maxFiles: number): string | undefined {
   const touched = new Set(items.flatMap((i) => (i.unit ? [i.unit.path] : [])));
-  const missed = [...new Set(ENTRYPOINT_GLOBS.flatMap((pattern) => expandGlob(root, pattern).files))].filter((f) => !touched.has(f));
+  const missed = [...new Set(ENTRYPOINT_GLOBS.flatMap((pattern) => expandGlob(root, pattern, maxFiles).files))].filter((f) => !touched.has(f));
   if (!missed.length) return undefined;
   const shown = missed.slice(0, MISSED_SHOWN);
   const named = missed.length > shown.length ? `${shown.join(', ')}, … ${missed.length - shown.length} more` : shown.join(', ');
@@ -54,20 +54,20 @@ function unlookedEntrypoints(root: string, items: readonly { unit?: { path: stri
 
 export async function runScan(text: string, ctx: VerbContext): Promise<VerbResult> {
   // a project's own .mm3/config.yaml mdl: overrides apply to every mdl: block it validates.
-  const cfg = resolveConfig(ctx.paths, ctx.env).config;
+  const cfg = configOf(ctx).config;
   const mdlFields = effectiveMdlFields(cfg.mdl);
-  const loaded = loadRequest(text, 'scan', mdlFields);
+  const loaded = loadRequest(text, 'scan', mdlFields, contractLimits(cfg, 'scan'));
   if (!loaded.ok) return loaded.result;
   const { request } = loaded;
   const notes: string[] = [];
 
   const who = { adapter: ctx.provider.adapter, model: ctx.provider.model };
   const identity = providerIdentity(ctx.env, { resolveStored: ctx.resolveStored });
-  const plan = planSweep(request, who, ctx.paths, ctx.dryRun ?? false, { resolve: createCodeResolver(ctx.paths.root, notes) }, { sweep: cfg.sweep, reuse: cfg.reuse });
+  const plan = planSweep(request, who, ctx.paths, ctx.dryRun ?? false, { resolve: createCodeResolver(ctx.paths.root, notes, cfg.evidence.maxFiles) }, { sweep: cfg.sweep, reuse: cfg.reuse, evidence: cfg.evidence });
 
   if (ctx.dryRun) return sweepDryRun(plan, identity, probeWarnings(request.mak));
 
-  const entrypointNote = unlookedEntrypoints(ctx.paths.root, plan.items);
+  const entrypointNote = unlookedEntrypoints(ctx.paths.root, plan.items, cfg.evidence.maxFiles);
   if (entrypointNote) notes.push(entrypointNote);
 
   // A fully-reused scan (every layer's call: null) must never be blocked by an already-reached cap.
@@ -119,6 +119,7 @@ export async function runScan(text: string, ctx: VerbContext): Promise<VerbResul
         `${calls} call${calls === 1 ? '' : 's'} · ${plan.askedQuestions} question${plan.askedQuestions === 1 ? '' : 's'} · ${budget}`,
         ctx.provider.adapter,
         ctx.paths,
+        ctx.notes,
       ),
     );
 

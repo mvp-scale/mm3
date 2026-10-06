@@ -19,12 +19,22 @@ In Claude Code, from your project:
 
 Pick **project** scope. Claude asks for a TypeSafe API key (masked, optional): press Enter on "TypeSafe API key", paste, Enter, then "Save configuration". Leave it empty to add one later with `mm3 init`.
 
-In a terminal (needs Node 22.13+):
+The plugin carries its own copy of MM3 and gives Claude the `mm3` tool, so Claude can run every command (`mm3 config --load` included) without anything else installed. It is updated through Claude Code, like any plugin.
+
+In your own terminal (optional, needs Node 22.13+). Run it without installing anything:
+
+```bash
+npx @mvpscale/mm3 config
+```
+
+or install the command once, pinned to the version you ran:
 
 ```bash
 npm install -g @mvpscale/mm3
 mm3 init
 ```
+
+`mm3 doctor` says which `mm3` your terminal finds and warns when its version differs from the one running, with the fix (`mm3 init`). After you update the plugin, run `mm3 init` once to bring the terminal copy along. `mm3 init` never uses sudo and never edits your shell profile: it installs into your user folder (`~/.local`) and prints the one `export PATH=...` line if that folder is not on your PATH.
 
 **Status: beta.** It works well and we use it ourselves; formal benchmarks are coming. The plugin and the npm package are both out.
 
@@ -35,6 +45,7 @@ Bring a TypeSafe API key. MM3 wraps TypeSafe's API (Jev at `api.typesafe.ai`), a
 ```bash
 mm3 config            # see the settings in effect, the endpoint included
 mm3 config --write    # create .mm3/config.yaml, then uncomment baseURL: and set it
+mm3 config --load     # check the file and record the load in the ledger
 TYPESAFE_BASE_URL=https://api.example.com mm3 class review.yaml   # or for one run only
 ```
 

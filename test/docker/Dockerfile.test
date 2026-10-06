@@ -4,6 +4,10 @@ FROM node:${NODE_VERSION}-slim
 RUN mkdir -p /app && chown node:node /app
 WORKDIR /app
 COPY --chown=node:node package.json package-lock.json ./
+# git is part of the product's evidence path (git refs, replay, the flows tour); node:*-slim ships without it, so
+# the git tests would silently skip and the e2e/flows tiers could not run.
+USER root
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
 USER node
 RUN npm ci --no-audit --no-fund
 # npm ci resolves straight from package-lock.json, so it only ever caches yaml's TARBALL request, never its
@@ -12,4 +16,4 @@ RUN npm ci --no-audit --no-fund
 # clean-install.test.ts). Network is available here, at build time; the test itself runs under --network none.
 RUN npm view yaml@2.9.1 > /dev/null
 COPY --chown=node:node . .
-CMD ["sh", "-c", "npx tsc -p tsconfig.json --noEmit && npx vitest run --project unit --project contract --project golden && npm run build && npx vitest run --project install && echo INSTALL OK"]
+CMD ["sh", "-c", "npx tsc -p tsconfig.json --noEmit && npx vitest run --project unit --project contract --project golden && npm run build && npx vitest run --project install && npx vitest run --project cli && sh scripts/flows.sh && echo INSTALL OK"]

@@ -12,7 +12,7 @@ import path from 'node:path';
 import { providerIdentity } from '../classifier/select.ts';
 import { isRehearsal } from '../classifier/port.ts';
 import type { ResolveStored } from '../classifier/typesafe/client.ts';
-import { resolveConfig } from '../config/load.ts';
+import { configOf, type ResolvedConfig } from '../config/load.ts';
 import { m, type Value } from '../contract/emit.ts';
 import { fillBlanks } from '../contract/layers.ts';
 import { answerKey, goalQuestion, subjectEvidence, subjectQuestions } from '../contract/translate.ts';
@@ -26,7 +26,7 @@ import type { Mm3Paths } from '../ledger/paths.ts';
 import { exactReuse, reuseAge } from '../ledger/reuse.ts';
 import type { Level } from '../lens/request.ts';
 import { clip, hasControlChars } from '../util/text.ts';
-import { loadRequest, stopText } from './request.ts';
+import { contractLimits, loadRequest, stopText } from './request.ts';
 import { respondText, mdlRecorded } from './respond.ts';
 import type { VerbResult } from './types.ts';
 
@@ -36,6 +36,8 @@ import type { VerbResult } from './types.ts';
 export interface ViewContext {
   paths: Mm3Paths;
   env: Record<string, string | undefined>;
+  /** Resolved once at the request entry (see VerbContext.config). */
+  config?: ResolvedConfig;
   resolveStored?: ResolveStored;
 }
 
@@ -376,12 +378,13 @@ function runsForPlaces(paths: Mm3Paths, places: readonly string[]): ContractRun[
 /** Request mode: the contract's own view shape. loadRequest and readCodeEvidence stop it exactly as class does. */
 function runRequestMode(text: string, ctx: ViewContext): VerbResult {
   // a project's own .mm3/config.yaml mdl: overrides apply to every mdl: block it validates.
-  const mdlFields = effectiveMdlFields(resolveConfig(ctx.paths, ctx.env).config.mdl);
-  const loaded = loadRequest(text, 'view', mdlFields);
+  const cfg = configOf(ctx).config;
+  const mdlFields = effectiveMdlFields(cfg.mdl);
+  const loaded = loadRequest(text, 'view', mdlFields, contractLimits(cfg, 'view'));
   if (!loaded.ok) return loaded.result;
   const { request } = loaded;
 
-  const evidence = readCodeEvidence(ctx.paths.root, request.mak.where);
+  const evidence = readCodeEvidence(ctx.paths.root, request.mak.where, { limits: { perFileChars: cfg.evidence.perItemChars, totalChars: cfg.evidence.totalChars } });
   if (!evidence.ok) return { exit: 2, text: stopText(evidence.errors, 'view') };
 
   const places = request.mak.where.map(stripLines);
@@ -402,7 +405,7 @@ function runRequestMode(text: string, ctx: ViewContext): VerbResult {
     const keys = questions.map((q) => answerKey(evidenceStr, q));
     const who = providerIdentity(ctx.env, { resolveStored: ctx.resolveStored });
     // an answer older than reuse.maxAgeDays/maxCommits is treated as a miss, not reused.
-    const reuseLimits = resolveConfig(ctx.paths, ctx.env).config.reuse;
+    const reuseLimits = cfg.reuse;
     reuse = exactReuse(ctx.paths, who, keys, { reuse: reuseLimits });
     if (reuse === undefined) reuseMiss = runsHere.length ? `code in where changed since ${runsHere.at(-1)!.id}` : 'never asked';
     // A real draft check (a full ask, not just a bare place/id lookup) is logged, free — CONTRACT's own claim

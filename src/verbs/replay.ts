@@ -13,7 +13,7 @@
  * top-level, self-contained over: a scan or loop stores.
  */
 import { providerIdentity } from '../classifier/select.ts';
-import { resolveConfig } from '../config/load.ts';
+import { configOf } from '../config/load.ts';
 import { combine, gradeItems, gradeSubject, goalGate, sweepGate, worstFirst, type CategoryGrade, type ItemGrade, type Mark } from '../contract/grade.ts';
 import { firstStringLayer } from '../contract/layers.ts';
 import { answerKey, goalQuestion, subjectEvidence, subjectQuestions, type AskedQuestion } from '../contract/translate.ts';
@@ -27,7 +27,7 @@ import { cacheTelemetry, lookupAnswers, reusedAgeNotes, type Reusable } from '..
 import { m, type Value } from '../contract/emit.ts';
 import type { Mm3Config } from '../config/defaults.ts';
 import { actorOf, askAll, createdNote, preflight, record, recordFree, splitReuse, type PlannedCall } from './pay.ts';
-import { loadRequest, stopText } from './request.ts';
+import { contractLimits, loadRequest, stopText } from './request.ts';
 import { commonNotes, COST_ESTIMATED_NOTE, drillNext, dryRunText, outcomeNext, regressionNext, respondText, reusedIds, sweepNext, mdlRecorded } from './respond.ts';
 import { itemRecords, planNeedsBudget, plannedCallCount, planSweep, recordSweep, runSweep } from './sweep.ts';
 import type { VerbContext, VerbResult } from './types.ts';
@@ -98,9 +98,9 @@ export function gradeReplay(categories: readonly Category[], answers: Record<str
 
 export async function runReplay(text: string, ctx: VerbContext): Promise<VerbResult> {
   // a project's own .mm3/config.yaml mdl: overrides apply to every mdl: block it validates.
-  const cfg = resolveConfig(ctx.paths, ctx.env).config;
+  const cfg = configOf(ctx).config;
   const mdlFields = effectiveMdlFields(cfg.mdl);
-  const loaded = loadRequest(text, 'replay', mdlFields);
+  const loaded = loadRequest(text, 'replay', mdlFields, contractLimits(cfg, 'replay'));
   if (!loaded.ok) return loaded.result;
   const { request } = loaded;
 
@@ -133,8 +133,8 @@ export async function runReplay(text: string, ctx: VerbContext): Promise<VerbRes
   // Evidence (both refs) is read before the dry-run branch, same as class/scan/drill/loop, so a dry run still
   // catches a missing ref instead of skipping the check.
   const compare = request.mak.compare!;
-  const before = readGitEvidence(ctx.paths.root, compare.before, 'before', paths);
-  const after = readGitEvidence(ctx.paths.root, compare.after, 'after', paths);
+  const before = readGitEvidence(ctx.paths.root, compare.before, 'before', paths, { limits: { perFileChars: cfg.evidence.perItemChars, totalChars: cfg.evidence.totalChars } });
+  const after = readGitEvidence(ctx.paths.root, compare.after, 'after', paths, { limits: { perFileChars: cfg.evidence.perItemChars, totalChars: cfg.evidence.totalChars } });
   if (!before.ok || !after.ok) {
     const errors = [...(before.ok ? [] : before.errors), ...(after.ok ? [] : after.errors)];
     return { exit: 2, text: stopText(errors, 'replay') };
@@ -262,6 +262,7 @@ export async function runReplay(text: string, ctx: VerbContext): Promise<VerbRes
         `2 states · ${budget}`,
         ctx.provider.adapter,
         ctx.paths,
+        ctx.notes,
       ),
     );
 
@@ -384,8 +385,8 @@ function whereFromItems(items: readonly { unit?: { path: string } }[]): string[]
  *  (createCodeResolver, exactly what scan/drill already use), otherwise the ref-aware mirror
  *  (createCodeResolverAt) — `wherePaths` is the parent's own item paths, so a nested repo resolves the same way
  *  C-147 already resolves one for one-subject replay. */
-function sweepResolverAt(root: string, ref: string, notes: string[], wherePaths: readonly string[]) {
-  return ref === 'worktree' ? createCodeResolver(root, notes) : createCodeResolverAt(root, ref, notes, wherePaths);
+function sweepResolverAt(root: string, ref: string, notes: string[], wherePaths: readonly string[], maxFiles: number) {
+  return ref === 'worktree' ? createCodeResolver(root, notes, maxFiles) : createCodeResolverAt(root, ref, notes, wherePaths, maxFiles);
 }
 
 /**
@@ -464,9 +465,9 @@ async function runSweepReplay(ctx: VerbContext, request: Request, loaded: { note
   const identity = providerIdentity(ctx.env, { resolveStored: ctx.resolveStored });
   const beforeNotes: string[] = [];
   const afterNotes: string[] = [];
-  const limits = { sweep: cfg.sweep, reuse: cfg.reuse };
-  const beforeOpts = needsCode ? { resolve: sweepResolverAt(ctx.paths.root, compare.before, beforeNotes, itemPaths) } : {};
-  const afterOpts = needsCode ? { resolve: sweepResolverAt(ctx.paths.root, compare.after, afterNotes, itemPaths) } : {};
+  const limits = { sweep: cfg.sweep, reuse: cfg.reuse, evidence: cfg.evidence };
+  const beforeOpts = needsCode ? { resolve: sweepResolverAt(ctx.paths.root, compare.before, beforeNotes, itemPaths, cfg.evidence.maxFiles) } : {};
+  const afterOpts = needsCode ? { resolve: sweepResolverAt(ctx.paths.root, compare.after, afterNotes, itemPaths, cfg.evidence.maxFiles) } : {};
   const beforePlan = planSweep(sweepRequest, who, ctx.paths, ctx.dryRun ?? false, beforeOpts, limits);
   const afterPlan = planSweep(sweepRequest, who, ctx.paths, ctx.dryRun ?? false, afterOpts, limits);
 
@@ -600,6 +601,7 @@ async function runSweepReplay(ctx: VerbContext, request: Request, loaded: { note
         `2 refs · ${calls} call${calls === 1 ? '' : 's'} · ${askedQuestions} question${askedQuestions === 1 ? '' : 's'} · ${budget}`,
         ctx.provider.adapter,
         ctx.paths,
+        ctx.notes,
       ),
     );
 

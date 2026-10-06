@@ -26,7 +26,7 @@ describe('mm3 config --write (owner path)', () => {
     expect(after.status).toBe(0);
     expect(after.stdout).not.toContain('✖');
     expect(after.stdout).toContain('customized in .mm3/config.yaml');
-    expect(mm3(root, ['doctor']).stdout).toContain('✔ config: defaults');
+    expect(mm3(root, ['doctor']).stdout).toContain('✔ config: defaults'); // the starter sets nothing, so it reads as the defaults
   });
 
   it('[C-226] [C-227] uncommenting `usd: 1` shows it as from config.yaml; uncommenting `maxItems: 30` under sweep is valid', () => {
@@ -36,18 +36,21 @@ describe('mm3 config --write (owner path)', () => {
     const original = readFileSync(file, 'utf8');
 
     writeFileSync(file, original.replace('#   usd: 5', '  usd: 1'));
+    expect(mm3(root, ['config', '--load']).status).toBe(0); // an edit takes effect once loaded
     const usd = mm3(root, ['config']);
     expect(usd.status).toBe(0);
     expect(usd.stdout).not.toContain('✖');
     expect(usd.stdout).toContain('usd: 1  # from config.yaml');
 
     writeFileSync(file, original.replace('#   maxItems: 30', '  maxItems: 30'));
+    expect(mm3(root, ['config', '--load']).status).toBe(0); // an edit takes effect once loaded
     const sweep = mm3(root, ['config']);
     expect(sweep.status).toBe(0);
     expect(sweep.stdout).not.toContain('✖');
     expect(sweep.stdout).toContain('maxItems: 30  # from config.yaml');
 
     writeFileSync(file, original.replace('#     inputPerMTok: 0.042', '    inputPerMTok: 0.05'));
+    expect(mm3(root, ['config', '--load']).status).toBe(0); // an edit takes effect once loaded
     const price = mm3(root, ['config']);
     expect(price.status).toBe(0);
     expect(price.stdout).not.toContain('✖');
@@ -89,6 +92,6 @@ describe('mm3 config --write (owner path)', () => {
     const { root } = tempProject();
     const r = mm3(root, ['config', '--wrte']);
     expect(r.status).toBe(2);
-    expect(r.stdout + r.stderr).toContain('mm3 config [--write]');
+    expect(r.stdout + r.stderr).toContain('mm3 config [--write | --load [file]]');
   });
 });

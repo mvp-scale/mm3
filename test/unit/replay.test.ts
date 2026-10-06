@@ -9,7 +9,7 @@ import type { ClassifierAnswer, ClassifierPort, ClassifierState } from '../../sr
 import { EVIDENCE_LIMITS } from '../../src/evidence/code.ts';
 import { hasGit } from '../../src/evidence/git.ts';
 import { appendContractRun, appendRun, isContractRun, readLedger } from '../../src/ledger/log.ts';
-import { setBudget } from '../../src/budget/budget.ts';
+import { writeConfigOverride } from '../../src/config/write.ts';
 import { runReplay } from '../../src/verbs/replay.ts';
 import { runClass } from '../../src/verbs/class.ts';
 import { runDrill } from '../../src/verbs/drill.ts';
@@ -527,7 +527,7 @@ describe('replay', () => {
     const { paths } = tempProject({ 'src/a.ts': 'export function f(x) { return db.query(`x ${x}`); }\n' });
     await runClass(classReq, { paths, provider: stubProvider({ yes: () => 0.9 }), env }); // MM3-0001, 1 run
     await runReplay(changeReq, { paths, provider: stubProvider({ yes: () => 0.9 }), env }); // MM3-0002, 1 run
-    setBudget(paths, { capRuns: 2 }); // exactly used up by the two runs above
+    writeConfigOverride(paths, { budget: { runs: 2 } }); // exactly used up by the two runs above
     const r = await runReplay(changeReq, { paths, provider: stubProvider(), env }); // fully reused: no call needed
     expect(r.exit).toBe(0);
     expect(r.text).toContain('reused: [');

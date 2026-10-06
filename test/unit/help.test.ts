@@ -119,12 +119,13 @@ describe('runHelp', () => {
     expect(text).toContain('mm3 outcome MM3-0002 overruled --by claude');
   });
 
-  it('[C-182] help budget: syntax, the bare "set" stop, and a good/bad pair', () => {
+  it('[C-182] help budget: read-only, the caps live in the config, and a good/bad pair', () => {
     const text = runHelp('budget').text;
     expect(text).toContain('## budget');
-    expect(text).toContain('mm3 budget set --usd 5 --runs 500');
-    expect(text).toContain('mm3 budget set');
-    expect(text.toLowerCase()).toContain('needs --usd or --runs');
+    expect(text).toContain('mm3 config --load');
+    expect(text).toContain('budget.usd');
+    expect(text).toContain('mm3 budget set --usd 5');
+    expect(text).toContain('was removed');
   });
 
   it(' help doctor: documents both the bare report and the <file|-> form', () => {

@@ -47,6 +47,6 @@ describe('the contract, end to end, through the built CLI', () => {
     expect(mm3(root, ['loop', 'loop.yaml']).status).toBe(0);
 
     ledgerAgreesWithBudget(root);
-    expect(mm3(root, ['budget']).stdout).toMatch(/of 500 runs left\n$/);
+    expect(mm3(root, ['budget']).stdout.split('\n')[0]).toMatch(/of 500 runs left$/);
   });
 });

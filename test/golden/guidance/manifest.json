@@ -1,0 +1,237 @@
+{
+  "fingerprint": "3f44e6d04dc27b23be2ee55aa8f8e193bdbfd809657f587e215d8ca69d287208",
+  "surfaces": {
+    "mcp/instructions": {
+      "sha256": "5b0182cb62918c854cb5fdd9ed9701d2a171644b24c52257833a35b780d0ef9d",
+      "lines": 10
+    },
+    "mcp/tool-definition": {
+      "sha256": "75970f0465b5731ab3da20a3bafc51070c0be2370db4497af05be685ef6a9e09",
+      "lines": 28
+    },
+    "agents-md/block": {
+      "sha256": "c638b8d6f0e007aa45b0d827f86e0ed60761d07e3f04ab17647c5a6117f1a2f3",
+      "lines": 10
+    },
+    "agent/overview": {
+      "sha256": "7edf89dd479dc2ac6248911862b7e5624dc28415b1de9047ca8b7adee5533fe8",
+      "lines": 32
+    },
+    "help/overview": {
+      "sha256": "72d676b93f6c015df1026ebe55a3e989bf28a67a0b85325c52195ddc5cf78b16",
+      "lines": 44
+    },
+    "agent/view": {
+      "sha256": "2dc4588c3a765539aed52b3fe46e67763b76966dc839cb914b1434232f774cb4",
+      "lines": 48
+    },
+    "agent/class": {
+      "sha256": "76e5ba4ad5ca8a72a37914f4aa155240385eefd0814b6e7135b84ac8582a6e04",
+      "lines": 56
+    },
+    "agent/replay": {
+      "sha256": "4c1f98588948f37e9e6782f8ad546da65079da916fa91680cf9c4c641410dfe2",
+      "lines": 27
+    },
+    "agent/scan": {
+      "sha256": "101213ff35842599e211b7b47df287621923c6e3a8528ceb36116db4bd7c21cf",
+      "lines": 82
+    },
+    "agent/drill": {
+      "sha256": "7d96037ba9ef8d2b24b8ce07c8693cd64ec1128ff2ceed205d892df52a144ebb",
+      "lines": 53
+    },
+    "agent/loop": {
+      "sha256": "9530b828c64f814a9f9db7d0f770f1789a39248b744e56ddf1a909946ab7226d",
+      "lines": 58
+    },
+    "agent/report": {
+      "sha256": "311c3b1a2fa804e3b7f3d78b16c7bf8d0b0dd5dcbee52188cd57dd6b7dbc1024",
+      "lines": 14
+    },
+    "agent/outcome": {
+      "sha256": "ddf47bf4900b34edfc594a6c3147e6e2aea497b146f3c9b44cdd65fb834c1e5f",
+      "lines": 13
+    },
+    "agent/budget": {
+      "sha256": "d8a8b4535677c067953943da3741c900c637461293135e89b9c02d2a244e81e9",
+      "lines": 14
+    },
+    "agent/template": {
+      "sha256": "45934b76017f4c6c7f0159147f91f73ede3927188ce4f2edd7e4be5a8b042db0",
+      "lines": 14
+    },
+    "agent/probe": {
+      "sha256": "291de0a76dbe0f458bb691e0c3eae7ac7f54c67746c9e3b0729abf21346cd1f2",
+      "lines": 27
+    },
+    "agent/verdict": {
+      "sha256": "9d9531ce605aaa8fe5da37de2b6306d62e67654f69936345d99c05c072cbe40f",
+      "lines": 16
+    },
+    "agent/mdl": {
+      "sha256": "38382185e6e6b79451a7cdea195cf6a38b52fb509b076c7a13479bc40e7bd52f",
+      "lines": 47
+    },
+    "agent/config": {
+      "sha256": "04a7cd6325576908ccac751decee427ccee549f6b5e08b6772eba9479b01726e",
+      "lines": 15
+    },
+    "agent/doctor": {
+      "sha256": "1ada80751d261566e57cf8700df12c5d5223613db0d478148851e713a8cf8395",
+      "lines": 8
+    },
+    "agent/delegate": {
+      "sha256": "cecf7525a2a2f69fa3ed590daad2a971c9ea8fde10e244178b35020230c0de94",
+      "lines": 16
+    },
+    "help/view": {
+      "sha256": "2fd3added307b8de6bab5d075a2f284bae318b8f99bc44be409868be4afb0b8a",
+      "lines": 58
+    },
+    "help/class": {
+      "sha256": "494bf11e58a79c77751a570f30c05f1918fd56c58d06ad6db6e7304cd6aae896",
+      "lines": 72
+    },
+    "help/replay": {
+      "sha256": "97ab3626c642c07a2f9999a2a5f5b89e3c632e855219a81671c35878c6e22a11",
+      "lines": 38
+    },
+    "help/scan": {
+      "sha256": "80ac89c73bb0a6b40474c78aed21f348b73be471cd304717aa1b4810277b08a2",
+      "lines": 96
+    },
+    "help/drill": {
+      "sha256": "f369aff397f7f2afca0e74ee17e6f02b86c14808f20d60132677b0d78d3c5a55",
+      "lines": 61
+    },
+    "help/loop": {
+      "sha256": "41c5e95529c5061f8a391a0d1a0c40162330c35cf99c94c3f8ca52ff8148252d",
+      "lines": 75
+    },
+    "help/authoring": {
+      "sha256": "90460844e11968fdf94a084851b81315714b7a4802914152351826f6d722e186",
+      "lines": 69
+    },
+    "help/verdict": {
+      "sha256": "65bbd50cb2a8414dd9b49f0b803e9b3978393a4a43176a7d37b4a3e30911eb64",
+      "lines": 16
+    },
+    "help/mdl": {
+      "sha256": "c05a325c766fce0fc09317c5408c10a9f995f5171221ffd65414537fc24ed89b",
+      "lines": 29
+    },
+    "help/reuse": {
+      "sha256": "a5b37ffe658ead6543d24a985c72da6ecbc39e758d86566aa2414a48a1c63811",
+      "lines": 13
+    },
+    "help/probe": {
+      "sha256": "808d33fd4582ec16a6636360fb778aec51d8788d743b198d2cd91c48aadd25e8",
+      "lines": 42
+    },
+    "help/report": {
+      "sha256": "eaba8d6d699c70356f9f74ea27815b9e8e0073b925667f11e18179eba03c65ad",
+      "lines": 27
+    },
+    "help/outcome": {
+      "sha256": "645e5057ee835c3603a848612826e0c787e75fad9a5ffe43f06551ad63539946",
+      "lines": 27
+    },
+    "help/budget": {
+      "sha256": "f746ec45bf760940215b0c12bd47601305288f079d1ce41d1a347854e2ea3852",
+      "lines": 23
+    },
+    "help/doctor": {
+      "sha256": "5782cd8ccdbccbf965b98594c265787ea7485f14f5e7de88f8d16f00ff188928",
+      "lines": 14
+    },
+    "template/view": {
+      "sha256": "d5b766259b33e2884632d748cea5844cdbcd1c65ce3b890e618462114dc762ab",
+      "lines": 27
+    },
+    "template/class": {
+      "sha256": "2c3a8651efa2d6e48477bce62ff711b5bcc568b01ecd0afff0dbfc4258848fbe",
+      "lines": 60
+    },
+    "template/replay": {
+      "sha256": "94fae2b5f0abfae4ad7569deaab7626272a4ee792ad156b93962812cfe6cde8a",
+      "lines": 21
+    },
+    "template/scan": {
+      "sha256": "4408fd13a3e761f9341457819d75feb62d81356c3589b31d68cfc180d6cb67b0",
+      "lines": 59
+    },
+    "template/drill": {
+      "sha256": "a91fdb84fca46be37658ea4391a91aa0ed0bddff349b8ec0f735912b63714320",
+      "lines": 57
+    },
+    "template/loop": {
+      "sha256": "8b46db241b457f3bbd524568a18a92b369d5c7256c401a5cb373189d4e79fa49",
+      "lines": 66
+    },
+    "skills/mm3-probe/SKILL.md": {
+      "sha256": "f0ebd80465d217def47277efc7ffd8f95a67cae173448a48c926c142615e58a8",
+      "lines": 110
+    },
+    "skills/mm3-probe/references/mdl.md": {
+      "sha256": "d407312b9a31444a79b123f7567a109ac779a0de243f6d14a9f5d5bc39364ace",
+      "lines": 38
+    },
+    "skills/mm3-probe/references/probe.md": {
+      "sha256": "33a5df9e94771b4c04cf3d9a9bd434379f643bf9a9cde337160e471ec9de6a48",
+      "lines": 154
+    },
+    "skills/mm3-probe/references/recipes.md": {
+      "sha256": "2c5538b2b4ff71066831c45f204f525c162fe253021299385afaa786627ac8b0",
+      "lines": 9
+    },
+    "skills/mm3/SKILL.md": {
+      "sha256": "a2d0f3fe1ee95f8ce641939d0c8ceeb40ca08a3ea57a3bb7dc98446a016f3002",
+      "lines": 35
+    },
+    "skills/mm3/references/request.schema.json": {
+      "sha256": "4965ab7b21212b33ed4606564457fd8548cfeabb82584fc3411d29a08e7f30e3",
+      "lines": 475
+    },
+    "skills/mm3/templates/class.yaml": {
+      "sha256": "2c3a8651efa2d6e48477bce62ff711b5bcc568b01ecd0afff0dbfc4258848fbe",
+      "lines": 60
+    },
+    "skills/mm3/templates/decide.yaml": {
+      "sha256": "cbf8645647930a356542b27f1567f886975ab92794f36e64058f064194f6a594",
+      "lines": 39
+    },
+    "skills/mm3/templates/drill-subject.yaml": {
+      "sha256": "365286f7f293eec20b9e093ace9b658ca9e6b3798d4955f4fd76e1e63b6746d8",
+      "lines": 42
+    },
+    "skills/mm3/templates/drill.yaml": {
+      "sha256": "a91fdb84fca46be37658ea4391a91aa0ed0bddff349b8ec0f735912b63714320",
+      "lines": 57
+    },
+    "skills/mm3/templates/loop.yaml": {
+      "sha256": "8b46db241b457f3bbd524568a18a92b369d5c7256c401a5cb373189d4e79fa49",
+      "lines": 66
+    },
+    "skills/mm3/templates/proof.yaml": {
+      "sha256": "f41f3a16c6d7a498883136dcbc4d4c243d4a24a1e4c4e1d5d6c37e966848e761",
+      "lines": 39
+    },
+    "skills/mm3/templates/rank.yaml": {
+      "sha256": "96ff05ee853278bf82ab78bb002fe1ed097f8038b9bb084a60ad576d5817b6c7",
+      "lines": 40
+    },
+    "skills/mm3/templates/replay.yaml": {
+      "sha256": "94fae2b5f0abfae4ad7569deaab7626272a4ee792ad156b93962812cfe6cde8a",
+      "lines": 21
+    },
+    "skills/mm3/templates/scan.yaml": {
+      "sha256": "4408fd13a3e761f9341457819d75feb62d81356c3589b31d68cfc180d6cb67b0",
+      "lines": 59
+    },
+    "skills/mm3/templates/view.yaml": {
+      "sha256": "d5b766259b33e2884632d748cea5844cdbcd1c65ce3b890e618462114dc762ab",
+      "lines": 27
+    }
+  }
+}

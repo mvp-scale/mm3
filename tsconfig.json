@@ -17,5 +17,5 @@
     "rewriteRelativeImportExtensions": true,
     "noEmit": true
   },
-  "include": ["src", "test", "vitest.config.ts"]
+  "include": ["src", "test", "vitest.config.ts", "scripts/ceremony.ts", "scripts/check-agentic.ts", "scripts/guidance-snapshot.ts", "scripts/agentic"]
 }

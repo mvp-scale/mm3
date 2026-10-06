@@ -3,14 +3,14 @@
 mak:
   goal: This login handler is safe to merge   # required — phrase as the exact claim to prove — wording changes the verdict
   # verb: class                               # optional — must match the command you run, or the request is sent back
-  depth: quick                                # required — quick=9, standard=18, thorough=27 yes/no questions across 3/6/9 concerns categories (decisions don't count)
+  depth: quick                                # required — by default quick=9, standard=18, thorough=27 yes/no questions across 3/6/9 concerns categories (decisions don't count; mm3 config shows this project's)
   where: [src/handlers/user.ts:1-40]          # required — up to 5 path[:start-end] entries — this is ALL the code it sees
                                                # a whole file over ~20,000 chars won't send — name the range instead
                                                # a question about code NOT in where: has nothing to answer from — add it here
                                                # with more than one file, name the one you mean in the question (in `backticks`)
   ask:                                        # required — two sections: concerns (yes/no) and decisions (scale/choice)
                                                # questions are numbered 1…N across the WHOLE request, decisions included — no gaps, no restart at decisions
-    concerns:                                 # exactly 3k categories for the depth above (quick: 3), each with exactly 3 probes — three angles on one path (mm3 agent probe)
+    concerns:                                 # exactly 3k categories for the depth above (quick: 3 by default), each with exactly 3 probes — three angles on one path (mm3 agent probe)
       injection:
         pass: no                              # every question in this category must answer "no" when things are fine
         need: most                            # optional (default all) — all: every answer clears · most: >= 2/3, none a clear miss · any: at least one

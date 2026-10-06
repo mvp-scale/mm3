@@ -2,7 +2,8 @@
 // budget runs == contract runs that made a call + failed records.
 import { appendFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { loadBudget, setBudget } from '../../src/budget/budget.ts';
+import { loadBudget } from '../../src/budget/budget.ts';
+import { writeConfigOverride } from '../../src/config/write.ts';
 import { createChaosAdapter, type ChaosStep } from '../../src/classifier/chaos.ts';
 import type { ClassifierPort, ClassifierResult } from '../../src/classifier/port.ts';
 import { goalQuestion, type AskedQuestion } from '../../src/contract/translate.ts';
@@ -42,19 +43,19 @@ describe('preflight: stops before any call or spend', () => {
 
   it('the cap reached: exit 3', () => {
     const { paths } = tempProject({});
-    setBudget(paths, { capRuns: 1 });
+    writeConfigOverride(paths, { budget: { runs: 1 } });
     recordCall1(paths);
     const r = preflight(ctxOf(paths, stubProvider()));
-    // fix #5c: the run cap alone tripped, so the hint is "set --runs", not "reset" (see budget.test.ts).
+    // fix #5c: the run cap alone tripped, so the hint names budget.runs only (see budget.test.ts).
     expect(!r.ok && r.result).toEqual({
       exit: 3,
-      text: '✖ budget: cap reached ($0.00 of $5.00 · 1 of 1 runs) → the owner runs "mm3 budget set --runs <n>"\n→ see: mm3 agent budget',
+      text: '✖ budget: cap reached ($0.00 of $5.00 · 1 of 1 runs) → ask the owner to raise budget.runs in .mm3/config.yaml, then run mm3 config --load\n→ see: mm3 agent budget',
     });
   });
 
   it('needsBudget: false (fix #5a) [C-136] skips the cap even when it is already reached — a fully-reused run is free', () => {
     const { paths } = tempProject({});
-    setBudget(paths, { capRuns: 1 });
+    writeConfigOverride(paths, { budget: { runs: 1 } });
     recordCall1(paths);
     const r = preflight(ctxOf(paths, stubProvider()), { needsBudget: false });
     expect(r.ok).toBe(true);

@@ -1,6 +1,6 @@
 {
   "name": "@mvpscale/mm3",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "MM3, make and model for coding agents: MAK³ uses what is proven, MDL³ learns what is missing, with compact yes/no checklists, a calibrated consensus, and a log that learns where agents go wrong.",
   "license": "Apache-2.0",
   "type": "module",
@@ -35,6 +35,7 @@
     "dist",
     "skills",
     ".claude-plugin",
+    "hooks",
     "README.md",
     "LICENSE"
   ],
@@ -66,7 +67,19 @@
     "gen:evidence-index": "tsx scripts/evidence-index.ts",
     "prepare": "git config core.hooksPath .github/hooks 2>/dev/null || true",
     "dev:install": "npm run build && tgz=\"$(pwd)/$(npm pack --silent | tail -1)\" && cd \"${INIT_CWD:-.}\" && npx --yes --package \"$tgz\" mm3 init",
-    "check:node-floor": "tsc -p tsconfig.node-floor.json"
+    "check:node-floor": "tsc -p tsconfig.node-floor.json",
+    "guidance:accept": "npm run build && tsx scripts/guidance-snapshot.ts && MM3_ACCEPT_GUIDANCE=1 vitest run --project cli test/e2e/cli/stop-recovery.test.ts",
+    "check:agentic": "tsx scripts/check-agentic.ts",
+    "agentic:context": "tsx scripts/agentic/context.ts",
+    "agentic:run": "tsx scripts/agentic/run.ts",
+    "ceremony": "tsx scripts/ceremony.ts",
+    "agentic:sheet": "tsx scripts/agentic/sheet.ts",
+    "agentic:runs": "tsx scripts/agentic/runs.ts",
+    "agentic:compare": "tsx scripts/agentic/compare.ts",
+    "agentic:trace": "tsx scripts/agentic/trace.ts",
+    "agentic:release-report": "tsx scripts/agentic/release-report.ts",
+    "agentic:patterns": "tsx scripts/agentic/patterns.ts",
+    "agentic:feature": "tsx scripts/agentic/trial.ts"
   },
   "devDependencies": {
     "@types-floor/node": "npm:@types/node@22.19.18",

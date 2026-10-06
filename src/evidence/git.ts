@@ -5,10 +5,10 @@
  * option. git is always spawned as an argv array, never through a shell.
  */
 import { spawnSync } from 'node:child_process';
-import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { redact } from '../ledger/redact.ts';
-import { EVIDENCE_LIMITS } from './code.ts';
+import { EVIDENCE_LIMITS, type EvidenceCaps } from './code.ts';
 import { isOutside } from './paths.ts';
 
 export type GitResult = { ok: true; files: Record<string, string>; notes: string[] } | { ok: false; errors: string[] };
@@ -112,13 +112,13 @@ export function readFileAtRef(repoRoot: string, ref: string, relPath: string, de
 }
 
 /** Redact, then cap per file and in total, exactly like evidence/code.ts's EVIDENCE_LIMITS. */
-function keep(shown: string, text: string, total: number, notes: string[]): { body: string; total: number } | undefined {
+function keep(shown: string, text: string, total: number, notes: string[], caps: EvidenceCaps): { body: string; total: number } | undefined {
   let body = redact(text);
-  if (body.length > EVIDENCE_LIMITS.perFileChars) {
-    body = body.slice(0, EVIDENCE_LIMITS.perFileChars);
-    notes.push(`${shown} truncated to ${EVIDENCE_LIMITS.perFileChars} chars`);
+  if (body.length > caps.perFileChars) {
+    body = body.slice(0, caps.perFileChars);
+    notes.push(`${shown} truncated to ${caps.perFileChars} chars`);
   }
-  const room = EVIDENCE_LIMITS.totalChars - total;
+  const room = caps.totalChars - total;
   if (room <= 0) {
     notes.push(`${shown} skipped: evidence limit reached`);
     return undefined;
@@ -134,12 +134,13 @@ function keep(shown: string, text: string, total: number, notes: string[]): { bo
  * `ref === 'worktree'`: each path read straight off disk, whole file. Otherwise: `git show ref:path`, whole
  * file. Either way, whole files only (replay never has line ranges) — a note says so once, not once per file.
  */
-export function readGitEvidence(root: string, ref: string, field: 'before' | 'after', paths: readonly string[], deps?: { spawn?: Spawn }): GitResult {
+export function readGitEvidence(root: string, ref: string, field: 'before' | 'after', paths: readonly string[], deps?: { spawn?: Spawn; limits?: EvidenceCaps }): GitResult {
   if (ref !== 'worktree' && isGitOption(ref)) {
     return { ok: false, errors: [`✖ mak.compare.${field}: "${ref}" looks like an option, not a ref → use a branch, tag or commit`] };
   }
 
   const spawn = deps?.spawn ?? spawnSync;
+  const caps = deps?.limits ?? EVIDENCE_LIMITS;
   const errors: string[] = [];
   const notes: string[] = [];
   const files: Record<string, string> = {};
@@ -158,23 +159,27 @@ export function readGitEvidence(root: string, ref: string, field: 'before' | 'af
 
     if (ref === 'worktree') {
       let text: string;
+      let fd: number | undefined;
       try {
         // Resolve symlinks on both sides: a link inside the project that points outside it is still outside.
         if (isOutside(path.relative(realpathSync(root), realpathSync(full)))) {
           errors.push(outside);
           continue;
         }
-        if (statSync(full).isDirectory()) {
+        fd = openSync(full, 'r'); // open once, then look at that same file: no check-then-use gap
+        if (fstatSync(fd).isDirectory()) {
           errors.push(`✖ mak.compare.${field}: "${rawPath}" is a folder → name a file`);
           continue;
         }
-        text = readFileSync(full, 'utf8');
+        text = readFileSync(fd, 'utf8');
       } catch {
         errors.push(`✖ mak.compare.${field}: cannot read "${rawPath}" → check the path`);
         continue;
+      } finally {
+        if (fd !== undefined) closeSync(fd);
       }
       read = true;
-      const kept = keep(shown, text, total, notes);
+      const kept = keep(shown, text, total, notes, caps);
       if (kept) {
         files[shown] = kept.body;
         total = kept.total;
@@ -194,7 +199,7 @@ export function readGitEvidence(root: string, ref: string, field: 'before' | 'af
       continue;
     }
     read = true;
-    const kept = keep(shown, typeof result.stdout === 'string' ? result.stdout : '', total, notes);
+    const kept = keep(shown, typeof result.stdout === 'string' ? result.stdout : '', total, notes, caps);
     if (kept) {
       files[shown] = kept.body;
       total = kept.total;

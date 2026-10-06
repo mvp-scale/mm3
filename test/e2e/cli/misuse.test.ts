@@ -108,7 +108,6 @@ describe('flags', () => {
   it('a duplicated flag is refused, not silently last-wins', () => {
     expect(expectCleanStop(unchanged(root, ['view', 'src', '--level', '2', '--level', '3']), 2)).toBe('✖ --level: given twice → give it once');
     expect(expectCleanStop(unchanged(root, ['outcome', 'MM3-0001', 'failed', '--by', 'owner', '--by', 'other']), 2)).toBe('✖ --by: given twice → give it once');
-    expect(expectCleanStop(unchanged(root, ['budget', 'set', '--runs', '5', '--runs', '9']), 2)).toBe('✖ --runs: given twice → give it once');
   });
 
   it('an unknown flag, a flag before the command, and extra arguments: one "✖ args:" line with that command\'s usage', () => {
@@ -118,7 +117,7 @@ describe('flags', () => {
     expect(expectCleanStop(unchanged(root, ['--level', '2', 'view', 'src']), 2)).toBe(`✖ args: "--level" comes before the command → ${view}`);
     expect(expectCleanStop(unchanged(root, ['class', 'req.yaml', '--level', '2']), 2)).toBe(`✖ args: unknown flag --level → ${cls}`);
     expect(expectCleanStop(unchanged(root, ['class', 'req.yaml', 'other.txt']), 2)).toBe(`✖ args: extra argument "other.txt" → ${cls}`);
-    expect(expectCleanStop(unchanged(root, ['budget', 'show', 'now']), 2)).toBe('✖ args: extra argument "now" → mm3 budget [show | reset | set --usd <n> --runs <n>]');
+    expect(expectCleanStop(unchanged(root, ['budget', 'show', 'now']), 2)).toBe('✖ args: extra argument "now" → mm3 budget [show]');
     expect(expectCleanStop(unchanged(root, ['outcome', 'MM3-0001', 'failed', 'x', '--by', 'o']), 2)).toBe(
       '✖ args: extra argument "x" → mm3 outcome <MM3-####> held|overruled|failed --by <actor>',
     );
@@ -259,7 +258,7 @@ describe('environment', () => {
       const r = unchanged(root, ['class', 'req.yaml']);
       expect(expectCleanStop(r, 1)).toMatch(/^✖ files: .*\.mm3\/.* \(EACCES\) → make \.mm3\/ a writable folder/);
       expect(expectCleanStop(unchanged(root, ['outcome', 'MM3-0001', 'failed', '--by', 'owner']), 1)).toMatch(/^✖ files: .*\(EACCES\)/);
-      expect(expectCleanStop(unchanged(root, ['budget', 'reset']), 1)).toMatch(/^✖ files: .*\(EACCES\)/);
+      expect(expectCleanStop(unchanged(root, ['config', '--write']), 1)).toMatch(/^✖ files: .*\(EACCES\)/);
     } finally {
       chmodSync(dir, 0o755);
     }

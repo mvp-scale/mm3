@@ -18,7 +18,7 @@
  * (setup/keystore.ts, setup/npm-info.ts, setup/plugin.ts).
  *
  * bare `mm3 doctor` also validates `.mm3/config.yaml` when present (free, offline,
- * reusing `config/load.ts`'s own `resolveConfig` — the exact same stops `mm3 config` would show). Given a
+ * through `config/active.ts`'s `configStatus` — the same stops `mm3 config` shows, plus whether the file is loaded). Given a
  * file or stdin (`runDoctorFile`, wired by cli.ts as `mm3 doctor <file|->`), doctor instead checks ONE
  * document and detects its kind: a `mak:` top-level key means a REQUEST, checked with the same
  * read+validate pipeline `--dry-run` uses (verbs/request.ts's `loadRequest` — no ledger, reuse or budget
@@ -26,6 +26,7 @@
  * themselves); anything else is checked as a CONFIG file, via `config/validate.ts`'s `validateConfig` directly
  * (no project needed at all for this path — it only validates YAML text, never touches `.mm3/`).
  */
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { parseDocument } from 'yaml';
 import { CHAOS_MODEL } from '../classifier/chaos.ts';
@@ -33,9 +34,8 @@ import { FAKE_MODEL } from '../classifier/fake.ts';
 import { hasKey, JevConfigError, resolveJevConfig, routeLabel, type JevConfig, type ResolveStored } from '../classifier/typesafe/client.ts';
 import { emit, m, type Value } from '../contract/emit.ts';
 import { VERBS, type Verb } from '../contract/types.ts';
-import type { ConfigSource } from '../config/defaults.ts';
+import { configStatus, statusLine } from '../config/receipt.ts';
 import { nearMissNotes } from '../config/config.ts';
-import { resolveConfig } from '../config/load.ts';
 import { validateConfig } from '../config/validate.ts';
 import { sqliteAvailable } from '../ledger/index.ts';
 import type { Mm3Paths } from '../ledger/paths.ts';
@@ -107,7 +107,7 @@ function keyLine(env: Record<string, string | undefined>, config: JevConfig, dep
     const read = readEnvFile(file);
     const mode = read?.mode ?? 0o600;
     const note = read
-      ? (looseFileModeWarning(file, mode) ?? (read.ignoredLines > 0 ? `✖ credentials: ${file} has ${read.ignoredLines} line(s) mm3 ignored (not "export NAME='value'" for an allowed name)` : undefined))
+      ? (looseFileModeWarning(file, mode) ?? (read.ignoredLines > 0 ? `✖ credentials: ${file} has ${read.ignoredLines} line(s) mm3 ignored (not "export NAME='value'" for an allowed name) → fix or remove those lines` : undefined))
       : undefined;
     return { value: `yes · from user file ${file} (${octal4(mode)}, not encrypted)`, note };
   }
@@ -118,17 +118,51 @@ function keyLine(env: Record<string, string | undefined>, config: JevConfig, dep
   return { value: `yes · from env ${envVar}${stored ? ' (overrides stored)' : ''}` };
 }
 
+/** The version of the MM3 package a `mm3` found on PATH belongs to: the nearest package.json above its real path
+ *  (an npm global install, or the plugin folder), or undefined when it is some other program. */
+function versionOnPath(bin: string): string | undefined {
+  try {
+    let dir = path.dirname(realpathSync(bin));
+    for (let i = 0; i < 6; i++) {
+      const pj = path.join(dir, 'package.json');
+      if (existsSync(pj)) {
+        const meta = JSON.parse(readFileSync(pj, 'utf8')) as { name?: string; version?: string };
+        return meta.name === '@mvpscale/mm3' ? meta.version : undefined;
+      }
+      const up = path.dirname(dir);
+      if (up === dir) return undefined;
+      dir = up;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+/** The `versions:` value when a plugin is installed here: this copy against Claude's record of the plugin. The base
+ *  versions must match; a nightly build (`x.y.z-nightly.<date>.g<sha>`) must also be at the plugin's commit. */
+function versionsLine(running: string, plugin: { version?: string; sha: string }): string {
+  const base = (v: string): string => v.split('-')[0] ?? v;
+  const nightlySha = /\.g([0-9a-f]{7,40})$/.exec(running)?.[1];
+  const sameBase = plugin.version !== undefined && base(plugin.version) === base(running);
+  const sameCommit = nightlySha === undefined || plugin.sha.startsWith(nightlySha.slice(0, 7)) || nightlySha.startsWith(plugin.sha.slice(0, 7));
+  if (sameBase && sameCommit) return plugin.version === running ? `✔ the plugin and this copy are both ${running}` : `✔ the plugin and this copy are the same build (${running})`;
+  return `⚠ the plugin is ${plugin.version ?? 'an unknown version'} (${plugin.sha.slice(0, 7)}) and this copy is ${running} → update the older one: /plugin update in Claude Code, or npm install -g @mvpscale/mm3@${running.includes('-nightly.') ? 'nightly' : 'latest'}`; // a nightly copy is kept on the nightly tag: `latest` is the older release
+}
+
 /** The `cli:` value: where `mm3` resolves on PATH (a pure, always-safe filesystem walk — never gated on
  *  deps), plus how init installed it, from install.json, when that record exists. */
-function cliLine(env: Record<string, string | undefined>, platform: NodeJS.Platform): string {
+function cliLine(env: Record<string, string | undefined>, platform: NodeJS.Platform, version?: string): string {
   const resolved = findOnPath('mm3', env, platform);
+  const drift = resolved && version ? versionOnPath(resolved) : undefined;
+  const mismatch = drift && drift !== version ? ` · ⚠ version ${drift}, this is ${version} → run "mm3 init" to match them` : '';
   const record = readInstallRecord(env);
   if (!resolved && !record) return 'not on PATH → run "mm3 init" to install it';
   const shown = resolved ?? '(not currently on PATH)';
-  if (!record) return `${shown} · on PATH`;
+  if (!record) return `${shown} · on PATH${mismatch}`;
   const flag = record.mode === 'global' ? '--global' : record.mode === 'user' ? '--user' : '--local';
   const detail = record.mode === 'local' ? `project ${record.projectDir ?? '?'}` : `npm prefix ${record.npmPrefix ?? '?'}`;
-  return `${shown} · installed ${flag} (${detail})`;
+  return `${shown} · installed ${flag} (${detail})${mismatch}`;
 }
 
 /** The `plugin:` value. `deps.runner` omitted (every caller but cli.ts) never actually spawns `claude` — it
@@ -160,23 +194,16 @@ function projectLine(root: string, deps: { runner?: Runner }): string {
   return `${root} · plugin enabled here: ${enabled ? 'yes' : 'no'}`;
 }
 
-/** How many top-level config keys a project's own config.yaml actually overrides — derived from
- *  `resolveConfig`'s per-leaf `sources` map (no separate file read needed): any leaf whose source is 'config'
- *  contributes its top-level key (`budget.usd` → `budget`) to the count, deduped. */
-function overrideCount(sources: Record<string, ConfigSource>): number {
-  const tops = new Set<string>();
-  for (const [dotted, src] of Object.entries(sources)) if (src === 'config') tops.add(dotted.split('.')[0]!);
-  return tops.size;
-}
-
-/** The `config:` field: a bad config.yaml shows every problem in one pass, same
- *  `✖ config.<path>: problem → fix` shape `mm3 config`/`doctor <file>` use; a clean or absent one shows
- *  just how many top-level keys it overrides, or "defaults" when none. */
-function configField(paths: Mm3Paths | undefined, env: Record<string, string | undefined>): Value {
-  const resolved = resolveConfig(paths, env);
-  if (resolved.stops.length) return resolved.stops.map((s) => s.text);
-  const n = overrideCount(resolved.sources);
-  return n === 0 ? '✔ config: defaults' : `✔ config: ${n} override${n === 1 ? '' : 's'}`;
+/** The `config:` field: where the config stands (config/receipt.ts) — nothing configured (the old plain "defaults"),
+ *  loaded and in step with config.yaml, or a warning saying what to do. A config.yaml with problems lists every
+ *  one, same `✖ config.<path>: problem → fix` shape `mm3 config`/`doctor <file>` use. Reads and hashes config.yaml;
+ *  writes nothing. */
+function configField(paths: Mm3Paths | undefined): Value {
+  const status = configStatus(paths);
+  const line = statusLine(status);
+  if (status.fileStops.length) return [...status.fileStops.map((s) => s.text), ...(line ? [line] : [])];
+  if (status.kind === 'defaults') return '✔ config: defaults';
+  return status.kind === 'loaded' ? `✔ ${line}` : line!;
 }
 
 const MAX_DOCTOR_STOPS = 5;
@@ -255,7 +282,7 @@ export function runDoctor(
   env: Record<string, string | undefined>,
   paths: Mm3Paths | undefined,
   nodeVersion: string = process.version,
-  deps: { resolveStored?: ResolveStored; runner?: Runner; platform?: NodeJS.Platform } = {},
+  deps: { resolveStored?: ResolveStored; runner?: Runner; platform?: NodeJS.Platform; version?: string; pluginInstall?: { version?: string; sha: string } } = {},
 ): VerbResult {
   let config: JevConfig;
   try {
@@ -289,10 +316,11 @@ export function runDoctor(
         ['actor', actorLine(env)],
         ['node', doctorNodeValue(nodeVersion)],
         ['index', nodeVersionOk(nodeVersion) ? (sqliteAvailable() ? 'node:sqlite' : 'unavailable (unexpected on Node 22.13+)') : DOCTOR_INDEX_TOO_OLD],
-        ['cli', cliLine(env, deps.platform ?? process.platform)],
+        ['cli', cliLine(env, deps.platform ?? process.platform, deps.version)],
         ['plugin', pluginLine(deps)],
+        ...(deps.pluginInstall && deps.version ? [['versions', versionsLine(deps.version, deps.pluginInstall)] as [string, Value]] : []),
         ...(paths ? [['agents', agentsDoctorValue(paths.root)] as [string, Value]] : []),
-        ['config', configField(paths, env)],
+        ['config', configField(paths)],
       ),
     ],
     ['notes', notes],

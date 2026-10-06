@@ -60,7 +60,7 @@ describe('a corrupt legacy budget.json', () => {
   it('a corrupt legacy budget.json is silently ignored: class, budget and view all proceed on defaults', () => {
     const root = projectWithRun();
     writeFileSync(path.join(root, '.mm3', 'budget.json'), '{"capUsd": 5, "runs": ');
-    expect(mm3(root, ['budget']).stdout).toMatch(/^budget: \$5\.00 left of \$5\.00 · 499 of 500 runs left\n$/);
+    expect(mm3(root, ['budget']).stdout.split('\n')[0]).toBe('budget: $5.00 left of $5.00 · 499 of 500 runs left');
     expect(mm3(root, ['view', 'src']).status).toBe(0);
     expect(mm3(root, ['class', 'req.yaml']).stdout).toMatch(/^mak:\n {2}id: MM3-0002\n/);
   });

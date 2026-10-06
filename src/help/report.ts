@@ -66,9 +66,9 @@ const OUTCOME_PAIRS: readonly CliPair[] = [
 
 const BUDGET_PAIRS: readonly CliPair[] = [
   {
-    rule: '`set` with no flags changes nothing and has nothing to report.',
-    bad: ['mm3 budget set', '→ ✖ budget: set needs --usd or --runs → e.g. mm3 budget set --usd 5 --runs 500'],
-    good: ['mm3 budget set --usd 5 --runs 500'],
+    rule: 'the caps are changed in the config, not here.',
+    bad: ['mm3 budget set --usd 5', '→ ✖ budget: set was removed → edit budget.usd / budget.runs in .mm3/config.yaml, then run mm3 config --load'],
+    good: ['# edit budget.usd / budget.runs in .mm3/config.yaml, then:', 'mm3 config --load'],
   },
 ];
 
@@ -153,18 +153,18 @@ export function doctorHelp(): string {
 export function budgetHelp(): string {
   return [
     '## budget',
-    "Shows or changes the project's spend cap. Not a mak:-YAML verb: it never calls a provider. `show` (the " +
-      'default) prints the current spend and run count; `reset` zeroes both but keeps the caps; `set` changes ' +
-      'either or both caps without touching the spend already counted.',
+    "Shows the project's spend and run count, and how to change the caps. Not a mak:-YAML verb: it never calls a provider " +
+      'and never writes. The caps live in `.mm3/config.yaml` (`budget.usd`, `budget.runs`); change one and run `mm3 config --load`.',
     '',
     'Example:',
-    'mm3 budget                          # same as: mm3 budget show',
-    'mm3 budget set --usd 5 --runs 500   # the defaults',
+    'mm3 budget                          # the count, and the way to change it',
+    '',
+    '# to raise the cap: edit .mm3/config.yaml, then',
+    'mm3 config --load',
     '',
     'Sharp rules:',
-    '- three subcommands only: `show` (default), `reset`, `set`.',
-    "- `set` needs at least one of `--usd`/`--runs` — giving neither is a stop.",
-    '- by convention only the project owner runs `reset` — nothing in the code stops any agent from running it.',
+    '- read-only: `show` is the only subcommand. `set` and `reset` were removed and stop with where to go.',
+    '- a load whose `budget:` section changed (usd, runs or per) restarts the count from that moment; a load that changes other settings keeps it. To restart with the same caps, set `budget.since` to now.',
     '- any verb call that would go over either cap stops at exit 3 before it spends anything.',
     ...proseCliPairs(BUDGET_PAIRS),
   ].join('\n');

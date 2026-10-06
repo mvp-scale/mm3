@@ -16,6 +16,8 @@ export interface Mm3Paths {
    *  below — so a team's own budget/provider/pricing/reuse choices travel with the repo. Read-only from this
    *  module's own point of view: nothing under ledger/ ever creates or writes this file. */
   config: string;
+  /** The ACTIVE copy of that config: the validated overrides plus a fingerprint of the file they were loaded
+   *  from (config/active.ts). Requests read this, never config.yaml, once it exists. Ignored by git. */
 }
 
 export function pathsFor(root: string): Mm3Paths {
@@ -47,7 +49,11 @@ export function pathsFor(root: string): Mm3Paths {
 export function ensureDir(paths: Pick<Mm3Paths, 'dir'>): void {
   mkdirSync(paths.dir, { recursive: true });
   const gitignore = path.join(paths.dir, '.gitignore');
-  if (!existsSync(gitignore)) writeFileSync(gitignore, '*\n!config.yaml\n');
+  try {
+    writeFileSync(gitignore, '*\n!config.yaml\n', { flag: 'wx' }); // create only if absent, in one step
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+  }
 }
 
 /** The nearest folder at or above cwd holding .mm3 or .git; undefined outside any project. */

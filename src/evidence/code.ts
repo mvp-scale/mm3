@@ -10,12 +10,19 @@
  * item's own whole-file range — keeps the old truncate-with-a-note behavior, since there's no `where:` for
  * anyone to narrow.
  */
-import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
+import { DEFAULT_CONFIG } from '../config/defaults.ts';
 import { redact } from '../ledger/redact.ts';
 import { isOutside } from './paths.ts';
 
-export const EVIDENCE_LIMITS = { perFileChars: 20_000, totalChars: 60_000 } as const;
+export const EVIDENCE_LIMITS = { perFileChars: DEFAULT_CONFIG.evidence.perItemChars, totalChars: DEFAULT_CONFIG.evidence.totalChars } as const;
+
+/** What a project's `evidence.perItemChars` / `evidence.totalChars` pass in; omitted, EVIDENCE_LIMITS. */
+export interface EvidenceCaps {
+  perFileChars: number;
+  totalChars: number;
+}
 
 export interface CodeEvidence {
   files: Record<string, string>;
@@ -28,6 +35,8 @@ export interface ReadCodeEvidenceOptions {
   /** Default true: an oversized entry stops instead of being truncated. Pass false only for a range MM3
    *  itself picked (never a user-typed `where:`), which keeps the old truncate-with-a-note behavior. */
   stopOnOversize?: boolean;
+  /** The caps to apply (config's `evidence:`); default EVIDENCE_LIMITS. */
+  limits?: EvidenceCaps;
 }
 
 const fmt = (n: number): string => n.toLocaleString('en-US');
@@ -52,6 +61,7 @@ function splitWhere(entry: string): { path: string; lines?: string } {
 
 export function readCodeEvidence(root: string, where: readonly string[], opts: ReadCodeEvidenceOptions = {}): EvidenceResult {
   const stopOnOversize = opts.stopOnOversize ?? true;
+  const caps = opts.limits ?? EVIDENCE_LIMITS;
   const errors: string[] = [];
   const notes: string[] = [];
   const files: Record<string, string> = {};
@@ -71,24 +81,28 @@ export function readCodeEvidence(root: string, where: readonly string[], opts: R
       continue;
     }
     let text: string;
+    let fd: number | undefined;
     try {
       // Resolve symlinks on both sides: a link inside the project that points outside it is still outside.
       if (isOutside(path.relative(realpathSync(root), realpathSync(full)))) {
         errors.push(outside);
         continue;
       }
-      if (statSync(full).isDirectory()) {
+      fd = openSync(full, 'r'); // open once, then look at that same file: no check-then-use gap
+      if (fstatSync(fd).isDirectory()) {
         errors.push(`✖ mak.where: "${rawPath}" is a folder → name a file (scan covers folders)`);
         continue;
       }
-      text = readFileSync(full, 'utf8');
+      text = readFileSync(fd, 'utf8');
     } catch {
       errors.push(`✖ mak.where: cannot read "${rawPath}" → check the path`);
       continue;
+    } finally {
+      if (fd !== undefined) closeSync(fd);
     }
     const shown = `${rel.split(path.sep).join('/')}${lines ? `:${lines}` : ''}`;
     let body = redact(range ? text.split('\n').slice(range.start - 1, range.end).join('\n') : text);
-    if (body.length > EVIDENCE_LIMITS.perFileChars) {
+    if (body.length > caps.perFileChars) {
       if (stopOnOversize) {
         // C-169: a whole file names its own line count and asks for a range; a range that's already this big
         // asks to be narrowed further — either way, the classifier never silently sees less than was asked for.
@@ -99,14 +113,14 @@ export function readCodeEvidence(root: string, where: readonly string[], opts: R
         }
         continue;
       }
-      body = body.slice(0, EVIDENCE_LIMITS.perFileChars);
-      notes.push(`${shown} truncated to ${EVIDENCE_LIMITS.perFileChars} chars`);
+      body = body.slice(0, caps.perFileChars);
+      notes.push(`${shown} truncated to ${caps.perFileChars} chars`);
     }
-    const room = EVIDENCE_LIMITS.totalChars - total;
+    const room = caps.totalChars - total;
     if (room <= 0) {
       // C-170: the same silent-cut problem, just across entries instead of within one — stop the same way.
       if (stopOnOversize) {
-        errors.push(`✖ mak.where: "${shown}" doesn't fit — where: is over ${fmt(EVIDENCE_LIMITS.totalChars)} chars total → send fewer paths or narrower ranges`);
+        errors.push(`✖ mak.where: "${shown}" doesn't fit — where: is over ${fmt(caps.totalChars)} chars total → send fewer paths or narrower ranges`);
         continue;
       }
       notes.push(`${shown} skipped: evidence limit reached`);
@@ -114,7 +128,7 @@ export function readCodeEvidence(root: string, where: readonly string[], opts: R
     }
     if (body.length > room) {
       if (stopOnOversize) {
-        errors.push(`✖ mak.where: "${shown}" doesn't fit — where: is over ${fmt(EVIDENCE_LIMITS.totalChars)} chars total → send fewer paths or narrower ranges`);
+        errors.push(`✖ mak.where: "${shown}" doesn't fit — where: is over ${fmt(caps.totalChars)} chars total → send fewer paths or narrower ranges`);
         continue;
       }
       body = body.slice(0, room);

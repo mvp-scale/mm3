@@ -31,7 +31,9 @@ import type { VerbContext, VerbResult } from './types.ts';
  *  file's own unit tests) keeps the code's own defaults: no extra item cap beyond the depth ceiling, no
  *  question-per-call split, no reuse age/commit limit. */
 interface SweepLimits {
-  sweep?: Mm3Config['sweep'];
+  sweep?: Omit<Mm3Config['sweep'], 'itemsPerLayer'> & Partial<Pick<Mm3Config['sweep'], 'itemsPerLayer'>>;
+  /** Evidence cap per item and per call; omitted, the built-in defaults (translate.ts's ITEM_LIMITS). */
+  evidence?: Pick<Mm3Config['evidence'], 'perItemChars' | 'totalChars'>;
   reuse?: ReuseLimits;
 }
 
@@ -122,7 +124,7 @@ export function planSweep(request: Request, who: Who, paths: Mm3Paths, dryRun: b
   const itemsByLayer = groupByLayer(items);
   const reuseLimits = limits.reuse;
   // Lower-only (defaults.ts's own doc on sweep.maxItems): a project may tighten the depth's compiled-in item
-  // ceiling, never raise past it — Math.min can only ever move the effective cap down from SWEEP_ITEM_CAP.
+  // ceiling (sweep.itemsPerLayer, default SWEEP_ITEM_CAP), never raise past it — Math.min only moves the cap down.
   const projectMaxItems = limits.sweep?.maxItems;
   const maxQuestionsPerCall = limits.sweep?.maxQuestionsPerCall ?? DEFAULT_CONFIG.sweep.maxQuestionsPerCall;
 
@@ -143,7 +145,8 @@ export function planSweep(request: Request, who: Who, paths: Mm3Paths, dryRun: b
   // One lookup for every item key collected above — not one per item.
   const reused = lookupAnswers(paths, who, allKeys, { readOnly: dryRun, reuse: reuseLimits });
 
-  const cap = projectMaxItems !== undefined ? Math.min(SWEEP_ITEM_CAP[request.mak.depth ?? 'quick'], projectMaxItems) : SWEEP_ITEM_CAP[request.mak.depth ?? 'quick'];
+  const depthCap = (limits.sweep?.itemsPerLayer ?? SWEEP_ITEM_CAP)[request.mak.depth ?? 'quick'];
+  const cap = projectMaxItems !== undefined ? Math.min(depthCap, projectMaxItems) : depthCap;
   const keys = new Map<string, string>();
   const reusedFrom = new Map<string, string>();
   const answers: Record<string, Answer> = {};
@@ -239,7 +242,7 @@ export function planSweep(request: Request, who: Who, paths: Mm3Paths, dryRun: b
       const notes: string[] = []; // truncation notes from itemsState: not surfaced by this engine (SweepPlan carries none)
       const wanted = new Set(qs.map((q) => q.item).filter((id): id is string => id !== undefined));
       const chunkItems = wanted.size ? callItems.filter((it) => wanted.has(it.id)) : callItems;
-      const state: ClassifierState = { ...(i === 0 && hasGoal ? { goal: redact(request.mak.goal) } : {}), items: itemsState(chunkItems, notes) };
+      const state: ClassifierState = { ...(i === 0 && hasGoal ? { goal: redact(request.mak.goal) } : {}), items: itemsState(chunkItems, notes, limits.evidence) };
       return { state, questions: qs };
     });
     return { layer, call: calls[0]!, extraCalls: calls.slice(1), itemIds, skipped };

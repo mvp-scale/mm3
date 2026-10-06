@@ -71,8 +71,8 @@ describe('validateConfig', () => {
   });
 
   it('a request-contract key is not configurable here', () => {
-    const { stops } = validateConfig({ depth: 'thorough' });
-    expect(stops).toEqual([{ path: 'depth', text: '✖ config.depth: is a request field, not a project setting → not configurable (request contract) → set it per request' }]);
+    const { stops } = validateConfig({ goal: 'x' });
+    expect(stops).toEqual([{ path: 'goal', text: '✖ config.goal: is a request field, not a project setting → not configurable (request contract) → set it per request' }]);
   });
 
   it('a key-shaped value (looks like a secret) is refused wherever it appears', () => {

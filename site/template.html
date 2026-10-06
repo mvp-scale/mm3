@@ -77,7 +77,7 @@
     </div>
   </div>
   <h3>Try it locally</h3>
-  <p>Bring a TypeSafe API key. MM3 wraps TypeSafe&rsquo;s API (Jev at <code>api.typesafe.ai</code>), and any TypeSafe endpoint works. Your key stays out of your project: Claude Code keeps it in its secure storage, <code>mm3 init</code> in your OS keychain (or a 0600 file). To switch endpoints, <code>mm3 config</code> shows the settings in effect and <code>mm3 config --write</code> creates <code>.mm3/config.yaml</code> (uncomment <code>baseURL:</code>); or for one run only:</p>
+  <p>Bring a TypeSafe API key. MM3 wraps TypeSafe&rsquo;s API (Jev at <code>api.typesafe.ai</code>), and any TypeSafe endpoint works. Your key stays out of your project: Claude Code keeps it in its secure storage, <code>mm3 init</code> in your OS keychain (or a 0600 file). To switch endpoints, <code>mm3 config</code> shows the settings in effect and <code>mm3 config --write</code> creates <code>.mm3/config.yaml</code> (uncomment <code>baseURL:</code>) and <code>mm3 config --load</code> checks it and makes it the active config; or for one run only:</p>
   <div class="code" data-copy><pre><code>{{installEndpoint}}</code></pre></div>
   <p>Add <code>--dry-run</code> to any request to validate it and count its questions without a call. With no key set, MM3 falls back to a built-in sample provider; its answers are canned and labelled, never evidence.</p>
   <p>Agents: run <code>mm3 agent</code> first. Humans: <code>mm3 help</code>.</p>

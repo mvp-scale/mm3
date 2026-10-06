@@ -2,6 +2,20 @@
 
 One bad probe (an opinion with no mechanism, role, or place to check) and one good category (3 probes, one per role) for each family. Examples are NodeGoat-neutral: any small Node/Express handler shape works the same way. `family:` is shown explicitly only where the category name wouldn't auto-match it.
 
+## Contents
+
+- injection: reach · guard · sink
+- access: actor · check · resource
+- secrets: store · transport · exposure
+- input: source · validate · reject
+- output: source · encode · render
+- availability: trigger · limit · recovery
+- correctness: input · rule · result
+- design: responsibility · dependency · testability
+- design-risk: abuse · failure · data
+- done: concrete · testable · owned
+- other: no fixed roles
+
 ## injection — reach · guard · sink
 
 Bad: "Is this method secure?"

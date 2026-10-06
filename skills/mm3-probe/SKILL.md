@@ -7,11 +7,30 @@ An MM3 request is only as good as its questions. The schema (`references/request
 
 Read this before filling in `ask:` on a template — `mm3 template <verb>` gives you the plumbing; this gives you the questions.
 
+## Contents
+
+- What a probe is and how depth counts probes
+- The contract in one screen
+- A concern is one path; its three probes are three angles on it
+- What makes a good probe and Bad probes, and why
+- Decisions: severity, route, and the optional scope check
+- [A good/bad pair per family](references/probe.md): worked examples for every family
+- [mdl in about 70 tokens](references/mdl.md): what to tag a request with so the ledger learns
+- [One recipe per verb](references/recipes.md): class, drill, scan, loop, replay, view
+
+## What a probe is
+
+**A probe is three well-formed questions that look at one problem from three angles.** TypeSafe defines what a good question is: one measurable fact, nothing stacked, nothing subjective. A single question can still push the answer the wrong way, so MM3 never relies on one. It asks three, from three angles chosen by the problem's **family** (for injection: reach, guard, sink). Agreement across the three makes the category's result more accurate and more consistent, and when they disagree you can see where it fails. The families and their angles are in the table below; `other` is for a problem that fits none, and you name its three angles yourself.
+
+**Depth is how many probes you ask.** `quick`, `standard` and `thorough` mean 3, 6 or 9 probes by default (9, 18 or 27 questions). A project can change the numbers in `config.yaml`.
+
+In the request YAML a probe is one `concerns:` category holding exactly 3 questions (the field name is part of the contract and stays as it is).
+
 ## The contract in one screen
 
 `ask:` has two sections:
 
-- **concerns** — exactly `3k` categories for depth `k` (quick=1 → 3 categories/9 probes, standard=2 → 6/18, thorough=3 → 9/27), each with **exactly 3 yes/no probes**.
+- **concerns** — one category per probe: 3, 6 or 9 of them for quick, standard or thorough by default (9, 18 or 27 questions; a project's config can change the counts), each with **exactly 3 yes/no questions**.
 - **decisions** — 2–5 categories, scale or choice only, at least one of each kind. These don't count toward depth.
 
 Why exactly 3 probes, never 1? A single yes/no like "is this handler secure?" can't disagree with itself — there's nothing for `need:` to weigh, and nothing tells you *where* it fails if it does. Three probes that each check a different point on the same path can disagree, and when they do, that disagreement is the finding: reach and sink both read unsafe while guard reads safe is a very different result from all three reading unsafe. One question gives you a verdict with no evidence behind it; three angles give you a verdict you can act on.
@@ -38,7 +57,7 @@ Pick a **family** for the concern (an optional field, defaulting to the category
 
 A good category names one of these families explicitly (`family: injection`) whenever its own name doesn't already match one of the eleven — a category named `reach`/`guard`/`sink` (common in `drill`, where the parent's angles each become their own concern) still belongs to the `injection` family, it just isn't spelled that way in the category name.
 
-`references/probe.md` in this skill has a full good/bad pair for every family above.
+[`references/probe.md`](references/probe.md) in this skill has a full good/bad pair for every family above.
 
 ## What makes a good probe
 
@@ -80,51 +99,11 @@ Every request's decisions section needs at least one **scale** and one **choice*
 
 A third, optional pattern is worth adding to `class`/`scan` whenever the code you sent might not be the whole picture: a **scope** choice, `enough, partial, missing` — `partial`/`missing` are both a signal to widen `where:` and re-run, not to trust the verdict as-is.
 
-## mdl in about 70 tokens
+## mdl and the recipes
 
-`mdl:` never reaches the classifier — it's free context the ledger learns from. Every field is optional: fill what you know, omit what doesn't apply. `why`/`area`/`stage`/`change`/`risk`/`blast` are closed lists — for this project's actual allowed values, run `mm3 agent mdl` (they're config-driven, so they're never hard-coded here). Two fields carry more than a bare value:
+Two short files hold the rest, linked directly from here:
 
-- `problem` — one line: what you're actually solving right now.
-- `uses` — up to 5 chains describing what this run touches, in the C4 model (c4model.com): five levels, each inside the one above.
-
-  ```
-  system: shop
-  └── container: web-app                      an app or data store
-  │   ├── component: orders-handler           a group of code inside a container
-  │   │   └── code: createOrder               your own function (not a built-in)
-  │   └── component: orders-dao
-  └── container: database
-  person: customer                             outside the system
-  system: payment-service                      an outside service is its own system
-  ```
-
-  Write it flat: `/` for "inside" (`component:web-app/orders-handler`), `->` for "uses" (`a -> b -> c`), `?` on any part for "guessed or not built yet" (`component:web-app/refunds?`, `system:email-service?`). Grammar: `chain := part (" -> " part)*`, `part := level ":" name ("/" name)* ["?"]`, `level := person | system | container | component | code`, `name` = lowercase kebab-case (or a code identifier at the code level).
-
-Plus:
-
-- `touches` — up to 5 domain objects/fields this run is about (not concepts like "authentication", not language built-ins).
-- `blast` — the widest level one failure reaches (`person` = users' data or accounts, not "everyone").
-
-Example, on a run fixing an injection flaw in a user-lookup handler:
-
-```yaml
-mdl:
-  why: validate
-  problem: Removing the SQL injection in findUser flagged by an earlier scan
-  uses:
-    - person:customer -> container:web-app
-    - component:web-app/user-handler -> code:findUser -> container:db
-  touches: [userId, findUser]
-  blast: component
-```
-
-## One recipe per verb
-
-- **class** — one subject, the full contract: `3k` concerns categories × 3 angles, plus decisions. Name the file and line range in `where:`; name the element in a probe whenever `where:` covers more than one file.
-- **drill** — starts from one flagged concern or item, never cold. The parent's 3 angles each become their own new concern here, re-probed 3 ways of their own — going from "the injection concern failed" to "specifically the guard step failed, at this call."
-- **scan** — one concerns/decisions block, written once with a `{blank}` for the finest layer (e.g. `{function}`), applied to every item that layer sweeps. Add a severity scale to rank findings worst-first.
-- **loop** — the deepest layer (e.g. `story`) carries the full contract; `design`/`design-risk`/`done` fit an idea better than code-specific families like `injection`/`secrets`.
-- **replay** — no new probes at all: it replays the parent's exact questions on two git states. The only new field is `expect:`, your own prediction of which parent concerns should flip to pass.
-- **view** — a free, no-spend check of a draft's `ask:` against everything above, before you pay for a real run.
+- [mdl in about 70 tokens](references/mdl.md): the free context the ledger learns from (`why`, `area`, `uses` as C4 chains, `touches`, `blast`).
+- [One recipe per verb](references/recipes.md): how each verb shapes its probes (class, drill, scan, loop, replay, view).
 
 `mm3 agent probe` (and `mm3 help probe`) carry the enforced phrasing rules this skill builds on, cited to their TypeSafe source pages, plus this same role table and good/bad pair in a dense, no-prose form.

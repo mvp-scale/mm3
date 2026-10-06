@@ -23,7 +23,7 @@ export const RULES: readonly Rule[] = [
     // family (given, or defaulted from the category name — see FAMILIES below); the role table itself (3 named
     // roles per family) is too wide for one dense-card bullet, so it lives in `mm3 agent probe`/`help
     // probe` (FAMILY_ROLES below, same file, one source) and the mm3-probe skill, both pointed at here.
-    text: `depth: quick|standard|thorough = exactly ${DEPTH_COUNT.quick}, ${DEPTH_COUNT.standard} or ${DEPTH_COUNT.thorough} yes/no questions across 3k concerns categories, each with 3 probes in a distinct role — family: ${list(FAMILIES)} (role table: mm3 agent probe) — a sweep: at most ${SWEEP_ITEM_CAP.quick}, ${SWEEP_ITEM_CAP.standard} or ${SWEEP_ITEM_CAP.thorough} items per layer`,
+    text: `depth: quick|standard|thorough = by default exactly ${DEPTH_COUNT.quick}, ${DEPTH_COUNT.standard} or ${DEPTH_COUNT.thorough} yes/no questions across 3k concerns categories (a project can change the counts: mm3 config), each with 3 probes in a distinct role — family: ${list(FAMILIES)} (role table: mm3 agent probe) — a sweep: by default at most ${SWEEP_ITEM_CAP.quick}, ${SWEEP_ITEM_CAP.standard} or ${SWEEP_ITEM_CAP.thorough} items per layer`,
     in: ['card', 'authoring', 'class', 'scan', 'loop'],
   },
   { text: `where: at most 5 path entries — this is all the code a run sees`, in: ['card', 'authoring', 'class', 'view'] },

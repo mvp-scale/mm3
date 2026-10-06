@@ -2,7 +2,7 @@
 // Bounded to at most 10 processes per test (shared machine). Whatever the exit codes, budget and ledger agree:
 // budget runs == run records + failed records (spend and log are one lock section).
 import { spawn } from 'node:child_process';
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { hasNodeSqlite, mm3, mm3Async, type CliResult } from '../../helpers/cli.ts';
@@ -12,10 +12,9 @@ const CLASS_YAML = readFileSync('test/fixtures/requests/valid/class.yaml', 'utf8
 // index.db (ledger/index.ts) is a disposable SQLite sidecar: a real run persists it only when node:sqlite is
 // actually available (Node >= 22.13); the Node < 22.13 fallback never writes one at all. Plan 2c B1: there's no
 // budget.json any more (caps live in config.yaml, spend is ledger-derived) — a plain `class`/`outcome` flow
-// with no `budget set`/`reset` call never creates config.yaml either.
-// agents-note-shown: the one-time `agents:` note's marker [C-234] — these fixture projects have no AGENTS.md, so
-// their first real run shows the note and leaves the marker.
-const EXPECTED_FILES = ['.gitignore', 'agents-note-shown', ...(hasNodeSqlite ? ['index.db'] : []), 'log.jsonl'];
+// with no config edit never creates config.yaml either.
+// Nothing else: the one-time `agents:` note [C-234] is known from the ledger (no run recorded yet), not from a marker file.
+const EXPECTED_FILES = ['.gitignore', ...(hasNodeSqlite ? ['index.db'] : []), 'log.jsonl'];
 
 interface Line {
   kind: string;
@@ -105,13 +104,15 @@ describe('separate processes at once', () => {
 
   it('6 runs racing a cap of 3: at least 3 succeed, the rest are blocked; the cap may be overshot by up to concurrent − 1 (at most 8 runs)', async () => {
     const root = project();
-    expect(mm3(root, ['budget', 'set', '--runs', '3']).status).toBe(0);
+    mkdirSync(path.join(root, '.mm3'), { recursive: true });
+    writeFileSync(path.join(root, '.mm3', 'config.yaml'), 'budget:\n  runs: 3\n');
+    expect(mm3(root, ['config', '--load']).status).toBe(0);
     const results = await Promise.all(Array.from({ length: 6 }, (_, i) => mm3Async(root, ['class', reqFile(root, String(i))])));
     const ok = results.filter((r) => r.status === 0);
     const blocked = results.filter((r) => r.status === 3);
     expect(ok.length + blocked.length).toBe(6);
     for (const r of blocked) {
-      expect(r.stderr).toMatch(/^✖ budget: cap reached \([^\n]+\) → the owner runs "mm3 budget set --runs <n>"\n→ see: mm3 agent budget\n$/);
+      expect(r.stderr).toMatch(/^✖ budget: cap reached \([^\n]+\) → ask the owner to raise budget\.runs in \.mm3\/config\.yaml, then run mm3 config --load\n→ see: mm3 agent budget\n$/);
     }
     expect(ok.length).toBeGreaterThanOrEqual(3);
     expect(ok.length).toBeLessThanOrEqual(3 + (6 - 1));
@@ -146,6 +147,6 @@ describe('separate processes at once', () => {
     // when checkLedger/nextRunNumber first touch the index (design binding #7: no ledger yet, touch nothing on
     // disk), and appendLine only creates log.jsonl moments later, in the same command. So this one command never
     // persists index.db even with node:sqlite available; the next command would. See ledger/index.ts's withIndex.
-    expect(state(root).files).toEqual(['.gitignore', 'agents-note-shown', 'log.jsonl']);
+    expect(state(root).files).toEqual(['.gitignore', 'log.jsonl']);
   }, 30_000);
 });

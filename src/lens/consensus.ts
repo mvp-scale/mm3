@@ -6,7 +6,9 @@
  *   SPLIT  otherwise
  * Thresholds are starting values; outcomes in the ledger tune them later.
  */
-export const THRESHOLDS = { concernAt: 0.5, weakBelow: 0.35, strongAt: 0.8 } as const;
+import { DEFAULT_CONFIG } from '../config/defaults.ts';
+
+export const THRESHOLDS: Readonly<typeof DEFAULT_CONFIG.lens> = DEFAULT_CONFIG.lens;
 
 export type Consensus = 'STRONG' | 'SPLIT' | 'WEAK';
 
@@ -30,10 +32,10 @@ export interface ConsensusResult {
 
 const majority = (flags: readonly boolean[]): boolean => flags.filter(Boolean).length * 2 >= flags.length;
 
-export function computeConsensus(slots: readonly SlotAnswer[]): ConsensusResult {
+export function computeConsensus(slots: readonly SlotAnswer[], thresholds: Readonly<typeof DEFAULT_CONFIG.lens> = THRESHOLDS): ConsensusResult {
   if (!slots.length) throw new RangeError('consensus needs at least one slot');
   const concern = slots.map((s) => (s.reverse ? 1 - s.p : s.p));
-  const flags = concern.map((c) => c >= THRESHOLDS.concernAt);
+  const flags = concern.map((c) => c >= thresholds.concernAt);
   const frac = flags.filter(Boolean).length / slots.length;
   const agreement = Math.max(frac, 1 - frac);
   const decisiveness = concern.reduce((sum, c) => sum + Math.abs(2 * c - 1), 0) / slots.length;
@@ -41,7 +43,7 @@ export function computeConsensus(slots: readonly SlotAnswer[]): ConsensusResult 
   const reverse = flags.filter((_, i) => slots[i]!.reverse);
   const reverseConsistent = !forward.length || !reverse.length || majority(forward) === majority(reverse);
   const consensus: Consensus =
-    decisiveness < THRESHOLDS.weakBelow ? 'WEAK' : agreement >= THRESHOLDS.strongAt && reverseConsistent ? 'STRONG' : 'SPLIT';
+    decisiveness < thresholds.weakBelow ? 'WEAK' : agreement >= thresholds.strongAt && reverseConsistent ? 'STRONG' : 'SPLIT';
   return {
     consensus,
     verdict: frac >= 0.5 ? 'concern' : 'clear',

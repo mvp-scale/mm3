@@ -34,7 +34,7 @@
  *              `config.mdl` (closed/pattern/reference), or `no suggestion yet`; `--accept <field>` writes the
  *              suggestion into `.mm3/config.yaml`.
  */
-import { resolveConfig } from '../config/load.ts';
+import { configOf, type ResolvedConfig } from '../config/load.ts';
 import { writeConfigOverride } from '../config/write.ts';
 import { MDL_KEYS } from '../contract/mdl-fields.ts';
 import { answerKey, subjectEvidence, subjectQuestions } from '../contract/translate.ts';
@@ -61,6 +61,8 @@ import type { VerbResult } from './types.ts';
 
 export interface ReportContext {
   paths: Mm3Paths;
+  /** Resolved once at the request entry (see VerbContext.config); read by `fields`. */
+  config?: ResolvedConfig;
   /** Only 'web' needs these; every other view ignores them. Optional so every existing call site (a pure read)
    *  stays unchanged — defaulted to the real process env/runner/platform when 'web' actually needs them. */
   env?: Record<string, string | undefined>;
@@ -404,9 +406,9 @@ function suggestionText(s: FieldSuggestion | undefined): string {
   return 'reference (link: where)';
 }
 
-function reportFields(paths: Mm3Paths, env: Record<string, string | undefined>, accept: string | undefined): VerbResult {
+function reportFields(paths: Mm3Paths, env: Record<string, string | undefined>, accept: string | undefined, resolved?: ResolvedConfig): VerbResult {
   ensureHotIndexFresh(paths); // fields reads the hot tier's own `runs.mdl` column directly; see ensureHotIndexFresh's own comment
-  const { config } = resolveConfig(paths, env);
+  const { config } = configOf({ paths, env, config: resolved });
   const knownKeys = [...MDL_KEYS, ...Object.keys(config.mdl)];
   const fields = undeclaredFieldSamples(paths, { knownKeys });
 
@@ -447,6 +449,6 @@ export function runReport(view: string | undefined, ctx: ReportContext, target?:
   if (requested === 'problems') return reportProblems(ctx.paths, env);
   if (requested === 'mdl') return reportMdl(ctx.paths, env);
   if (requested === 'calls') return reportCalls(ctx.paths, env);
-  if (requested === 'fields') return reportFields(ctx.paths, env, accept);
+  if (requested === 'fields') return reportFields(ctx.paths, env, accept, ctx.config);
   return runReportWeb({ paths: ctx.paths, env, runner: ctx.runner ?? realRunner, platform: ctx.platform ?? process.platform } satisfies ReportWebContext);
 }

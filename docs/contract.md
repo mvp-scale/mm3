@@ -57,7 +57,7 @@ Where this contract and the shipped engine disagree, this file describes what ac
 | Block | Field | Rule |
 |---|---|---|
 | mak | `goal` | one line, ≤ 160 chars; what you want to be true. Asked of TypeSafe outright |
-| mak | `depth` | `quick` · `standard` · `thorough` = k = 1 · 2 · 3. One subject's `concerns:` section: exactly 3k categories (9 · 18 · 27 yes/no questions). A sweep's finest layer: the same; every layer also caps at 10 · 20 · 30 items asked |
+| mak | `depth` | `quick` · `standard` · `thorough` = k = 1 · 2 · 3 by default. One subject's `concerns:` section: exactly 3k categories (9 · 18 · 27 yes/no questions). A sweep's finest layer: the same; every layer also caps at 10 · 20 · 30 items asked. A project's `config.yaml` can change these counts (see Config) |
 | mak | `where` | 1–5 project paths, optional `:start-end`. We read and redact the code |
 | mak | `ask` | `concerns:` (yes/no categories) + `decisions:` (scale/choice categories) for one subject. In a sweep: layer → `{concerns:, decisions:}` |
 | mak | `over` | sweeps only: nested arrays |
@@ -86,11 +86,11 @@ Each rule ends with the claim id a test proves. The table above is the quick ref
 - One line, at most 160 characters.
 - It is the question asked of TypeSafe outright. [C-010]
 
-**`depth`** sets how many questions a request asks. `quick`, `standard` and `thorough` set k to 1, 2 and 3.
+**`depth`** sets how many questions a request asks. `quick`, `standard` and `thorough` set k to 1, 2 and 3 by default. The numbers below are those defaults; a project's `depth:` and `sweep.itemsPerLayer` settings change them (see Config), and a request still just says `depth: quick`.
 
-- **One subject:** `ask.concerns` holds exactly 3k categories, each with exactly 3 yes/no probes. That is 9, 18 or 27 questions in total. [C-011]
+- **One subject:** `ask.concerns` holds exactly 3k categories, each with exactly 3 yes/no probes. By default that is 9, 18 or 27 questions in total. [C-011]
 - **A sweep:** its finest layer follows the same rule. The finest layer is the last one in `over`'s own order, such as scan's `function` or loop's `story`. [C-011]
-- **Item cap:** every layer of a sweep also caps at 10, 20 or 30 items asked. This cap kept its old numbers when the question counts changed. The two used to match and no longer do. [C-011]
+- **Item cap:** every layer of a sweep also caps at 10, 20 or 30 items asked by default. This cap kept its old numbers when the question counts changed. The two used to match and no longer do. [C-011]
 - **Other sweep layers:** optional. When present, their counts are not enforced (you get a note if thin). Only their shape has to hold: well-formed `concerns:` and `decisions:`. [C-011]
 - **Stop or note:** these section and count rules are stops in `class`, `drill`, `scan` and `loop`. In `view` they are notes ("class will stop on this"), because a partial draft is fine there. [C-011]
 
@@ -280,7 +280,15 @@ a sweep:      1 call per layer. state = {goal, items: {"<item id>": <text or red
 - **Bare CLI usage mistakes:** every one for a pointable command. These are an unknown or duplicated flag, a missing project, and a request file the CLI itself couldn't read. They also include `outcome`'s own id/value/`--by` checks and `budget`'s own cap parsing. [C-197]
 - **How it is built:** `report`, `outcome`, `budget` and `template` are tools, not one of the six `Verb`s. So `verbs/request.ts`'s `stopText` widens to a small `AgentTarget` union (`Verb` plus the four tool names). The alternative was `verbs/` importing `help/agent.ts`'s `AGENT_TOOLS` just for a type. [C-197]
 - `budget/budget.ts` and `ledger/log.ts` sit below `verbs/` in the dependency order. So their own stops append the identical `\n→ see: mm3 agent <tool>` line as a literal suffix instead. This avoids a layering inversion. [C-197]
-- **No pointer:** a command with no agent card (`help`, `agent`, `doctor`, `init`, `uninstall`, `mcp`) never gets it. There is nothing deeper for it to point at. [C-197]
+- **The one exit:** whatever branch made a non-zero answer (and whatever the command), the CLI's single exit adds the pointer when the answer does not already end with one. It names the command's own card when `mm3 agent` has one (the six verbs, `report`, `outcome`, `budget`, `template`, `doctor`, `config`). A command with no card (`help`, `agent`, `init`, `uninstall`, `mcp`, an unknown command) points at the overview, `mm3 agent`. A stop that already ends with a pointer keeps it, and never gets a second one. `doctor` exits 0 even when it reports a problem, so its `✖` lines get the `doctor` pointer without an exit change. [C-197]
+- **The plugin's own stops:** a tool call's own stops (`args` not an array, a thrown call) and the JSON-RPC errors (unknown tool, unknown method, a line that is not JSON, a message without `"jsonrpc":"2.0"`) say `✖ mcp: <what> → <fix>` and end with the same pointer. The numeric JSON-RPC code is unchanged. [C-197]
+
+**Plain words where a system error would escape**
+
+- A project folder that does not exist (`MM3_HOME`, or the plugin's `project` field) stops with `✖ project: "<folder>" is not a folder → give an existing project folder (MM3_HOME, or the plugin's project field)`. It no longer reports a missing `src/…` file or a lock it could not write. [C-197]
+- A file-system error nothing closer translated (a ledger file that is a folder, a file MM3 may not read) comes back as one line, `✖ files: <what is wrong> → check .mm3/ (log.jsonl and budget.json are files, the folder is writable), then re-run`, with exit 1. It never carries the system's own words (`EISDIR`, `illegal operation on a directory`). [C-197]
+- `mm3 template <verb> --from <file>` on a file that is not valid YAML (a tab for indentation, an unclosed quote) stops with `✖ template: --from "<file>" is not valid YAML → fix it (YAML indents with spaces, never tabs), or point at an MM3 request file`, exit 1. [C-197]
+- Every `✖` line in a non-zero answer carries a fix after `→`. [C-197]
 
 ### Every response
 
@@ -313,9 +321,9 @@ notes: [budget …, validation notes …]
 **The budget line**
 
 - It states headroom, not a percentage: `budget: $0.11 left of $0.12 · 27 of 30 runs left`. That is dollars left of the dollar cap, and runs left of the run cap. It is never below zero. [C-229]
-- One formatter builds it for every run's `notes:` and for `mm3 budget`, `budget set` and `budget reset`. [C-229]
+- One formatter builds it for every run's `notes:` and for `mm3 budget`. [C-229]
 - It gains a leading `⚠` only at 80% or more used, of either cap. [C-229]
-- Then it says what to do and which cap is low: `⚠ budget: $0.02 left of $0.12 · 3 of 30 runs left → low: ask the owner to run mm3 budget set --usd <n> --runs <n>`. Only the low cap's flag is named. [C-229]
+- Then it says what to do and which cap is low: `⚠ budget: $0.02 left of $0.12 · 3 of 30 runs left → low: ask the owner to raise budget.usd in .mm3/config.yaml, then run mm3 config --load`. Only the low cap's key is named (`budget.usd`, `budget.runs`, or both). [C-229]
 - A cap that concurrent runs overshot says how much was used, instead of reading as exactly at the cap: `0 of 3 runs left (5 used)`, `$0.00 left of $5.00 ($5.50 used)`. [C-229]
 - Spend under a cent is never hidden. Dollars left gain just enough decimals to differ from the cap: `$4.998 left of $5.00`. [C-229]
 - Below 80% there is no warning. So an agent reads a nearly-full budget as room to keep working. [C-229]
@@ -1332,6 +1340,16 @@ It has its own shape and its own rule.
 
 `mm3 agent` with no target lists one atomic purpose line under each verb and tool, not just its name. [C-189]
 
+**Guidance for agents:**
+
+- The plugin carries one short guidance text (under 1,800 bytes, one `IMPORTANT` line, no build sequence): work top-down (`view`, then `scan` only when the location is unknown, then `drill` the flagged item, then `loop` to check a design; `class` for a known location), send a pilot before a batch, a sweep's `gate: fail` is normal, run `mm3 agent probe` before writing questions, get an MM3 verdict before a judgment call about code or a design (it costs a fraction of a cent and every run is recorded, so the next decision starts from evidence), cite run ids, and give helpers `mm3 agent delegate`. The MCP `initialize` reply sends it as `instructions`, so it reaches the lead agent only while the plugin is enabled. `mm3 init --agents` writes the same body behind "If the `mm3` tool is available…", and the `mm3` skill and the project guide carry it too (the skill within its first 100 lines). A test fails if any of them differs. [C-255]
+- `mm3 agent delegate` prints a block to paste into every helper prompt: the same body, then to use only the `mm3` MCP tool (never the shell), never read `.mm3/log.jsonl`, report each run id with its gate and what was not run, and that the lead checks the ids against the ledger. `mm3 agent` points at it. [C-256]
+- The shipped skills follow Anthropic's progressive-disclosure rules: every `SKILL.md` is under 500 lines, a markdown file over 100 lines opens with a `## Contents` list within its first 25 lines, reference files link to no other file (one level deep), and `mm3-probe` keeps its rules (what a probe is, the angles, what makes a good one, bad probes, decisions) in its first 100 lines, with the long material (`mdl`, the per-verb recipes, the per-family pairs) in files linked directly from it. A test fails otherwise. [C-257]
+- Every text an agent reads (the MCP instructions, the AGENTS block, the skill files, every `mm3 agent` and `mm3 help` card, every template and the MCP tool definition) is pinned to a committed snapshot with one fingerprint. A change fails the golden test with a readable diff, and says whether a command, flag or number moved (likely substantive) or only the words (likely a refinement). `npm run guidance:accept` takes a change on purpose. [C-258]
+- Each way an agent was seen to get a request wrong (no decisions, YAML that does not parse, no stdin, no `-`, an unknown command, the YAML under another field or `args` as a string over MCP) stops with one `✖ field: problem → fix` line, the same through the terminal and through MCP, and the corrected request is accepted on the next call. The exact stop texts are pinned in the same snapshot folder. [C-259]
+- Every agentic ceremony run is recorded in `test/agentic/ledger.jsonl`, append-only, free path or not: a `started` line is written before anything runs and carries the version, the commit, the guidance fingerprint, the environment (node, vitest, claude, OS), the tested artifact (the npm integrity hash and the plugin commit) and the definition of success in full (every prompt, model, route, checkpoint and rule, the Juice Shop pin, a plain-English summary and a hash that moves when any of it changes); a `finished` or `aborted` line closes it with every result, the model each agent actually used and a digest of each transcript, and a started line with no closing line shows as incomplete. A run counts toward the release gate (formal) only when the checkout is the clean commit the version was built from and the full trial count was used; any other run is recorded with the reason it does not count. Each level 3 row also records where the tokens went by kind of call (MM3, shell, files, delegation: the calls, about how many tokens the agent wrote and about how many came back into its context), the run's token totals and model turns, and `npm run agentic:trace` prints any transcript call by call, so a comparison can say whether a change added or saved tokens. [C-262] `npm run agentic:release-report` reads a recorded run back, plain words first: the question being tested and what is not covered, each job by its title with its story, what success means, how it went and why it matters, then what the result means for the release; after that the data: the free checks, the context test, a criteria matrix per job (one letter per criterion, a legend above it, a tick or a cross per trial) and, per trial, its attempts, tokens in and out, MM3 calls and a context path (bars of the context the lead carried at each turn); with `--row` it tells one trial call by call, from the tokens the model started with, marking every MM3 call as a sample-provider call (no live call, no spend), and it trusts a transcript only when its digest matches the ledger's. [C-263] Each run is checked for completeness (the definition, the environment, the tested artifact, the guidance coverage, and for every level 3 trial its tokens, tokens by kind of call, the model it used and its transcript digest); the agentic release report prints the result as its record check, and `check:agentic` fails when the newest formal run's record is incomplete. The agentic release report ends with a decision: SHIP, SHIP WITH EXCEPTIONS or DO NOT SHIP, with the reasons in plain words and a targeted fix for each problem. Only the gate model's misses of blocking criteria block a release; a first-request rate under the target, an agent leaving MM3 after a stop (measured from the calls: after each stop, whether the next call was MM3 and whether the next MM3 request got a verdict) and a smaller model's misses are recorded as improvements and accepted as exceptions or patterns, never as blockers; a run that is not formal gives its decision for the record only. Every improvement carries one or two tags from a fixed vocabulary of at most 25 themes (where a fix would land: the guidance, an error message, the tool, a model tier, the test harness, and an `other` valve), used only to group improvements across runs and never to decide anything. [C-265] Every improvement is written into the ledger whether or not it is accepted, and `npm run agentic:patterns` counts them across runs so a pattern that repeats shows. [C-264] Besides the three jobs that show an agent can use MM3 at all, the scenario file has seven jobs for the features new since the last release (changing a setting and seeing it recorded, hitting the spend cap and carrying on, checking that an install is healthy, setting a project up for agents, recovering when the request goes in a field the tool ignores, passing the guidance to a helper, and asking the terminal and the plugin the same thing), each with the state it starts from written down and each checked from the files the agent left and the ledger, never from a verdict's content; an ideal command sequence run through the built CLI passes every checkpoint of every one of them, so no job is impossible. A job cannot force an agent to make a mistake, so the wrong-field job does not wait for one: it starts the agent at the real stop (the prompt quotes the plugin's reply to the YAML sent under `request`, and a test fails if that quote differs by a character from what the real plugin bundle returns) and judges whether the agent's very first MM3 call put the request in `stdin` and was accepted, so it tests whether the stop text is enough to fix the call in one go, not whether agents make the mistake unprompted. [C-266] `npm run agentic:feature -- <job>` runs a trial: the development check of one job, on a local build of the working tree (a packed copy for the CLI route, the tree itself as the plugin), with the model and trial count the developer chooses. It is recorded in the same ledger as a `TRL-####` run, with the definition of success written first and the same release report to read it back, and it is never formal and never counts toward the release gate. It is free by default (the sample provider, no key, no TypeSafe spend); `--paid` uses the live classifier only with an explicit dollar cap given as `--approve-usd`, MM3's own budget holds that cap in every trial project, the real spend is read back from the project ledger, and the run stops when the approved amount is spent. A paid trial is forced onto the live provider, so with no key MM3 stops instead of answering from the sample provider; the providers that answered are recorded for every run, and a run whose record contradicts itself (paid but answered by the sample provider, or free but answered by the live classifier) is INVALID: not a pass and not a fail, with nothing learned from it. A recorded run can be disqualified afterwards by an appended line giving the reason; it then never feeds the release gate and reports as INVALID. [C-267] `npm run ceremony -- --version <v> --only <jobId,jobId> --carry CER-#### [--note "<text>"]` re-runs just the named jobs (the free checks still run in full) and copies every other job's level 3 rows, and the context test, from that earlier run, each carried row tagged `carriedFrom`, with the carry (source, carried jobs, re-run jobs, note) written into the started line; the release gate and the report read a carried run like any other, and the report says in one line which jobs were carried from which run. A carry is refused with one line saying what to change, before anything is recorded or run, unless the source run is formal, finished and not disqualified, every carried job passed there, the guidance fingerprint, the rules, the fixture pin and each carried job's definition are unchanged, and only `scripts/`, `test/`, `docs/`, `.github/`, `CHANGELOG.md`, `BACKLOG.md` and `AGENTS.md` changed between the source run's commit and this one; `--only` without `--carry` runs the named jobs and is recorded as not formal. [C-267] Each line carries the hash of the line before it, so an edited or removed line is caught (`check:agentic` fails on a broken chain), and `npm run agentic:compare` says in words what changed between two runs: the code, the guidance, the definition of success and the results. `npm run check:agentic` fails when no formal run is recorded, when the newest one did not pass, or when the guidance fingerprint or the definition of success it ran under is no longer today's. [C-260]
+- The agentic stage states its success before any run: the scenario file opens with the question being asked and what is not covered, in plain words; every scenario in `test/agentic/scenarios/baseline.json` has a title a person would use, its story, what success means, what a failure means for a release, and its checkpoints; each observable from the transcript and the ledger and none needing a key (the sample provider answers with canned verdicts, so no checkpoint grades whether a verdict is right). A run passes only when every checkpoint does, a failed checkpoint names where to look, and `npm run agentic:sheet` prints the same goal, prompt and checkpoints as a sheet for a person to run. The gate model must pass at least the configured number of its trials of every scenario on every route; the floor model is reported and never gates. [C-261]
+
 - **The shape:** it is `verbs (pick by goal):` followed by one bullet per verb. A bullet looks like `- view: free; what's already known, before any paid call`. Then a `tools:` section shaped the same way. [C-189]
 - **Why:** an agent holding a goal ("is this handler safe to merge?") rather than a verb name can map straight to the right one. [C-189]
 - **The closing `run:` lines** say what each next step is for, not just its name. [C-189]
@@ -1355,7 +1373,7 @@ The Claude Code skill's own "Run this first" guidance sends a cold agent to `mm3
 ### Request basics
 
 - `mak.verb` is optional. The tool name wins, and a mismatch is sent back. [C-085]
-- `depth` counts `concerns:` categories only, exactly 3k of them. [C-086]
+- `depth` counts `concerns:` categories only, exactly 3k of them (k from the project's tier for that verb; 1, 2, 3 by default). [C-086]
 - `decisions:` questions never count toward `depth`. [C-086]
 - Nested items use `- name: <item>` plus child layers beside it. This is what agents write naturally. [C-087]
 - Different items may have different child layers. [C-087]
@@ -1444,8 +1462,10 @@ The Claude Code skill's own "Run this first" guidance sends a cold agent to `mm3
 - A run whose every answer is reused from prior runs is never blocked by an already-reached budget cap, on any verb. [C-136] [C-149] [C-150] [C-151] [C-152]
 - The cap is checked only when the run would actually need to call the classifier. [C-136] [C-149] [C-150] [C-151] [C-152]
 - Reuse skips only the spend gate. It never skips the ledger gate: the ledger must still read cleanly and accept the new line either way. [C-136] [C-149] [C-150] [C-151] [C-152]
-- `mm3 budget`'s cap-reached message gives the same command as the low-budget warning. That is `mm3 budget set` with the flag of each cap that tripped: `--runs <n>`, `--usd <n>`, or both. [C-133]
-- `mm3 budget reset` restarts the counted window but raises no cap. [C-133]
+- The cap-reached message gives the same fix as the low-budget warning: raise `budget.usd`, `budget.runs`, or both (whichever tripped) in `.mm3/config.yaml`, then run `mm3 config --load`. [C-133]
+- `mm3 budget` only reads. It prints the budget line and, unless that line is already a warning (which carries its own fix), `→ to change it: edit budget.usd / budget.runs in .mm3/config.yaml, then run mm3 config --load`. [C-251]
+- `mm3 budget set` and `mm3 budget reset` no longer exist. Each stops with exit 2, says where to go (the config, then `mm3 config --load`), and writes nothing. [C-252]
+- `mm3 config --load` starts the budget count over only when the budget changed since the last load (`usd`, `runs` or `per`; not `warnAt`) and the file has no `budget.since` of its own. The start time is recorded in that load's ledger receipt, never in `config.yaml`, and the load prints `count restarted`. A later load that leaves the budget alone keeps the restarted count, the first load of a project never restarts what was already spent, and runs in the same second as the load still count, so the count errs toward counting a little more, never less. [C-253]
 
 ### Node version
 
@@ -1464,10 +1484,10 @@ The Claude Code skill's own "Run this first" guidance sends a cold agent to `mm3
 
 **On an older Node:**
 
-- Every command exits 2 with exactly `✖ node: v<version> is too old → install Node 22.13 or newer (it powers the ledger index); https://nodejs.org`. [C-106]
+- Every command exits 2 with exactly `✖ node: v<version> is too old → install Node 22.13 or newer (it powers the ledger index); https://nodejs.org`, then the pointer line (`→ see: mm3 agent <command>` from the CLI, `→ see: mm3 agent` from the plugin). [C-106]
 - The exception is `doctor`. It still runs, free and with no call. It shows `node: v<version> ✖ too old → install Node 22.13+` and `index: none (needs Node 22.13+)` in its own output. Then it too exits 2 rather than 0. [C-106]
 - `mm3 mcp` still answers `initialize` and `tools/list`, so a client's handshake never hangs. [C-106]
-- Every `tools/call` comes back `isError: true` with that same line, whatever command was actually asked for, `doctor` included. The guard runs before the requested command ever does. [C-106]
+- Every `tools/call` comes back `isError: true` with that same line and the overview pointer, whatever command was actually asked for, `doctor` included. The guard runs before the requested command ever does. [C-106]
 
 **The index fallback is a backstop only:**
 
@@ -1492,10 +1512,32 @@ The Claude Code skill's own "Run this first" guidance sends a cold agent to `mm3
 - With no project it stops with `✖ config: ... → ...` at exit 2. [C-226]
 - The starter is built from the same defaults table the display uses. It is valid as written, and stays valid when any single value line is uncommented. [C-226]
 
+**`mm3 config --load [file]`, and the file as the config:**
+
+- `mm3 config --load` checks `.mm3/config.yaml` with the same validation `mm3 config` and `mm3 doctor` use. If it is clean, it appends a receipt to the ledger (a `config` record: when, the sha256 of the file, the settings it held, and what changed since the previous receipt) and prints `✔ valid · loaded · N changed from the defaults` for the first load, or `… N changed since the last load` after that, then one line per change such as `depth.class: [3, 6, 9] → [15, 30, 45]`. A setting taken out of the file shows as going back to its default. An override equal to its default changes nothing and is not counted. Giving `--load` and `--write` together is a usage stop that says what to run. [C-242]
+- A file with any problem prints every `✖ config.<path>: problem → fix`, exits 2, and records nothing. [C-243]
+- `mm3 config --load <file>` checks that file first and only then copies it, byte for byte, to `.mm3/config.yaml` and loads it. A file that does not check out replaces nothing. Loading never rewrites your own `config.yaml`, so its comments stay. [C-244]
+- `.mm3/config.yaml` is the config, and every request reads it itself: there is no loaded copy and no other file. An edit applies at once, loaded or not; deleting the file returns to the defaults at once. A load only checks the file and records it. MM3's own writes to the file (`report fields --accept`, the legacy-budget migration) keep your comments. [C-245]
+- `mm3 doctor` and `mm3 config` compare the file with the ledger's latest receipt. No file and no receipt, or a starter that sets nothing: `✔ config: defaults`. The file is exactly what the latest receipt recorded: `✔ config: loaded <time>`. The file differs from the latest receipt, or has none: `⚠ config.yaml is in effect but its latest change is not recorded → mm3 config --load`. The file is gone after a load was recorded: `⚠ config.yaml is gone (last loaded <time>) → the defaults apply; run mm3 config --load to record the defaults, or restore the file`. [C-246]
+- A `config.yaml` with problems shows every problem in `mm3 config` and `mm3 doctor`, with `✖ config.yaml has a problem → fix it: paid runs stop until you do`. `class`, `scan`, `drill`, `loop` and `replay` (dry runs too) then exit 2 with the problems and `✖ config: paid runs stop until .mm3/config.yaml is fixed → fix it, then run mm3 config --load`, and spend nothing. The free reads (`view`, `report`, `budget`, `config`, `doctor`) still answer, with the good keys and defaults for the rest. [C-247]
+- There is no `mm3 config --reset`: it is an unknown flag. A project goes back to the defaults by deleting `.mm3/config.yaml` and running `mm3 config --load`. That exits 0, prints `✔ no config.yaml · the defaults apply · recorded` with what changed, and records a receipt of the defaults (flagged `absent`, restarting the budget count if the budget changed), so `mm3 doctor` reads `✔ config: defaults` again. With no `config.yaml` and no earlier load, or once the defaults are recorded, it exits 0 with `✔ no config.yaml · the defaults already apply · nothing to record → mm3 config --write for a starter` and records nothing. `mm3 agent config` says this. [C-248]
+- A `config` record is never a run and never counts toward the budget or the run counter. A copy of MM3 that meets a record kind it does not know stops with `✖ ledger: line N of .mm3/log.jsonl has a "<kind>" record this MM3 does not know → update this copy of MM3 (mm3 doctor shows which)`, not "not a ledger record". [C-249]
+- A leftover `config.active.json` from an older MM3 is never reported as a misnamed config: the `found .mm3/<name> — did you mean config.yaml? → rename it` note still flags `config.ymal`, `config.yml` and the like. [C-250]
+
+**Settings that change the counts (depth, items, evidence, lens, warnAt):**
+
+- `depth:` gives `class`, `scan` and `loop` each a list of three whole numbers: how many concerns (probes of 3 questions each) `quick`, `standard` and `thorough` ask. The default is `[3, 6, 9]` for each, which is 9, 18 and 27 questions. A request still says `depth: quick`; the config says what that means for that verb. A verb left out keeps the default. [C-235]
+- A depth list must be three whole numbers of at least 1, ascending (`quick <= standard <= thorough`). `drill`, `replay` and `view` have no depth setting, and naming one stops with a fix. Three questions per probe, times the thorough number, plus the most decisions allowed (5), must fit in `sweep.maxQuestionsPerCall`. [C-236]
+- With `depth.class: [15, 30, 45]` a `quick` class request expects exactly 15 concerns categories (45 questions), and a stop names that number. [C-237]
+- `sweep.itemsPerLayer` sets the items asked per layer at `quick`, `standard` and `thorough` (default 10, 20, 30): whole numbers of at least 1, ascending. The lower-only `sweep.maxItems` still applies on top. [C-238]
+- `budget.warnAt` (default 0.8) is the share of a cap at which the budget line starts to warn: above 0 and at most 1. [C-239]
+- `evidence.perItemChars`, `evidence.totalChars` and `evidence.maxFiles` (default 20,000, 60,000 and 500) are whole numbers of at least 1, and `perItemChars` is no larger than `totalChars`. `lens.concernAt`, `lens.weakBelow` and `lens.strongAt` (default 0.5, 0.35, 0.8) lie between 0 and 1 and must satisfy `weakBelow < concernAt < strongAt`. A group that breaks its rule is dropped whole, with a stop saying what to change. [C-240]
+- `mm3 config` and the `--write` starter list every one of these settings, with the question count beside each `depth` tier. With no `config.yaml` every value is the default and no verb's answer changes. [C-241]
+
 **Empty sections:**
 
 - A config section with every child commented out parses as null and means "no overrides". [C-227]
-- That covers `sweep:`, `reuse:`, `budget:`, `mdl:`, `pricing:`, and a `pricing` or `mdl` entry such as `jev-1.13.0:` with nothing under it. [C-227]
+- That covers `sweep:`, `sweep.itemsPerLayer:`, `reuse:`, `depth:`, `evidence:`, `lens:`, `budget:`, `mdl:`, `pricing:`, and a `pricing` or `mdl` entry such as `jev-1.13.0:` with nothing under it. [C-227]
 - It is never a `✖ config.<section>: is not a mapping` stop. [C-227]
 
 **A misnamed config file:**
@@ -1590,6 +1632,10 @@ The key's source (`env`, `keychain` or `file`) is carried alongside it. [C-097]
 - `doctor` names the CLI's own install: `cli: <path> · installed --<mode> ...`. [C-098]
 - `doctor` names the Claude Code plugin's overall state: `plugin: mm3@mvp-scale · <scope> scope`, or `not installed → ...`. [C-098]
 
+**The `versions:` line:**
+
+- When Claude Code has the plugin installed, `doctor` compares this copy of MM3 with the plugin's own version, read from Claude's install record. It prints `versions: ✔ the plugin and this copy are both 0.1.2`, or `versions: ⚠ the plugin is 0.1.1 (f337f61) and this copy is 0.1.2 → update the older one: /plugin update in Claude Code, or npm install -g @mvpscale/mm3@latest`. The base versions must match; a nightly build (`x.y.z-nightly.<date>.g<sha>`) must also be at the plugin's commit, and its warning names `@nightly` in the npm command, not `@latest`, which is the older release. With no plugin installed there is no line. [C-254]
+
 **The `plugin:` nudge:**
 
 - Using MM3 is scoped per project. But Claude Code's own `/plugin install` UI defaults to `user` scope. By contrast, `mm3 init` already defaults to `project` scope. [C-177]
@@ -1641,6 +1687,8 @@ The key's source (`env`, `keychain` or `file`) is carried alongside it. [C-097]
 - It points at `mm3 agent`. That is the minimum an agent needs before writing a first real request: its enforced rules and good/bad patterns. [C-176]
 - It does not invite a real request straight off. [C-176]
 - If any step above logged a `✖ problem` line, `next:` never claims the setup is usable. It points back at the fix and at re-running `mm3 init`. [C-176]
+- A step that failed makes `init` exit 1, not 0 (a missing `npm`, an install that errors, a plugin step that errors, an unmatched marker in `init --agents`). The one exception is the `✖ cli:` advice that the install worked but its folder is not on `PATH` yet, which stays exit 0. [C-176]
+- A command that is not installed is said in words (`npm install … failed (npm was not found on PATH) → install Node.js, which includes npm, then re-run "mm3 init"`), never as `spawnSync npm ENOENT`. [C-176]
 
 **`mm3 init --agents`** is an opt-in step that runs on its own. [C-233]
 
@@ -1657,11 +1705,11 @@ The key's source (`env`, `keychain` or `file`) is carried alongside it. [C-097]
 **The one-time `agents:` note:**
 
 - It appears when a project's `AGENTS.md` has no mm3 block (`no-block`). [C-234]
-- It also appears when `CLAUDE.md` or `.claude/CLAUDE.md` exists without a line importing AGENTS.md (`claude-md-no-import`). [C-234]
+- It also appears when `CLAUDE.md` or `.claude/CLAUDE.md` exists without a line importing AGENTS.md, or when neither exists (`claude-md-no-import`): Claude Code reads CLAUDE.md, never AGENTS.md. [C-234]
 - The project gets ONE extra note on the first real run of `class`, `scan`, `drill`, `loop` or `replay`, just before the budget note. [C-234]
 - For `no-block` it says `agents: no MM3 guidance in AGENTS.md → mm3 init --agents adds it (shows the lines first)`. [C-234]
 - For `claude-md-no-import` it says `agents: Claude reads CLAUDE.md, not AGENTS.md → add the line @AGENTS.md to CLAUDE.md (or run mm3 init --agents)`. [C-234]
-- A marker file in `.mm3/` (`agents-note-shown`) makes it appear once per project. [C-234]
+- It appears once per project, on the first real run: the ledger already knows that no run is recorded yet, so there is no marker file. [C-234]
 - A `--dry-run` neither shows it nor writes the marker. [C-234]
 - A project already `ok` never sees it. [C-234]
 
@@ -1690,14 +1738,26 @@ The key's source (`env`, `keychain` or `file`) is carried alongside it. [C-097]
 - The plugin bundles a stdio MCP server, `mm3 mcp`. It is hand-rolled, with no SDK dependency. [C-103]
 - It has one tool, `mm3`, taking `{ args: string[], stdin?: string, project?: string }`. [C-103]
 - It runs exactly what `mm3 <args…>` would run, in-process. It treats `stdin` as what real stdin would have supplied. [C-103]
+- A call that carried a field the tool does not take (an agent's own name for the YAML, such as `request`) is checked before its request is read. When it reads stdin (`-`) and no `stdin` text came with it, it runs nothing and returns one block, `✖ arguments: ignored "request" → …the request YAML goes in "stdin"`, ending with the pointer; it never says `request: empty`. Any other failing call gets that line after its own stop and before the pointer. A passing call is untouched. [C-103]
+- A `stdin` that is not text (an object, a list) stops with `✖ stdin: must be text, got object → send the request YAML as one string in stdin`, and runs nothing. [C-103]
+- A call whose `args` is not an array (an agent folded the YAML into a string) stops with `✖ args: must be an array of strings, got string → args: ["class","-"] and the request YAML as the separate field stdin`, and runs nothing, instead of printing the generic help. [C-103]
 - It returns the same text output the CLI would print. It returns the exit code as `isError`, which is true when the exit code isn't 0. [C-103]
 - There is no second contract. [C-103]
 
 **The tool description:**
 
-- It opens with a directive, not a description: "First call args: ["agent"] to learn the commands and rules, then args: ["agent", "<command>"] before writing a request." [C-186]
+- It opens with one short clause saying when to use the tool, for any caller (lead, helper or workflow): "Quick, citable evidence for judgment calls on code or a design (safe to merge? is it fixed? which option?)." [C-186]
+- Straight after it comes a directive, not a description: "First call args: ["agent"] to learn the commands and rules, then args: ["agent", "<command>"] before writing a request." [C-186]
 - That comes ahead of what the tool otherwise does, which is to run any CLI command in the project. [C-186]
 - The description is the first, and sometimes only, text a cold agent reads before its first call. So it has to name `agent` itself rather than assume the agent already knows to ask for it. [C-186]
+
+**The plugin's nudge hook:**
+
+- The plugin ships one `PreToolUse` hook, declared in `hooks/hooks.json` (the documented plugin location, an event map under a top-level `"hooks"` key) and run by `node` from `${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs`. Enabling the plugin turns it on and disabling it turns it off. [C-268]
+- It fires before the `Agent` tool (and the older `Task` name), where a helper is about to be spawned, and before a `Bash` command that commits, merges, pushes or opens a PR (`git commit|merge|push`, `gh pr`). [C-268]
+- It nudges and never blocks: it prints one JSON object whose `additionalContext` is one line of at most 200 characters naming the next step (the helper moment points at `mm3 agent delegate`; the decision moment says to get a verdict, `view` then `class`, and to cite the `MM3-####` id), and it always exits 0. [C-268]
+- It speaks only when the project (the hook input's `cwd` or the project folder Claude Code names, or a folder above it) has `.mm3/`. It speaks once per agent per moment per session, kept by a marker file in a private folder (mode 0700, named for the user, checked to be a real folder the user owns) inside the temp folder. A marker that cannot be written, or a folder that is not safe to use, does not silence it. [C-268]
+- Garbage or empty input, another tool, another event, a command that decides nothing, or no `.mm3/` prints nothing and exits 0. [C-268]
 
 **Errors:**
 

@@ -25,30 +25,35 @@
  * module also spots a near-miss file name in `.mm3/` (config.ymal, config.yml, ...) that would otherwise be
  * ignored without a word.
  */
-import { existsSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { scalar } from '../contract/emit.ts';
 import { onStore } from '../ledger/lock.ts';
+import { latestConfigRecord } from '../ledger/index.ts';
+import { appendConfig } from '../ledger/log.ts';
 import { ensureDir, type Mm3Paths } from '../ledger/paths.ts';
 import type { VerbResult } from '../verbs/types.ts';
-import { DEFAULT_CONFIG, type ConfigSource, type PricingRate } from './defaults.ts';
-import { resolveConfig, type ResolvedConfig } from './load.ts';
+import { DEFAULT_CONFIG, KEYED_MAPS, type ConfigSource, type Mm3Config, type PricingRate } from './defaults.ts';
+import { configStatus, fingerprintOf, statusLine } from './receipt.ts';
+import { mergeConfig, resolveConfig, type ResolvedConfig } from './load.ts';
+import { checkConfigText } from './parse.ts';
 
-type Prim = string | number | boolean;
+type Prim = string | number | boolean | readonly number[];
 
 // Not emit.ts's own num() (String, not toFixed(2)): that helper caps display at 2 decimal places for
 // probabilities, which would round a real pricing rate like $0.042/Mtok down to "0.04" — silently wrong money.
-const valueText = (v: Prim): string => (typeof v === 'string' ? scalar(v, false) : String(v));
+const valueText = (v: Prim): string => (typeof v === 'string' ? scalar(v, false) : Array.isArray(v) ? `[${v.join(', ')}]` : String(v));
 
 /** One field's line. `value` is this field's real effective value (config/default), when it has one at all;
  *  `example` is only ever shown when neither an override nor a default value exists. The 4 env-aware fields
  *  (provider/baseURL/model/timeoutMs — see load.ts's own module doc) can be labeled source: 'env' while their
  *  config-layer `value` is still undefined (env only wins at real runtime, never shown as this module's own
  *  `config.<field>`); that combination gets its own line rather than crashing on a missing value. */
-function fieldLine(indent: string, key: string, source: ConfigSource | undefined, value: Prim | undefined, example: Prim): string {
+function fieldLine(indent: string, key: string, source: ConfigSource | undefined, value: Prim | undefined, example: Prim, extra = ''): string {
   if ((source === 'config' || source === 'env') && value !== undefined) {
-    return `${indent}${key}: ${valueText(value)}  # ${source === 'config' ? 'from config.yaml' : 'env'}`;
+    return `${indent}${key}: ${valueText(value)}  # ${source === 'config' ? 'from config.yaml' : 'env'}${extra}`;
   }
-  if (value !== undefined) return `${indent}# ${key}: ${valueText(value)}  # default`;
+  if (value !== undefined) return `${indent}# ${key}: ${valueText(value)}  # default${extra}`;
   if (source === 'env') return `${indent}# ${key}: (set via env, not config.yaml)`;
   return `${indent}# ${key}: ${valueText(example)}  # example`;
 }
@@ -65,6 +70,11 @@ const EXAMPLES: Record<string, Prim> = {
   'reuse.maxCommits': 20,
 };
 const ex = (key: string): Prim => EXAMPLES[key]!;
+
+const ITEM_TIERS = ['quick', 'standard', 'thorough'] as const;
+const DEPTH_VERBS = ['class', 'scan', 'loop'] as const;
+const EVIDENCE_FIELDS = ['perItemChars', 'totalChars', 'maxFiles'] as const;
+const LENS_FIELDS = ['concernAt', 'weakBelow', 'strongAt'] as const;
 
 const PRICING_FIELDS = ['inputPerMTok', 'outputPerMTok', 'perSecond', 'perCall'] as const;
 
@@ -119,6 +129,7 @@ export function formatConfig(resolved: ResolvedConfig, projectLine: string, extr
     fieldLine('    ', 'runs', s['budget.runs'], c.budget.runs, 500),
     fieldLine('    ', 'per', s['budget.per'], c.budget.per, 'total'),
     fieldLine('    ', 'since', s['budget.since'], c.budget.since, ex('budget.since')),
+    fieldLine('    ', 'warnAt', s['budget.warnAt'], c.budget.warnAt, 0.8),
     '',
     fieldLine('  ', 'provider', s.provider, c.provider, ex('provider')),
     fieldLine('  ', 'baseURL', s.baseURL, c.baseURL, ex('baseURL')),
@@ -133,6 +144,8 @@ export function formatConfig(resolved: ResolvedConfig, projectLine: string, extr
     '  sweep:',
     fieldLine('    ', 'maxItems', s['sweep.maxItems'], c.sweep.maxItems, ex('sweep.maxItems')),
     fieldLine('    ', 'maxQuestionsPerCall', s['sweep.maxQuestionsPerCall'], c.sweep.maxQuestionsPerCall, 500),
+    '    itemsPerLayer:',
+    ...ITEM_TIERS.map((t) => fieldLine('      ', t, s[`sweep.itemsPerLayer.${t}`], c.sweep.itemsPerLayer[t], 10)),
     '',
     fieldLine('  ', 'requestMaxBytes', s.requestMaxBytes, c.requestMaxBytes, 1_048_576),
     '',
@@ -140,11 +153,20 @@ export function formatConfig(resolved: ResolvedConfig, projectLine: string, extr
     fieldLine('    ', 'maxAgeDays', s['reuse.maxAgeDays'], c.reuse.maxAgeDays, ex('reuse.maxAgeDays')),
     fieldLine('    ', 'maxCommits', s['reuse.maxCommits'], c.reuse.maxCommits, ex('reuse.maxCommits')),
     '',
+    '  depth:',
+    ...DEPTH_VERBS.map((v) => fieldLine('    ', v, s[`depth.${v}`], c.depth[v], [3, 6, 9], ` · ${c.depth[v].map((n) => n * 3).join(', ')} questions`)),
+    '',
+    '  evidence:',
+    ...EVIDENCE_FIELDS.map((f) => fieldLine('    ', f, s[`evidence.${f}`], c.evidence[f], 0)),
+    '',
+    '  lens:',
+    ...LENS_FIELDS.map((f) => fieldLine('    ', f, s[`lens.${f}`], c.lens[f], 0)),
+    '',
     ...mdlLines(resolved),
     '',
     'notes:',
     '  - free: never spends; plain config never writes',
-    ...(resolved.present ? [`  - customized in ${configFileLabel(projectLine)} → edit it, then run mm3 config to check`] : ['  - no config.yaml here → every value is a default or env var', `  - ${customizeNote(projectLine)}`]),
+    ...(resolved.present ? [`  - customized in ${configFileLabel(projectLine)} → edit it (it applies at once), then run mm3 config --load to record the change`] : ['  - no config.yaml here → every value is a default or env var', `  - ${customizeNote(projectLine)}`]),
     ...extraNotes.map((n) => `  - ${n}`),
   ];
   return `${lines.join('\n')}\n`;
@@ -162,7 +184,7 @@ export function nearMissNotes(paths: Mm3Paths | undefined): string[] {
     return [];
   }
   return names
-    .filter((n) => n.toLowerCase().startsWith('config') && n !== 'config.yaml')
+    .filter((n) => n.toLowerCase().startsWith('config') && n !== 'config.yaml' && !n.startsWith('config.active.json')) // a copy older versions of MM3 left behind (and its temp file) are MM3's own, not a misnamed config
     .sort()
     .slice(0, 3)
     .map((n) => `found .mm3/${n} — did you mean config.yaml? → rename it`);
@@ -170,9 +192,12 @@ export function nearMissNotes(paths: Mm3Paths | undefined): string[] {
 
 export function runConfig(env: Record<string, string | undefined>, paths: Mm3Paths | undefined, projectLine: string): VerbResult {
   const resolved = resolveConfig(paths, env);
-  const notes = nearMissNotes(paths);
-  if (resolved.stops.length) {
-    const stopLines = resolved.stops.map((st) => st.text).join('\n');
+  const status = configStatus(paths);
+  const line = statusLine(status);
+  const notes = [...(line ? [line] : []), ...nearMissNotes(paths)];
+  // The problems shown are the file's own, as it stands now: it is what every request reads.
+  if (status.fileStops.length) {
+    const stopLines = status.fileStops.map((st) => st.text).join('\n');
     return { exit: 2, text: `${stopLines}\n\n${formatConfig(resolved, projectLine, notes)}\n→ see: mm3 agent config` };
   }
   return { exit: 0, text: formatConfig(resolved, projectLine, notes) };
@@ -185,6 +210,7 @@ const HINTS: Record<string, string> = {
   'budget.runs': 'paid runs MM3 may make',
   'budget.per': 'count the caps: total | day | hour',
   'budget.since': 'only count spend after this moment',
+  'budget.warnAt': 'share of a cap spent before the budget line warns (above 0, up to 1)',
   provider: 'typesafe | fake (free sample answers)',
   baseURL: 'where classifier calls go (https)',
   model: 'the pinned classifier model',
@@ -195,7 +221,23 @@ const HINTS: Record<string, string> = {
   sweep: 'limits on scan and loop',
   'sweep.maxItems': 'most items one sweep may look at (can only lower the built-in cap)',
   'sweep.maxQuestionsPerCall': 'most questions in one classifier call',
+  'sweep.itemsPerLayer': 'items asked per layer at each depth',
+  'sweep.itemsPerLayer.quick': 'items per layer at depth quick',
+  'sweep.itemsPerLayer.standard': 'items per layer at depth standard',
+  'sweep.itemsPerLayer.thorough': 'items per layer at depth thorough',
   requestMaxBytes: 'largest request file MM3 will read',
+  depth: 'probes (3 questions each) at quick, standard, thorough, per verb',
+  'depth.class': 'class: three whole numbers, ascending',
+  'depth.scan': 'scan: three whole numbers, ascending',
+  'depth.loop': 'loop: three whole numbers, ascending',
+  evidence: 'how much code or text one call may carry',
+  'evidence.perItemChars': 'characters kept per file or item',
+  'evidence.totalChars': 'characters kept in one call (at least perItemChars)',
+  'evidence.maxFiles': 'files one glob may match',
+  lens: 'consensus thresholds over the yes/no answers (weakBelow < concernAt < strongAt)',
+  'lens.concernAt': 'a probe at or above this reads as a concern',
+  'lens.weakBelow': 'consensus is WEAK below this decisiveness',
+  'lens.strongAt': 'consensus is STRONG at or above this agreement',
   reuse: 'when a stored answer is too old to reuse (off unless set)',
   'reuse.maxAgeDays': 're-ask answers older than this many days',
   'reuse.maxCommits': 're-ask after this many commits',
@@ -214,7 +256,8 @@ const STARTER_FRONT = [
   '#',
   '# Every setting below is commented out, so MM3 runs on its built-in defaults. To change one, uncomment its',
   '# line (delete the leading "# ") and change the value. To go back to the default, delete the line or comment it',
-  '# out again. Run mm3 config any time to check the file; it lists every problem and where each value comes from.',
+  '# out again. Run mm3 config to check the file: it lists every problem and where each value comes from. Edits apply',
+  '# at once; mm3 config --load checks the file and records the change in the ledger (a bad file is refused).',
   '#',
   '# Precedence: environment variable > this file > built-in default.',
   '# Safe to commit: it holds settings only, never keys (those go in env or the keychain). The ledger is not committed.',
@@ -243,6 +286,7 @@ export function starterConfig(): string {
     setting('  ', 'runs', 'budget.runs'),
     setting('  ', 'per', 'budget.per'),
     setting('  ', 'since', 'budget.since'),
+    setting('  ', 'warnAt', 'budget.warnAt'),
     '',
     top('provider'),
     top('baseURL'),
@@ -266,12 +310,23 @@ export function starterConfig(): string {
     header('', 'sweep', 'sweep'),
     setting('  ', 'maxItems', 'sweep.maxItems'),
     setting('  ', 'maxQuestionsPerCall', 'sweep.maxQuestionsPerCall'),
+    header('  ', 'itemsPerLayer', 'sweep.itemsPerLayer'),
+    ...ITEM_TIERS.map((t) => setting('    ', t, `sweep.itemsPerLayer.${t}`)),
     '',
     top('requestMaxBytes'),
     '',
     header('', 'reuse', 'reuse'),
     setting('  ', 'maxAgeDays', 'reuse.maxAgeDays'),
     setting('  ', 'maxCommits', 'reuse.maxCommits'),
+    '',
+    header('', 'depth', 'depth'),
+    ...DEPTH_VERBS.map((v) => setting('  ', v, `depth.${v}`)),
+    '',
+    header('', 'evidence', 'evidence'),
+    ...EVIDENCE_FIELDS.map((f) => setting('  ', f, `evidence.${f}`)),
+    '',
+    header('', 'lens', 'lens'),
+    ...LENS_FIELDS.map((f) => setting('  ', f, `lens.${f}`)),
     '',
     header('', 'mdl', 'mdl'),
     '#   risk: {values: [low, medium, high]}  # example: your own values for one field',
@@ -285,12 +340,13 @@ export function starterConfig(): string {
 export function runConfigWrite(paths: Mm3Paths | undefined, projectLine: string): VerbResult {
   if (!paths) return { exit: 2, text: '✖ config: no project here → run inside a project (a folder with .git or .mm3), or set MM3_HOME' };
   const label = configFileLabel(projectLine);
-  const exists: VerbResult = { exit: 0, text: `config: ${label} already exists → not overwritten; edit it, then run mm3 config to check\n` };
+  const exists: VerbResult = { exit: 0, text: `config: ${label} already exists → not overwritten; edit it, then run mm3 config --load to activate the change\n` };
   if (existsSync(paths.config)) return exists;
   const wrote = onStore(paths.config, 'write', () => {
     ensureDir(paths);
     try {
-      writeFileSync(paths.config, starterConfig(), { flag: 'wx' });
+      const starter = starterConfig();
+      writeFileSync(paths.config, starter, { flag: 'wx' });
       return true;
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === 'EEXIST') return false;
@@ -298,5 +354,109 @@ export function runConfigWrite(paths: Mm3Paths | undefined, projectLine: string)
     }
   });
   if (!wrote) return exists;
-  return { exit: 0, text: `wrote: ${label}\nnotes:\n  - every setting is commented out → uncomment a line and change its value, then run mm3 config to check\n` };
+  return { exit: 0, text: `wrote: ${label}\nnotes:\n  - every setting is commented out → uncomment a line and change its value, then run mm3 config --load to check and activate it\n` };
+}
+
+const show = (v: unknown): string => {
+  if (v === undefined) return '(not set)';
+  if (Array.isArray(v)) return `[${v.map(show).join(', ')}]`;
+  if (typeof v === 'object' && v !== null) return `{${Object.entries(v).map(([k, x]) => `${k}: ${show(x)}`).join(', ')}}`;
+  return typeof v === 'string' ? scalar(v, false) : String(v);
+};
+const isTree = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** Every setting an override changes from its default, as `path: default → value` (an override equal to its default
+ *  changes nothing and is not listed). A keyed map's entry (a pricing model, an mdl field) is one change. */
+function changesFrom(over: Record<string, unknown>, def: Record<string, unknown>, prefix: string, out: string[]): void {
+  for (const [k, v] of Object.entries(over)) {
+    if (v === undefined) continue;
+    const at = prefix ? `${prefix}.${k}` : k;
+    const d = def[k];
+    if (isTree(v) && !(KEYED_MAPS as readonly string[]).includes(prefix)) changesFrom(v, isTree(d) ? d : {}, at, out);
+    else if (JSON.stringify(v) !== JSON.stringify(d)) out.push(`${at}: ${show(d)} → ${show(v)}`);
+  }
+}
+
+const MAX_CHANGES_SHOWN = 20;
+
+const isoSeconds = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+/** The caps or the window kind differ between two override sets, each read against the defaults (`warnAt` and `since` don't count). */
+const budgetChanged = (a: Partial<Mm3Config>, b: Partial<Mm3Config>): boolean => {
+  const d = DEFAULT_CONFIG.budget;
+  return (a.budget?.usd ?? d.usd) !== (b.budget?.usd ?? d.usd) || (a.budget?.runs ?? d.runs) !== (b.budget?.runs ?? d.runs) || (a.budget?.per ?? d.per) !== (b.budget?.per ?? d.per);
+};
+
+/** `mm3 config --load` with no `.mm3/config.yaml`: the defaults already apply, so there is nothing to check. When a
+ *  load of a file was recorded before, taking the file away is a change too: record a receipt of the defaults (so the
+ *  ledger says when, what changed and, if the budget changed, where its count restarts) and doctor stops warning. With
+ *  no earlier load, or when the defaults were already recorded, there is nothing to record. */
+function loadAbsent(paths: Mm3Paths, now: number): VerbResult {
+  const previous = latestConfigRecord(paths);
+  if (!previous || previous.absent) return { exit: 0, text: '✔ no config.yaml · the defaults already apply · nothing to record → mm3 config --write for a starter\n' };
+  const previousSettings = (previous.settings ?? {}) as Partial<Mm3Config>;
+  const changes: string[] = [];
+  changesFrom(mergeConfig({}).config as unknown as Record<string, unknown>, mergeConfig(previousSettings).config as unknown as Record<string, unknown>, '', changes);
+  const restarted = budgetChanged(previousSettings, {});
+  ensureDir(paths);
+  appendConfig(paths, { fingerprint: fingerprintOf(''), settings: {}, changes, absent: true, ...(restarted ? { windowSince: isoSeconds(now) } : previous.windowSince ? { windowSince: previous.windowSince } : {}) }, now);
+  const shown = changes.slice(0, MAX_CHANGES_SHOWN).map((c) => `  ${c}`);
+  if (changes.length > shown.length) shown.push(`  … ${changes.length - shown.length} more`);
+  return { exit: 0, text: `${['✔ no config.yaml · the defaults apply · recorded', ...shown, ...(restarted ? ['  count restarted: the budget changed, so spend is counted from now'] : [])].join('\n')}\n` };
+}
+
+/** `mm3 config --load [file]`: checks the file with the same validation `mm3 config`/`mm3 doctor` use and, only if it is
+ *  clean, appends a receipt to the ledger: when, the file's hash, the settings, what changed since the previous receipt
+ *  (or from the defaults, for the first). It does not change what runs read: every request already reads config.yaml
+ *  itself. A bad file prints every problem, exits 2 and records nothing. A `file` other than `.mm3/config.yaml` is checked
+ *  first and then copied there verbatim (comments and all; the user's own config.yaml is never rewritten in place). When
+ *  the budget (usd, runs or per) changed since the previous receipt, and the file has no `budget.since` of its own, the
+ *  receipt starts the budget count over from this moment; a later load that leaves the budget alone carries that start
+ *  forward. */
+export function runConfigLoad(paths: Mm3Paths | undefined, file: string | undefined, cwd: string, projectLine: string, now: number = Date.now()): VerbResult {
+  if (!paths) return { exit: 2, text: '✖ config: no project here → run inside a project (a folder with .git or .mm3), or set MM3_HOME' };
+  const label = configFileLabel(projectLine);
+  if (file === undefined && !existsSync(paths.config)) return loadAbsent(paths, now);
+  const source = file === undefined ? paths.config : path.resolve(cwd, file);
+  let text: string;
+  try {
+    text = readFileSync(source, 'utf8');
+  } catch {
+    return {
+      exit: 2,
+      text:
+        file === undefined
+          ? `✖ config: no ${label} to load → run mm3 config --write for a starter, or name a file: mm3 config --load <file>\n`
+          : `✖ config: cannot read "${file}" → check the path\n`,
+    };
+  }
+  const checked = checkConfigText(text);
+  if (checked.stops.length) {
+    return { exit: 2, text: `${checked.stops.map((s) => s.text).join('\n')}\nnot loaded: nothing was recorded\n→ see: mm3 agent config\n` };
+  }
+  const copied = path.resolve(source) !== path.resolve(paths.config);
+  if (copied) {
+    onStore(paths.config, 'write', () => {
+      ensureDir(paths);
+      writeFileSync(paths.config, text);
+    });
+  }
+  const previous = latestConfigRecord(paths);
+  const previousSettings = (previous?.settings ?? {}) as Partial<Mm3Config>;
+  const changes: string[] = [];
+  changesFrom(mergeConfig(checked.overrides).config as unknown as Record<string, unknown>, mergeConfig(previousSettings).config as unknown as Record<string, unknown>, '', changes);
+  let windowSince: string | undefined;
+  let restarted = false;
+  if (previous && checked.overrides.budget?.since === undefined) {
+    if (budgetChanged(previousSettings, checked.overrides)) {
+      windowSince = isoSeconds(now);
+      restarted = true;
+    } else windowSince = previous.windowSince;
+  }
+  ensureDir(paths);
+  appendConfig(paths, { fingerprint: fingerprintOf(text), settings: checked.overrides as Record<string, unknown>, changes, ...(windowSince ? { windowSince } : {}) }, now);
+  const shown = changes.slice(0, MAX_CHANGES_SHOWN).map((c) => `  ${c}`);
+  if (changes.length > shown.length) shown.push(`  … ${changes.length - shown.length} more`);
+  const head = `✔ valid · loaded · ${changes.length} changed ${previous ? 'since the last load' : 'from the defaults'}`;
+  const restartLine = restarted ? ['  count restarted: the budget changed, so spend is counted from now'] : [];
+  return { exit: 0, text: `${[head, ...shown, ...restartLine, ...(copied ? [`  copied ${file} → ${label}`] : [])].join('\n')}\n` };
 }

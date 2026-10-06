@@ -16,6 +16,7 @@ import {
   DECISIONS_MAX,
   DECISIONS_MIN,
   DEPTH_COUNT,
+  DEPTHS,
   SWEEP_ITEM_CAP,
   type Category,
   type Depth,
@@ -30,6 +31,18 @@ import {
   type Mdl,
   FAMILIES,
 } from './types.ts';
+
+/** What a project's config says about the contract's counts; omitted (or a field left out) means the built-in
+ *  defaults (DEPTH_COUNT, SWEEP_ITEM_CAP). This module stays pure: the caller resolves the config and passes it in. */
+export interface ContractLimits {
+  /** Probes (3 questions each) this verb asks at quick, standard and thorough. */
+  depth?: readonly [number, number, number];
+  /** Items asked per layer at each depth. */
+  itemsPerLayer?: Readonly<Record<Depth, number>>;
+}
+
+const probesAt = (limits: ContractLimits | undefined, depth: Depth): number => limits?.depth?.[DEPTHS.indexOf(depth)] ?? DEPTH_COUNT[depth] / 3;
+const itemCapAt = (limits: ContractLimits | undefined, depth: Depth): number => limits?.itemsPerLayer?.[depth] ?? SWEEP_ITEM_CAP[depth];
 
 export type Validated = { ok: true; request: Request; notes: string[] } | { ok: false; stops: Stop[] };
 
@@ -64,11 +77,13 @@ const RESERVED = ['id', 'gate', 'goal', 'consensus', 'escalate', 'regressed', 'e
 export const IRREVERSIBLE = /\b(delete|deploy|drop|pay|payment|migrat\w*|secret|credential)s?\b/iu;
 export const IRREVERSIBLE_NOTE = "looks irreversible; don't act on this alone";
 
-function how(field: Field, verb: Verb): string {
+function how(field: Field, verb: Verb, limits?: ContractLimits): string {
   const sweep = verb === 'scan' || verb === 'loop' || verb === 'drill';
   switch (field) {
     case 'depth':
-      return sweep ? 'add "depth: quick" (at most 10 items asked per layer; standard 20, thorough 30)' : 'add "depth: quick" (9 yes/no questions across 3 concerns; standard 18, thorough 27)';
+      return sweep
+        ? `add "depth: quick" (at most ${itemCapAt(limits, 'quick')} items asked per layer; standard ${itemCapAt(limits, 'standard')}, thorough ${itemCapAt(limits, 'thorough')})`
+        : `add "depth: quick" (${3 * probesAt(limits, 'quick')} yes/no questions across ${probesAt(limits, 'quick')} concerns; standard ${3 * probesAt(limits, 'standard')}, thorough ${3 * probesAt(limits, 'thorough')})`;
     case 'where':
       return 'add "where: [path/to/file.ts]"';
     case 'ask':
@@ -230,7 +245,7 @@ interface Issue {
  *  concerns-count check (drill without a depth, or a sweep's non-finest layer). Returned as plain
  *  (field, problem, fix) issues so the caller can render them as stops (class/drill/scan/loop, and a sweep's
  *  finest layer) or as notes (view, and a sweep's non-finest layers — "a note if thin"). */
-function contractIssues(categories: readonly Category[], depth: Depth | undefined, field: string): Issue[] {
+function contractIssues(categories: readonly Category[], depth: Depth | undefined, field: string, limits?: ContractLimits): Issue[] {
   const out: Issue[] = [];
   const concerns = categories.filter((c) => c.section === 'concerns');
   const decisions = categories.filter((c) => c.section === 'decisions');
@@ -246,7 +261,7 @@ function contractIssues(categories: readonly Category[], depth: Depth | undefine
     }
   }
   if (depth !== undefined) {
-    const want = DEPTH_COUNT[depth] / 3;
+    const want = probesAt(limits, depth);
     if (concerns.length !== want) {
       out.push({ field: `${field}.concerns`, problem: `${concerns.length} categor${concerns.length === 1 ? 'y' : 'ies'}`, fix: `${depth} needs exactly ${want}` });
     }
@@ -263,12 +278,12 @@ function contractIssues(categories: readonly Category[], depth: Depth | undefine
 
 /** Pass 3: the rules the schema can't express. Returns the normalized mak (and any downgraded-to-note
  *  contract issues) when there are no stops. */
-function checkCross(raw: Record<string, unknown>, verb: Verb): { stops: Stop[]; mak?: Mak; notes: string[] } {
+function checkCross(raw: Record<string, unknown>, verb: Verb, limits?: ContractLimits): { stops: Stop[]; mak?: Mak; notes: string[] } {
   const out: Stop[] = [];
   const notes: string[] = [];
   const mak = raw.mak as Record<string, unknown>;
   if (mak.verb !== undefined && mak.verb !== verb) out.push(cross(`✖ mak.verb: says "${mak.verb}" but you ran ${verb} → remove mak.verb, or run mm3 ${mak.verb}`));
-  for (const f of NEEDS[verb]) if (!(f in mak)) out.push(cross(`✖ mak.${f}: ${verb} needs it → ${how(f, verb)}`));
+  for (const f of NEEDS[verb]) if (!(f in mak)) out.push(cross(`✖ mak.${f}: ${verb} needs it → ${how(f, verb, limits)}`));
   for (const f of NEVER[verb]) if (f in mak) out.push(cross(never(f, verb)));
 
   const over = mak.over as Record<string, unknown> | undefined;
@@ -289,7 +304,7 @@ function checkCross(raw: Record<string, unknown>, verb: Verb): { stops: Stop[]; 
     }
     checkNumbers(cats, out);
     if (categoriesGiven) {
-      const issues = contractIssues(cats, depth, 'mak.ask');
+      const issues = contractIssues(cats, depth, 'mak.ask', limits);
       if (verb === 'view') {
         for (const i of issues) notes.push(`${i.field}: ${i.problem} (${i.fix}); class will stop on this`);
       } else {
@@ -297,7 +312,7 @@ function checkCross(raw: Record<string, unknown>, verb: Verb): { stops: Stop[]; 
       }
     }
   } else {
-    for (const p of checkOver(over, STRINGS[verb], SWEEP_ITEM_CAP[depth ?? 'quick'])) out.push(cross(p));
+    for (const p of checkOver(over, STRINGS[verb], itemCapAt(limits, depth ?? 'quick'))) out.push(cross(p));
     const map = mapLayers(over);
     const finest = map.layers.at(-1);
     for (const [name, v] of Object.entries(ask)) {
@@ -328,7 +343,7 @@ function checkCross(raw: Record<string, unknown>, verb: Verb): { stops: Stop[]; 
 
       if (cats.length > 0) {
         const isFinest = name === finest;
-        const issues = contractIssues(cats, isFinest ? depth : undefined, `mak.ask.${name}`);
+        const issues = contractIssues(cats, isFinest ? depth : undefined, `mak.ask.${name}`, limits);
         if (isFinest) {
           for (const i of issues) out.push(cross(`✖ ${i.field}: ${i.problem} → ${i.fix} → see: mm3 agent probe`));
         } else if (issues.length) {
@@ -362,15 +377,16 @@ function checkCross(raw: Record<string, unknown>, verb: Verb): { stops: Stop[]; 
 /** `rawText`: the original request text (before YAML parsing), passed through only so checkSchema's mdl:
  *  line-cap check can count the block's own source lines — everything else here works on the
  *  already-parsed `value`. `mdlFields`: the caller's effective (project-config-aware) mdl table,
- *  passed straight through to checkSchema; omitted, every caller keeps the built-in table. */
-export function validateRequest(value: unknown, verb: Verb, rawText?: string, mdlFields?: readonly MdlField[]): Validated {
+ *  passed straight through to checkSchema; omitted, every caller keeps the built-in table. `limits`: the project's
+ *  depth tiers and items-per-layer caps (see ContractLimits); omitted, the built-in defaults. */
+export function validateRequest(value: unknown, verb: Verb, rawText?: string, mdlFields?: readonly MdlField[], limits?: ContractLimits): Validated {
   const blanks: Stop[] = [];
   findBlanks(value, '', blanks);
   if (blanks.length) return { ok: false, stops: blanks };
   const schema = checkSchema(value, verb, rawText, mdlFields);
   if (schema.length) return { ok: false, stops: schema };
   const raw = value as Record<string, unknown>;
-  const { stops, mak, notes: crossNotes } = checkCross(raw, verb);
+  const { stops, mak, notes: crossNotes } = checkCross(raw, verb, limits);
   if (!mak) return { ok: false, stops };
   const notes: string[] = [...crossNotes];
   const risky = IRREVERSIBLE.exec(mak.goal);

@@ -10,7 +10,7 @@ mak:
   ask:                                        # required — one concerns:/decisions: pair per layer named in over — {function} fills in per item
                                                # questions are numbered 1…N across the WHOLE request, decisions included — no gaps, no restart at decisions
     function:
-      concerns:                               # exactly 3k categories for the depth above (quick: 3), each with exactly 3 probes
+      concerns:                               # exactly 3k categories for the depth above (quick: 3 by default), each with exactly 3 probes
         injection:
           pass: no                            # ask what {function} itself does, not what code outside it does
           1: Does {function} take request text straight from `req.query` or `req.body`?       # reach

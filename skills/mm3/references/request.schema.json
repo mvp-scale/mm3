@@ -60,7 +60,7 @@
             "standard",
             "thorough"
           ],
-          "description": "quick | standard | thorough = k = 1 | 2 | 3. One subject: the concerns section holds exactly 3k categories, each with exactly 3 yes/no probes (9 | 18 | 27 total). A sweep: at most 10 | 20 | 30 items per layer"
+          "description": "quick | standard | thorough = k = 1 | 2 | 3 by default. One subject: the concerns section holds exactly 3k categories, each with exactly 3 yes/no probes (9 | 18 | 27 total by default). A sweep: at most 10 | 20 | 30 items per layer by default. A project's config.yaml can change these counts (mm3 config)"
         },
         "where": {
           "type": "array",

@@ -12,7 +12,8 @@
  * (unchanged items are reused, so it is nearly free), since replay refuses a sweep parent outright.
  */
 import { providerIdentity } from '../classifier/select.ts';
-import { resolveConfig } from '../config/load.ts';
+import type { Mm3Config } from '../config/defaults.ts';
+import { configOf } from '../config/load.ts';
 import { m, type Value } from '../contract/emit.ts';
 import { goalGate, gradeItems, gradeSubject, sweepGate, worstFirst } from '../contract/grade.ts';
 import { firstStringLayer, type Item } from '../contract/layers.ts';
@@ -27,7 +28,7 @@ import { redact } from '../ledger/redact.ts';
 import { cacheTelemetry, lookupAnswers, reusedAgeNotes, type ReuseLimits } from '../ledger/reuse.ts';
 import { clip } from '../util/text.ts';
 import { actorOf, askAll, createdNote, preflight, record, recordFree, splitReuse, type PlannedCall } from './pay.ts';
-import { loadRequest, stopText } from './request.ts';
+import { contractLimits, loadRequest, stopText } from './request.ts';
 import { commonNotes, consensusAndEscalate, COST_ESTIMATED_NOTE, dryRunText, probeWarnings, reusedIds, respondText, subjectMak, sweepEntry, sweepNext, mdlRecorded } from './respond.ts';
 import { itemRecords, planNeedsBudget, plannedCallCount, planSweep, recordSweep, runSweep, sweepDryRun } from './sweep.ts';
 import type { VerbContext, VerbResult } from './types.ts';
@@ -61,9 +62,10 @@ async function runOneSubjectProof(
   where: readonly string[],
   replayParent: (id: string) => string,
   reuseLimits: ReuseLimits | undefined,
+  settings: Pick<Mm3Config, 'lens' | 'evidence'>,
   evidenceOpts?: ReadCodeEvidenceOptions,
 ): Promise<VerbResult> {
-  const evidence = readCodeEvidence(ctx.paths.root, where, evidenceOpts);
+  const evidence = readCodeEvidence(ctx.paths.root, where, { ...evidenceOpts, limits: { perFileChars: settings.evidence.perItemChars, totalChars: settings.evidence.totalChars } });
   if (!evidence.ok) return { exit: 2, text: stopText(evidence.errors, 'drill') };
 
   const identity = providerIdentity(ctx.env, { resolveStored: ctx.resolveStored });
@@ -114,7 +116,7 @@ async function runOneSubjectProof(
   const keys: Record<string, string> = {};
   for (const [q, k] of keyed) keys[q.id] = k;
 
-  const { consensus, escalate } = consensusAndEscalate(request.mak.categories, answers, request.mak.depth, loaded.notes);
+  const { consensus, escalate } = consensusAndEscalate(request.mak.categories, answers, request.mak.depth, loaded.notes, settings.lens);
   const subject = gradeSubject(request.mak.categories, answers);
 
   const oneSubjectNext = (gate: 'pass' | 'fail' | 'unsure', id: string): string =>
@@ -138,6 +140,7 @@ async function runOneSubjectProof(
         budget,
         ctx.provider.adapter,
         ctx.paths,
+        ctx.notes,
       ),
     );
 
@@ -182,9 +185,9 @@ async function runOneSubjectProof(
 
 export async function runDrill(text: string, ctx: VerbContext): Promise<VerbResult> {
   // a project's own .mm3/config.yaml mdl: overrides apply to every mdl: block it validates.
-  const cfg = resolveConfig(ctx.paths, ctx.env).config;
+  const cfg = configOf(ctx).config;
   const mdlFields = effectiveMdlFields(cfg.mdl);
-  const loaded = loadRequest(text, 'drill', mdlFields);
+  const loaded = loadRequest(text, 'drill', mdlFields, contractLimits(cfg, 'drill'));
   if (!loaded.ok) return loaded.result;
   const { request } = loaded;
 
@@ -221,7 +224,7 @@ export async function runDrill(text: string, ctx: VerbContext): Promise<VerbResu
       }
       // C-171: this range is the item's own whole-file/function/call span, chosen by scan/loop's own resolver,
       // never typed by a user — an oversized one still gets truncated with a note, not stopped.
-      return runOneSubjectProof(ctx, loaded, request, [`${itemRec.unit.path}:${itemRec.unit.lines}`], (id) => id, cfg.reuse, { stopOnOversize: false });
+      return runOneSubjectProof(ctx, loaded, request, [`${itemRec.unit.path}:${itemRec.unit.lines}`], (id) => id, cfg.reuse, cfg, { stopOnOversize: false });
     }
 
     const from = request.mak.from!;
@@ -260,8 +263,8 @@ export async function runDrill(text: string, ctx: VerbContext): Promise<VerbResu
       who,
       ctx.paths,
       ctx.dryRun ?? false,
-      itemRec.unit ? { resolve: createCodeResolver(ctx.paths.root, notes), root } : { root },
-      { sweep: cfg.sweep, reuse: cfg.reuse },
+      itemRec.unit ? { resolve: createCodeResolver(ctx.paths.root, notes, cfg.evidence.maxFiles), root } : { root },
+      { sweep: cfg.sweep, reuse: cfg.reuse, evidence: cfg.evidence },
     );
 
     if (ctx.dryRun) return sweepDryRun(plan, identity, probeWarnings(request.mak));
@@ -305,6 +308,7 @@ export async function runDrill(text: string, ctx: VerbContext): Promise<VerbResu
           `${calls} call${calls === 1 ? '' : 's'} · ${plan.askedQuestions} question${plan.askedQuestions === 1 ? '' : 's'} · ${budget}`,
           ctx.provider.adapter,
           ctx.paths,
+          ctx.notes,
         ),
       );
 
@@ -357,5 +361,5 @@ export async function runDrill(text: string, ctx: VerbContext): Promise<VerbResu
       ),
     };
   }
-  return runOneSubjectProof(ctx, loaded, request, parent.where, () => request.mak.parent!, cfg.reuse);
+  return runOneSubjectProof(ctx, loaded, request, parent.where, () => request.mak.parent!, cfg.reuse, cfg);
 }

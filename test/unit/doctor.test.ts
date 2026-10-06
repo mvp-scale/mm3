@@ -1,10 +1,11 @@
 // doctor: plumbing, not a verb (owner ruling, P5) — free (no call, no budget, no ledger write). Reports the
 // resolved provider/route/base URL, whether a key is set (never its value), project/ledger location and the
 // Node/node:sqlite runtime; exit 2 with a ✖ line when the config itself is invalid.
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { runConfigLoad } from '../../src/config/config.ts';
 import { envFilePath, setEnvFileValue } from '../../src/setup/env-file.ts';
 import { writeInstallRecord } from '../../src/setup/install-record.ts';
 import type { RunResult, Runner } from '../../src/setup/runner.ts';
@@ -13,6 +14,19 @@ import { tempProject } from '../helpers/project.ts';
 
 function tmpXdg(): { XDG_CONFIG_HOME: string } {
   return { XDG_CONFIG_HOME: mkdtempSync(path.join(os.tmpdir(), 'mm3-doctor-')) };
+}
+
+/** A `mm3` on a PATH folder that is a symlink into a package of the given version, the way an npm global install lays it out. */
+function fakeCliOnPath(version: string): { pathDir: string } {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'mm3-clipkg-'));
+  mkdirSync(path.join(root, 'dist'), { recursive: true });
+  writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: '@mvpscale/mm3', version }));
+  writeFileSync(path.join(root, 'dist', 'cli.js'), '#!/usr/bin/env node\n');
+  const pathDir = path.join(root, 'bin');
+  mkdirSync(pathDir);
+  symlinkSync(path.join(root, 'dist', 'cli.js'), path.join(pathDir, 'mm3'));
+  chmodSync(path.join(root, 'dist', 'cli.js'), 0o755);
+  return { pathDir };
 }
 
 describe('doctor (P5)', () => {
@@ -225,6 +239,19 @@ describe('doctor (P5)', () => {
       expect(r.text).toContain('cli: not on PATH → run "mm3 init" to install it');
     });
 
+    it('cli: a copy on PATH of a different version than the one running is flagged, with the fix', () => {
+      const { pathDir } = fakeCliOnPath('0.0.1');
+      const r = runDoctor({ PATH: pathDir }, undefined, undefined, { version: '9.9.9' });
+      expect(r.text).toContain('cli: ');
+      expect(r.text).toContain('⚠ version 0.0.1, this is 9.9.9 → run "mm3 init" to match them');
+    });
+
+    it('cli: a copy on PATH of the same version says nothing extra', () => {
+      const { pathDir } = fakeCliOnPath('9.9.9');
+      const r = runDoctor({ PATH: pathDir }, undefined, undefined, { version: '9.9.9' });
+      expect(r.text).not.toContain('⚠ version');
+    });
+
     it('plugin: with no deps.runner injected, always reads as not installed (never spawns claude for real)', () => {
       const r = runDoctor({}, undefined);
       expect(r.text).toContain('plugin: not installed → "mm3 init --claude"');
@@ -263,10 +290,16 @@ describe('doctor (P5)', () => {
       expect(r.text).toContain('config: "✔ config: defaults"');
     });
 
-    it('a clean override file: config: N overrides', () => {
+    it('a clean override file that has been loaded: config: loaded <time>', () => {
       const { paths } = tempProject({ '.mm3/config.yaml': 'budget:\n  usd: 10\nprovider: fake\n' });
+      expect(runConfigLoad(paths, undefined, paths.root, '.').exit).toBe(0);
       const r = runDoctor({}, paths);
-      expect(r.text).toContain('config: "✔ config: 2 overrides"');
+      expect(r.text).toMatch(/config: "✔ config: loaded \d{4}-\d\d-\d\dT[\d:.]+Z"/);
+    });
+
+    it('a config.yaml that was never loaded is in effect but flagged as not recorded', () => {
+      const { paths } = tempProject({ '.mm3/config.yaml': 'budget:\n  usd: 10\n' });
+      expect(runDoctor({}, paths).text).toContain('⚠ config.yaml is in effect but its latest change is not recorded → mm3 config --load');
     });
 
     it('a broken config.yaml: every problem in one pass, same ✖ config.<path> shape mm3 config uses', () => {

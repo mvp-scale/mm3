@@ -2,7 +2,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { stringify } from 'yaml';
-import { setBudget } from '../../src/budget/budget.ts';
+import { writeConfigOverride } from '../../src/config/write.ts';
 import { appendContractRun, appendRun, isContractRun, readLedger } from '../../src/ledger/log.ts';
 import { runClass } from '../../src/verbs/class.ts';
 import { runLoop } from '../../src/verbs/loop.ts';
@@ -198,7 +198,7 @@ describe('drill: a sweep parent (scan) — the sweep shape, worst first, passing
     const { paths } = tempProject({ 'src/a.ts': 'export function findUser(req) { return db.query(`x ${req.id}`); }\n' });
     await runScan(SCAN_REQ, { paths, provider: stubProvider({ yes: () => 0.9 }), env }); // MM3-0001
     await runDrill(drillReq, { paths, provider: stubProvider({ yes: () => 0.96 }), env }); // MM3-0002
-    setBudget(paths, { capRuns: 2 }); // exactly used up
+    writeConfigOverride(paths, { budget: { runs: 2 } }); // exactly used up
     const r = await runDrill(drillReq, { paths, provider: stubProvider(), env }); // fully reused: no call needed
     expect(r.exit).toBe(0);
   });
@@ -365,7 +365,7 @@ describe('drill: a one-subject parent (class) — the class shape', () => {
     const { paths } = tempProject({ 'src/a.ts': 'export function f(x) { return db.query(`x ${x}`); }\n' });
     await runClass(CLASS_REQ, { paths, provider: stubProvider({ yes: () => 0.9 }), env }); // MM3-0001, 1 run
     await runDrill(drillReq, { paths, provider: stubProvider({ yes: () => 0.95 }), env }); // MM3-0002, 1 run
-    setBudget(paths, { capRuns: 2 }); // exactly used up by the two runs above
+    writeConfigOverride(paths, { budget: { runs: 2 } }); // exactly used up by the two runs above
     const r = await runDrill(drillReq, { paths, provider: stubProvider(), env }); // fully reused: no call needed
     expect(r.exit).toBe(0);
     expect(r.text).toContain('reused: [MM3-0002]');

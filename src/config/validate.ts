@@ -6,7 +6,8 @@
  * never throws.
  */
 import { looksLikeSecret } from '../ledger/redact.ts';
-import { CONFIG_KEYS, CONTRACT_ONLY_KEYS, SECRET_LIKE_KEYS, type Mm3Config } from './defaults.ts';
+import { DECISIONS_MAX } from '../contract/types.ts';
+import { CONFIG_KEYS, CONTRACT_ONLY_KEYS, DEFAULT_CONFIG, SECRET_LIKE_KEYS, type Mm3Config } from './defaults.ts';
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -66,6 +67,20 @@ function checkPositiveNumber(path: string, v: unknown, out: ConfigStop[]): boole
   return false;
 }
 
+/** A whole number of at least 1 (a count: probes, items, characters, files). */
+function checkWhole(path: string, v: unknown, out: ConfigStop[]): boolean {
+  if (typeof v === 'number' && Number.isInteger(v) && v >= 1) return true;
+  out.push(stop(path, `${JSON.stringify(v)} is not allowed`, 'use a whole number of at least 1'));
+  return false;
+}
+
+/** A share strictly between 0 and 1 (lens thresholds). */
+function checkShare(path: string, v: unknown, out: ConfigStop[]): boolean {
+  if (typeof v === 'number' && Number.isFinite(v) && v > 0 && v < 1) return true;
+  out.push(stop(path, `${JSON.stringify(v)} is not allowed`, 'use a number above 0 and below 1, e.g. 0.5'));
+  return false;
+}
+
 /** The value-shaped counterpart to checkSecretLike (which flags a secret-NAMED key): a real key pasted into a
  *  config value — `baseURL`, `budget.since`, an mdl override's free text — stops here regardless of what the
  *  surrounding key is called. Reuses redact.ts's own detectors (security item) so this file never
@@ -92,7 +107,7 @@ const isEmptySection = (v: unknown): boolean => v === null || v === undefined;
 function checkBudget(v: unknown, out: ConfigStop[]): Partial<Mm3Config['budget']> {
   if (isEmptySection(v)) return {};
   if (!isObj(v)) {
-    out.push(stop('budget', 'is not a mapping', 'write usd:, runs: and/or per: under budget:'));
+    out.push(stop('budget', 'is not a mapping', 'write usd:, runs:, per: and/or warnAt: under budget:'));
     return {};
   }
   const result: Partial<Mm3Config['budget']> = {};
@@ -105,9 +120,13 @@ function checkBudget(v: unknown, out: ConfigStop[]): Partial<Mm3Config['budget']
       if (checkEnum(path, v[k], ['total', 'day', 'hour'], out)) result.per = v[k] as 'total' | 'day' | 'hour';
     } else if (k === 'since') {
       if (checkNonEmptyString(path, v[k], out)) result.since = v[k] as string;
+    } else if (k === 'warnAt') {
+      const n = v[k];
+      if (typeof n === 'number' && Number.isFinite(n) && n > 0 && n <= 1) result.warnAt = n;
+      else out.push(stop(path, `${JSON.stringify(n)} is not allowed`, 'use a share above 0 and up to 1, e.g. 0.8 warns at 80% of a cap'));
     } else {
-      const hint = didYouMean(k, ['usd', 'runs', 'per', 'since']);
-      out.push(stop(path, `"${k}" is not a budget field`, hint ? `did you mean ${hint}?` : 'use usd, runs, per or since'));
+      const hint = didYouMean(k, ['usd', 'runs', 'per', 'since', 'warnAt']);
+      out.push(stop(path, `"${k}" is not a budget field`, hint ? `did you mean ${hint}?` : 'use usd, runs, per, since or warnAt'));
     }
   }
   return result;
@@ -148,7 +167,7 @@ function checkPricing(v: unknown, out: ConfigStop[]): Mm3Config['pricing'] {
 function checkSweep(v: unknown, out: ConfigStop[]): Partial<Mm3Config['sweep']> {
   if (isEmptySection(v)) return {};
   if (!isObj(v)) {
-    out.push(stop('sweep', 'is not a mapping', 'write maxItems: and/or maxQuestionsPerCall: under sweep:'));
+    out.push(stop('sweep', 'is not a mapping', 'write maxItems:, maxQuestionsPerCall: and/or itemsPerLayer: under sweep:'));
     return {};
   }
   const result: Partial<Mm3Config['sweep']> = {};
@@ -156,9 +175,12 @@ function checkSweep(v: unknown, out: ConfigStop[]): Partial<Mm3Config['sweep']> 
     const path = `sweep.${k}`;
     if (k === 'maxItems' || k === 'maxQuestionsPerCall') {
       if (checkPositiveNumber(path, v[k], out)) result[k] = v[k] as number;
+    } else if (k === 'itemsPerLayer') {
+      const per = checkTierCounts(path, v[k], ITEM_TIERS, out);
+      if (per) result.itemsPerLayer = per as Mm3Config['sweep']['itemsPerLayer'];
     } else {
-      const hint = didYouMean(k, ['maxItems', 'maxQuestionsPerCall']);
-      out.push(stop(path, `"${k}" is not a sweep field`, hint ? `did you mean ${hint}?` : 'use maxItems or maxQuestionsPerCall'));
+      const hint = didYouMean(k, ['maxItems', 'maxQuestionsPerCall', 'itemsPerLayer']);
+      out.push(stop(path, `"${k}" is not a sweep field`, hint ? `did you mean ${hint}?` : 'use maxItems, maxQuestionsPerCall or itemsPerLayer'));
     }
   }
   return result;
@@ -181,6 +203,159 @@ function checkReuse(v: unknown, out: ConfigStop[]): Partial<Mm3Config['reuse']> 
     }
   }
   return result;
+}
+
+const ITEM_TIERS = ['quick', 'standard', 'thorough'] as const;
+
+/** `itemsPerLayer`: any of quick/standard/thorough, each a whole number >= 1 (the ascending order is checked on
+ *  the merged values by validateConfig, since a file may name only some of them). */
+function checkTierCounts(path: string, v: unknown, tiers: readonly string[], out: ConfigStop[]): Record<string, number> | undefined {
+  if (isEmptySection(v)) return undefined;
+  if (!isObj(v)) {
+    out.push(stop(path, 'is not a mapping', `write ${tiers.join(': <n>, ')}: <n> under it`));
+    return undefined;
+  }
+  const result: Record<string, number> = {};
+  for (const k of Object.keys(v)) {
+    if (!tiers.includes(k)) {
+      const hint = didYouMean(k, tiers);
+      out.push(stop(`${path}.${k}`, `"${k}" is not a depth tier`, hint ? `did you mean ${hint}?` : `use ${tiers.join(', ')}`));
+    } else if (checkWhole(`${path}.${k}`, v[k], out)) result[k] = v[k] as number;
+  }
+  return result;
+}
+
+const DEPTH_VERBS = ['class', 'scan', 'loop'] as const;
+const NO_DEPTH_VERBS = ['drill', 'replay', 'view'] as const;
+type Tiers = [number, number, number];
+
+/** One verb's depth tiers: exactly three whole numbers (probes at quick, standard, thorough), ascending. */
+function checkTiers(path: string, v: unknown, out: ConfigStop[]): Tiers | undefined {
+  if (!Array.isArray(v)) {
+    out.push(stop(path, `${JSON.stringify(v)} is not a list`, 'write three whole numbers, quick to thorough, e.g. [3, 6, 9]'));
+    return undefined;
+  }
+  if (v.length !== 3) {
+    out.push(stop(path, `${v.length} number${v.length === 1 ? '' : 's'} given`, 'give exactly 3: quick, standard, thorough, e.g. [3, 6, 9]'));
+    return undefined;
+  }
+  let ok = true;
+  v.forEach((n, i) => {
+    if (typeof n === 'number' && Number.isInteger(n) && n >= 1) return;
+    out.push(stop(`${path}[${i}]`, `${JSON.stringify(n)} is not allowed`, 'use whole numbers of at least 1, ascending'));
+    ok = false;
+  });
+  if (!ok) return undefined;
+  const t = v as Tiers;
+  if (!(t[0] <= t[1] && t[1] <= t[2])) {
+    out.push(stop(path, `[${t.join(', ')}] is not ascending`, 'make quick <= standard <= thorough, e.g. [3, 6, 9]'));
+    return undefined;
+  }
+  return t;
+}
+
+/** `depth:` — per verb that has a depth, how many probes (3 questions each) quick, standard and thorough ask. */
+function checkDepth(v: unknown, out: ConfigStop[]): Partial<Mm3Config['depth']> {
+  if (isEmptySection(v)) return {};
+  if (!isObj(v)) {
+    out.push(stop('depth', 'is not a mapping', 'write class:, scan: and/or loop: under depth:, each a list like [3, 6, 9]'));
+    return {};
+  }
+  const result: Partial<Mm3Config['depth']> = {};
+  for (const k of Object.keys(v)) {
+    const path = `depth.${k}`;
+    if ((DEPTH_VERBS as readonly string[]).includes(k)) {
+      const t = checkTiers(path, v[k], out);
+      if (t) result[k as (typeof DEPTH_VERBS)[number]] = t;
+    } else if ((NO_DEPTH_VERBS as readonly string[]).includes(k)) {
+      out.push(stop(path, `${k} has no depth setting`, 'set depth for class, scan or loop only'));
+    } else {
+      const hint = didYouMean(k, DEPTH_VERBS);
+      out.push(stop(path, `"${k}" is not a verb with a depth`, hint ? `did you mean ${hint}?` : 'use class, scan or loop'));
+    }
+  }
+  return result;
+}
+
+const EVIDENCE_FIELDS = ['perItemChars', 'totalChars', 'maxFiles'] as const;
+
+function checkEvidence(v: unknown, out: ConfigStop[]): Partial<Mm3Config['evidence']> {
+  if (isEmptySection(v)) return {};
+  if (!isObj(v)) {
+    out.push(stop('evidence', 'is not a mapping', 'write perItemChars:, totalChars: and/or maxFiles: under evidence:'));
+    return {};
+  }
+  const result: Partial<Mm3Config['evidence']> = {};
+  for (const k of Object.keys(v)) {
+    const path = `evidence.${k}`;
+    if ((EVIDENCE_FIELDS as readonly string[]).includes(k)) {
+      if (checkWhole(path, v[k], out)) result[k as (typeof EVIDENCE_FIELDS)[number]] = v[k] as number;
+    } else {
+      const hint = didYouMean(k, EVIDENCE_FIELDS);
+      out.push(stop(path, `"${k}" is not an evidence field`, hint ? `did you mean ${hint}?` : `use ${EVIDENCE_FIELDS.join(', ')}`));
+    }
+  }
+  return result;
+}
+
+const LENS_FIELDS = ['concernAt', 'weakBelow', 'strongAt'] as const;
+
+function checkLens(v: unknown, out: ConfigStop[]): Partial<Mm3Config['lens']> {
+  if (isEmptySection(v)) return {};
+  if (!isObj(v)) {
+    out.push(stop('lens', 'is not a mapping', 'write concernAt:, weakBelow: and/or strongAt: under lens:'));
+    return {};
+  }
+  const result: Partial<Mm3Config['lens']> = {};
+  for (const k of Object.keys(v)) {
+    const path = `lens.${k}`;
+    if ((LENS_FIELDS as readonly string[]).includes(k)) {
+      if (checkShare(path, v[k], out)) result[k as (typeof LENS_FIELDS)[number]] = v[k] as number;
+    } else {
+      const hint = didYouMean(k, LENS_FIELDS);
+      out.push(stop(path, `"${k}" is not a lens field`, hint ? `did you mean ${hint}?` : `use ${LENS_FIELDS.join(', ')}`));
+    }
+  }
+  return result;
+}
+
+/** The rules that relate settings to each other, checked on the EFFECTIVE values (a file may set only some of a
+ *  group, so each check merges what it names over the defaults first). A group that breaks its rule is dropped
+ *  whole, like any other bad value — the rest of the file still applies. */
+function checkRelations(value: Partial<Mm3Config>, out: ConfigStop[]): void {
+  const per = value.sweep?.itemsPerLayer;
+  if (per) {
+    const eff = { ...DEFAULT_CONFIG.sweep.itemsPerLayer, ...per };
+    if (!(eff.quick <= eff.standard && eff.standard <= eff.thorough)) {
+      out.push(stop('sweep.itemsPerLayer', `quick ${eff.quick}, standard ${eff.standard}, thorough ${eff.thorough} is not ascending`, 'make quick <= standard <= thorough'));
+      delete (value.sweep as Partial<Mm3Config['sweep']>).itemsPerLayer;
+    }
+  }
+  const ev = value.evidence;
+  if (ev) {
+    const eff = { ...DEFAULT_CONFIG.evidence, ...ev };
+    if (eff.perItemChars > eff.totalChars) {
+      out.push(stop('evidence', `perItemChars ${eff.perItemChars} is larger than totalChars ${eff.totalChars}`, 'make perItemChars no larger than totalChars'));
+      delete value.evidence;
+    }
+  }
+  const lens = value.lens;
+  if (lens) {
+    const eff = { ...DEFAULT_CONFIG.lens, ...lens };
+    if (!(eff.weakBelow < eff.concernAt && eff.concernAt < eff.strongAt)) {
+      out.push(stop('lens', `weakBelow ${eff.weakBelow}, concernAt ${eff.concernAt}, strongAt ${eff.strongAt} is out of order`, 'keep weakBelow below concernAt below strongAt'));
+      delete value.lens;
+    }
+  }
+  // One call must hold a verb's whole ask: 3 questions per probe at the thorough tier, plus up to DECISIONS_MAX decisions.
+  const maxQ = value.sweep?.maxQuestionsPerCall ?? DEFAULT_CONFIG.sweep.maxQuestionsPerCall;
+  for (const verb of DEPTH_VERBS) {
+    const tiers = value.depth?.[verb];
+    if (tiers && 3 * tiers[2] + DECISIONS_MAX > maxQ) {
+      out.push(stop(`depth.${verb}`, `thorough ${tiers[2]} asks ${3 * tiers[2]} questions plus up to ${DECISIONS_MAX} decisions, more than sweep.maxQuestionsPerCall (${maxQ})`, 'lower the thorough number, or raise sweep.maxQuestionsPerCall'));
+      delete value.depth![verb];
+    }
+  }
 }
 
 const MDL_OVERRIDE_FIELDS = ['values', 'note', 'as', 'pattern', 'link', 'literal'] as const;
@@ -274,10 +449,20 @@ export function validateConfig(raw: unknown): { stops: ConfigStop[]; value: Part
       case 'reuse':
         value.reuse = checkReuse(v, out);
         break;
+      case 'depth':
+        value.depth = checkDepth(v, out) as Mm3Config['depth'];
+        break;
+      case 'evidence':
+        value.evidence = checkEvidence(v, out) as Mm3Config['evidence'];
+        break;
+      case 'lens':
+        value.lens = checkLens(v, out) as Mm3Config['lens'];
+        break;
       case 'mdl':
         value.mdl = checkMdl(v, out);
         break;
     }
   }
+  checkRelations(value, out);
   return { stops: out, value };
 }

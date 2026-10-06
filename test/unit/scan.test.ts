@@ -2,7 +2,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadBudget, setBudget } from '../../src/budget/budget.ts';
+import { loadBudget } from '../../src/budget/budget.ts';
+import { writeConfigOverride } from '../../src/config/write.ts';
 import { readLedger, isContractRun } from '../../src/ledger/log.ts';
 import { runScan } from '../../src/verbs/scan.ts';
 import { tempProject } from '../helpers/project.ts';
@@ -140,7 +141,7 @@ describe('scan', () => {
     const { paths } = tempProject(FILES);
     const provider = stubProvider({ yes: (q) => (q.id.endsWith('bad#1') ? 0.9 : 0.1) });
     await runScan(REQUEST, { paths, provider, env }); // MM3-0001, 1 run
-    setBudget(paths, { capRuns: 1 }); // already used up by the run above
+    writeConfigOverride(paths, { budget: { runs: 1 } }); // already used up by the run above
     const r = await runScan(REQUEST, { paths, provider, env }); // fully reused: no call needed
     expect(r.exit).toBe(0);
     expect(r.text).toContain('reused: 2');

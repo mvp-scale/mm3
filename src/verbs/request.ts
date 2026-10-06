@@ -1,8 +1,9 @@
 /** Request text → a validated Request for one verb, or the exit-2 answer listing what to change (at most 5 stops). */
 import { readRequestText } from '../contract/read.ts';
 import type { Request, Verb } from '../contract/types.ts';
-import { validateRequest } from '../contract/validate.ts';
+import { validateRequest, type ContractLimits } from '../contract/validate.ts';
 import type { MdlField } from '../contract/mdl-fields.ts';
+import type { Mm3Config } from '../config/defaults.ts';
 import type { VerbResult } from './types.ts';
 
 const MAX_STOPS = 5;
@@ -27,11 +28,21 @@ export function stopText(stops: readonly string[], verb: AgentTarget): string {
 
 /** `mdlFields`: the caller's effective (project `.mm3/config.yaml` `mdl:`-aware) field
  *  table — build it once via `effectiveMdlFields(resolveConfig(paths, env).config.mdl)` and pass it in;
- *  omitted, this validates against the built-in table only (the pre-B1 behavior every existing caller keeps). */
-export function loadRequest(text: string, verb: Verb, mdlFields?: readonly MdlField[]): { ok: true; request: Request; notes: string[] } | { ok: false; result: VerbResult } {
+ *  omitted, this validates against the built-in table only (the pre-B1 behavior every existing caller keeps).
+ *  `limits`: the project's depth tiers and item caps for this verb — build it with `contractLimits(cfg, verb)`;
+ *  omitted, the built-in defaults. */
+export function loadRequest(text: string, verb: Verb, mdlFields?: readonly MdlField[], limits?: ContractLimits): { ok: true; request: Request; notes: string[] } | { ok: false; result: VerbResult } {
   const read = readRequestText(text);
   if (!read.ok) return { ok: false, result: { exit: 2, text: stopText(read.stops, verb) } };
-  const v = validateRequest(read.value, verb, text, mdlFields);
+  const v = validateRequest(read.value, verb, text, mdlFields, limits);
   if (!v.ok) return { ok: false, result: { exit: 2, text: stopText(v.stops.map((s) => s.text), verb) } };
   return { ok: true, request: v.request, notes: v.notes };
+}
+
+/** The config's say over the request contract's counts, for one verb: its depth tiers (class, scan and loop have
+ *  their own; view drafts a class request, so it follows class; drill and replay have none) and the items-per-layer
+ *  caps. Pure: hand it a resolved config. */
+export function contractLimits(cfg: Mm3Config, verb: Verb): ContractLimits {
+  const tiers = verb === 'class' || verb === 'scan' || verb === 'loop' ? cfg.depth[verb] : verb === 'view' ? cfg.depth.class : undefined;
+  return { ...(tiers ? { depth: tiers } : {}), itemsPerLayer: cfg.sweep.itemsPerLayer };
 }

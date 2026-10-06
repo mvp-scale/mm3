@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { loadBudget, recordSpend, setBudget } from '../../src/budget/budget.ts';
+import { loadBudget, recordSpend } from '../../src/budget/budget.ts';
+import { writeConfigOverride } from '../../src/config/write.ts';
 import { EVIDENCE_LIMITS } from '../../src/evidence/code.ts';
 import { hasGit } from '../../src/evidence/git.ts';
 import { isContractRun, readLedger } from '../../src/ledger/log.ts';
@@ -135,7 +136,7 @@ describe('class', () => {
 
   it('--dry-run warns when a real run\'s one call would be blocked by an already-reached cap (fix #5b), but does not fail', async () => {
     const { paths } = tempProject({ 'src/user.ts': 'x' });
-    setBudget(paths, { capRuns: 1 });
+    writeConfigOverride(paths, { budget: { runs: 1 } });
     recordSpend(paths, 0); // reach the cap without ever running class
     const provider = stubProvider();
     const r = await runClass(CLASS_YAML, { paths, provider, env, dryRun: true });

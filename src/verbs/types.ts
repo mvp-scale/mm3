@@ -2,12 +2,19 @@
 import type { ClassifierPort } from '../classifier/port.ts';
 import type { ResolveStored } from '../classifier/typesafe/client.ts';
 import type { ContractRun, RunRecord } from '../ledger/log.ts';
+import type { ResolvedConfig } from '../config/load.ts';
 import type { Mm3Paths } from '../ledger/paths.ts';
 
 export interface VerbContext {
   paths: Mm3Paths;
   provider: ClassifierPort;
   env: Record<string, string | undefined>;
+  /** The effective config, resolved once at the request entry (cli.ts) and handed down. Omitted (every test that
+   *  builds its own ctx, library callers) keeps today's behavior: each verb reads config.yaml itself. */
+  config?: ResolvedConfig;
+  /** Notes the request entry (cli.ts) wants in the run's notes: today only the one-time "config.yaml loaded
+   *  automatically" notice. Omitted: none. */
+  notes?: string[];
   now?: () => number;
   /** Validate, expand and count; print the plan; ask nothing and spend nothing. */
   dryRun?: boolean;

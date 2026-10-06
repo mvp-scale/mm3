@@ -1,7 +1,7 @@
 // loop: the contract's own example end to end, tree order for failing: and passing:.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { setBudget } from '../../src/budget/budget.ts';
+import { writeConfigOverride } from '../../src/config/write.ts';
 import { runLoop } from '../../src/verbs/loop.ts';
 import { isContractRun, readLedger } from '../../src/ledger/log.ts';
 import { tempProject } from '../helpers/project.ts';
@@ -104,7 +104,7 @@ describe('loop', () => {
     const { paths } = tempProject({});
     const yes = () => 0.9;
     await runLoop(LOOP, { paths, provider: stubProvider({ yes }), env: {} }); // MM3-0001, 2 runs' worth of calls in one run
-    setBudget(paths, { capRuns: 1 }); // already used up
+    writeConfigOverride(paths, { budget: { runs: 1 } }); // already used up
     const r = await runLoop(LOOP, { paths, provider: stubProvider(), env: {} }); // fully reused: no call needed
     expect(r.exit).toBe(0);
   });

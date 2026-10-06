@@ -12,10 +12,10 @@
  * is never consulted again, and never trusted if corrupt — config.yaml is the sole authority once it exists.
  */
 import { existsSync, readFileSync } from 'node:fs';
-import type { Mm3Config } from '../config/defaults.ts';
-import { resolveConfig } from '../config/load.ts';
+import { DEFAULT_CONFIG, type Mm3Config } from '../config/defaults.ts';
+import { resolveConfig, type ResolvedConfig } from '../config/load.ts';
 import { writeConfigOverride } from '../config/write.ts';
-import { budgetRollup } from '../ledger/index.ts';
+import { budgetRollup, latestConfigRecord } from '../ledger/index.ts';
 import { onStore, withLock } from '../ledger/lock.ts';
 import { appendFailedLocked, type NewFailed } from '../ledger/log.ts';
 import type { Mm3Paths } from '../ledger/paths.ts';
@@ -26,6 +26,8 @@ export interface BudgetState {
   spentUsd: number;
   runs: number;
   resetAt: string;
+  /** Share of a cap at which the line turns into a warning (budget.warnAt). Omitted: BUDGET_LOW_FRACTION. */
+  warnAt?: number;
 }
 
 export class BudgetError extends Error {
@@ -84,12 +86,17 @@ function windowStartMs(budget: Mm3Config['budget'], now: number): number {
 }
 
 function stateFromConfig(paths: Mm3Paths, config: Mm3Config, now: number, opts: { readOnly?: boolean } = {}): BudgetState {
-  const sinceMs = windowStartMs(config.budget, now);
+  let sinceMs = windowStartMs(config.budget, now);
+  // A load that changed the budget started its count over: the latest receipt says where. A later start wins.
+  const restart = onStore(paths.log, 'read', () => latestConfigRecord(paths, opts))?.windowSince;
+  const restartMs = restart ? Date.parse(restart) : Number.NaN;
+  const restarted = !Number.isNaN(restartMs) && restartMs > sinceMs;
+  if (restarted) sinceMs = restartMs;
   // Wrapped in onStore, same as every other ledger read (ledger/reuse.ts's lookupAnswers/exactReuse) — a raw fs
   // error (log.jsonl replaced by a directory, permissions) must surface as the usual clean StoreError, never an
   // unwrapped errno escaping just because this read happens to go through budgetRollup instead of readLedger.
   const { spentUsd, runs } = onStore(paths.log, 'read', () => budgetRollup(paths, iso(sinceMs), opts));
-  return { capUsd: config.budget.usd, capRuns: config.budget.runs, spentUsd, runs, resetAt: config.budget.since ?? EPOCH };
+  return { capUsd: config.budget.usd, capRuns: config.budget.runs, spentUsd, runs, resetAt: restarted ? iso(sinceMs) : (config.budget.since ?? EPOCH), warnAt: config.budget.warnAt };
 }
 
 /** Ledger-derived state with no side effects at all (no migration attempt, no locking of its own) — safe to
@@ -114,40 +121,46 @@ export function peekBudget(paths: Mm3Paths, now: number = Date.now(), env: Recor
 
 /** Migrates a legacy `.mm3/budget.json`'s caps into config.yaml, once — only when config.yaml doesn't
  *  already say something about `budget.since` (the marker that this project's budget has already been touched
- *  under the new scheme, whether by a real `budget reset` or by this very migration). A no-op every subsequent
+ *  under the new scheme, whether by a `budget.since` the owner wrote or by this very migration). A no-op every subsequent
  *  call. Returns true only when it actually wrote, so `loadBudget` can report it as `created` — the same
  *  one-time-notice spirit as the old "budget file created with defaults." */
-function migrateLegacyIfNeeded(paths: Mm3Paths, env: Record<string, string | undefined>): boolean {
-  if (resolveConfig(paths, env).sources['budget.since'] === 'config') return false;
+function migrateLegacyIfNeeded(paths: Mm3Paths, env: Record<string, string | undefined>, resolved: ResolvedConfig): boolean {
+  if (resolved.sources['budget.since'] === 'config') return false;
   return withLock(paths.lock, () => {
-    if (resolveConfig(paths, env).sources['budget.since'] === 'config') return false;
+    // Both reads are pure, so the legacy file is checked first: with none there is nothing to migrate and no
+    // reason to read config.yaml again. A migration that raced in while the lock was awaited still wins.
     const legacy = readLegacyBudgetJson(paths);
     if (!legacy) return false;
+    if (resolveConfig(paths, env).sources['budget.since'] === 'config') return false;
     writeConfigOverride(paths, { budget: { usd: legacy.capUsd, runs: legacy.capRuns, per: 'total', since: legacy.resetAt } });
     return true;
   });
 }
 
 export function loadBudget(paths: Mm3Paths, now: number = Date.now(), env: Record<string, string | undefined> = process.env): { state: BudgetState; created: boolean } {
-  const created = migrateLegacyIfNeeded(paths, env);
-  return { state: budgetStateNow(paths, now, env), created };
+  // One config read serves the migration check and the state — it is read again only when the migration just
+  // rewrote config.yaml (then the caps in the file are the migrated ones).
+  const resolved = resolveConfig(paths, env);
+  const created = migrateLegacyIfNeeded(paths, env, resolved);
+  return { state: stateFromConfig(paths, created ? resolveConfig(paths, env).config : resolved.config, now), created };
 }
 
 export function usedFraction(s: BudgetState): number {
   return Math.max(s.capUsd > 0 ? s.spentUsd / s.capUsd : 1, s.capRuns > 0 ? s.runs / s.capRuns : 1);
 }
 
-/** The one fix for a cap that is low or reached: the owner raises the cap that ran out (only that cap's flag is
- *  named). `reset` restarts the counted window but raises no cap, so it is not what either message recommends. */
-function raiseCommand(usd: boolean, runs: boolean): string {
-  return `mm3 budget set ${[usd ? '--usd <n>' : '', runs ? '--runs <n>' : ''].filter(Boolean).join(' ')}`;
+/** The one fix for a low or spent budget, named the same way in the warning and in the stop: the caps live in the
+ *  config, and a load makes the change real. */
+function raiseHint(usd: boolean, runs: boolean): string {
+  const keys = [usd ? 'budget.usd' : '', runs ? 'budget.runs' : ''].filter(Boolean).join(' and ');
+  return `raise ${keys} in .mm3/config.yaml, then run mm3 config --load`;
 }
 
 export function checkBudget(s: BudgetState): { ok: true } | { ok: false; message: string } {
   const runsCapped = s.runs >= s.capRuns;
   const usdCapped = s.spentUsd >= s.capUsd;
   if (runsCapped || usdCapped) {
-    return { ok: false, message: `✖ budget: cap reached (${money(s.spentUsd)} of ${money(s.capUsd)} · ${s.runs} of ${s.capRuns} runs) → the owner runs "${raiseCommand(usdCapped, runsCapped)}"${AGENT_POINTER}` };
+    return { ok: false, message: `✖ budget: cap reached (${money(s.spentUsd)} of ${money(s.capUsd)} · ${s.runs} of ${s.capRuns} runs) → ask the owner to ${raiseHint(usdCapped, runsCapped)}${AGENT_POINTER}` };
   }
   return { ok: true };
 }
@@ -168,37 +181,12 @@ export function recordSpend(paths: Mm3Paths, costUsd: number, now: number = Date
   withLock(paths.lock, () => appendFailedLocked(paths, failed, now));
   return budgetStateNow(paths, now);
 }
-
-/** Moves `since` to now — the window narrows from here on; nothing already in the ledger is touched or erased.
- *  Under the same lock every other budget/ledger mutation uses, so a concurrent writer (or a stale held lock)
- *  is detected the same way it always was, even though there's no longer a running counter to serialize. */
-export function resetBudget(paths: Mm3Paths, now: number = Date.now(), env: Record<string, string | undefined> = process.env): BudgetState {
-  return withLock(paths.lock, () => {
-    writeConfigOverride(paths, { budget: { since: iso(now) } });
-    return budgetStateNow(paths, now, env);
-  });
-}
-
-export function setBudget(paths: Mm3Paths, caps: { capUsd?: number; capRuns?: number }, now: number = Date.now(), env: Record<string, string | undefined> = process.env): BudgetState {
-  for (const [name, v] of Object.entries(caps)) {
-    if (v !== undefined && !(Number.isFinite(v) && v > 0)) throw new BudgetError(`✖ budget: ${name} must be a positive number, got ${v} → e.g. --usd 5 --runs 500${AGENT_POINTER}`);
-  }
-  return withLock(paths.lock, () => {
-    writeConfigOverride(paths, {
-      budget: {
-        ...(caps.capUsd !== undefined ? { usd: caps.capUsd } : {}),
-        ...(caps.capRuns !== undefined ? { runs: caps.capRuns } : {}),
-      },
-    });
-    return budgetStateNow(paths, now, env);
-  });
-}
-
 /** Share of a cap spent at which the line turns into a warning (and says what to do) — below it the line is
- *  plain headroom, so an agent reading "10% used" no longer mistakes a nearly-empty meter for a constraint. [C-229] */
-export const BUDGET_LOW_FRACTION = 0.8;
+ *  plain headroom, so an agent reading "10% used" no longer mistakes a nearly-empty meter for a constraint. The default;
+ *  a project moves it with `budget.warnAt`. [C-229] */
+export const BUDGET_LOW_FRACTION = DEFAULT_CONFIG.budget.warnAt;
 
-/** The one budget-line formatter: run notes, `budget`, `budget set/reset` all print exactly this. It states
+/** The one budget-line formatter: run notes and `mm3 budget` print exactly this. It states
  *  what is LEFT, not a percentage — `budget: $0.11 left of $0.12 · 27 of 30 runs left`. A `⚠` appears only at
  *  >= 80% used, followed by the fix for whichever cap is running low. [C-229] */
 export function budgetLine(s: BudgetState): string {
@@ -208,8 +196,9 @@ export function budgetLine(s: BudgetState): string {
   const usdUsed = s.spentUsd > s.capUsd ? ` (${money(s.spentUsd)} used)` : '';
   const runsUsed = s.runs > s.capRuns ? ` (${s.runs} used)` : '';
   const line = `budget: ${moneyLeft(usdLeft, s.capUsd, s.spentUsd)} left of ${money(s.capUsd)}${usdUsed} · ${runsLeft} of ${s.capRuns} runs left${runsUsed}`;
-  if (usedFraction(s) < BUDGET_LOW_FRACTION) return line;
-  const lowUsd = s.capUsd > 0 ? s.spentUsd / s.capUsd >= BUDGET_LOW_FRACTION : true;
-  const lowRuns = s.capRuns > 0 ? s.runs / s.capRuns >= BUDGET_LOW_FRACTION : true;
-  return `⚠ ${line} → low: ask the owner to run ${raiseCommand(lowUsd, lowRuns)}`;
+  const warnAt = s.warnAt ?? BUDGET_LOW_FRACTION;
+  if (usedFraction(s) < warnAt) return line;
+  const lowUsd = s.capUsd > 0 ? s.spentUsd / s.capUsd >= warnAt : true;
+  const lowRuns = s.capRuns > 0 ? s.runs / s.capRuns >= warnAt : true;
+  return `⚠ ${line} → low: ask the owner to ${raiseHint(lowUsd, lowRuns)}`;
 }

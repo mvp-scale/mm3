@@ -1,4 +1,6 @@
 /** The request and answer model of the YAML call contract v1 (skills/mm3/references/contract.md). */
+import { DEFAULT_CONFIG } from '../config/defaults.ts';
+
 export const VERBS = ['view', 'class', 'replay', 'scan', 'drill', 'loop'] as const;
 export type Verb = (typeof VERBS)[number];
 
@@ -7,10 +9,14 @@ export type Depth = (typeof DEPTHS)[number];
 /** quick/standard/thorough = k = 1/2/3: the concerns section holds exactly 3k categories, each with exactly 3
  *  yes/no probes, so exactly this many yes/no questions in total (9/18/27). Distinct from
  *  SWEEP_ITEM_CAP below, which kept the old 10/20/30 numbers for a different thing (items per layer). */
-export const DEPTH_COUNT: Record<Depth, number> = { quick: 9, standard: 18, thorough: 27 };
+export const DEPTH_COUNT: Record<Depth, number> = {
+  quick: DEFAULT_CONFIG.depth.class[0] * 3,
+  standard: DEFAULT_CONFIG.depth.class[1] * 3,
+  thorough: DEFAULT_CONFIG.depth.class[2] * 3,
+};
 /** A sweep: at most this many items asked per layer (reused items are free and don't count) — unchanged from
  *  the original rule even though DEPTH_COUNT's own numbers moved; the two used to coincide and no longer do. */
-export const SWEEP_ITEM_CAP: Record<Depth, number> = { quick: 10, standard: 20, thorough: 30 };
+export const SWEEP_ITEM_CAP: Record<Depth, number> = { ...DEFAULT_CONFIG.sweep.itemsPerLayer };
 
 export const WHYS = ['validate', 'find', 'debug'] as const;
 export const AREAS = ['data', 'api', 'ui', 'auth', 'hosting', 'build', 'tests'] as const;

@@ -1,0 +1,103 @@
+// The plugin's one hook: a nudge, never a block. Claude Code runs it before the Agent tool (a helper is about to be
+// spawned) and before a Bash call that commits, merges, pushes or opens a PR (a decision is about to be made), and
+// whatever this prints is added to the agent's context as one line saying how to get an MM3 verdict first. It speaks
+// only in a project that has a `.mm3/` folder, once per agent per moment per session, and on any doubt (bad input, no
+// match, no folder, a failure of its own) it prints nothing and exits 0, so it can never stop a tool call.
+// Plain node with no imports beyond the standard library: the plugin ships it as a file, not in the bundle.
+import { lstatSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+
+const AGENT_LINE = 'MM3 is set up here (.mm3/). Before you hand work to a helper, get the rules for it: mm3 tool, args ["agent","delegate"], then paste them into its prompt. Cite MM3-#### ids.';
+const DECIDE_LINE = 'MM3 is set up here (.mm3/). Before you call this safe, done or ready, get a verdict with the mm3 tool: view (free) first, then class; args ["agent"] lists the commands. Cite the MM3-#### id.';
+
+/** Walks one command's tokens the way a shell would read them: leading VAR=value words, then `git` with its global options (`-C dir`, `-c k=v`, any other `-x`) and a commit|merge|push, or `gh pr`. Linear: no pattern to backtrack. */
+const decides = (segment) => {
+  const t = segment.trim().split(/\s+/u);
+  let i = 0;
+  while (i < t.length && /^\w+=\S*$/u.test(t[i])) i += 1;
+  if (t[i] === 'gh') return t[i + 1] === 'pr';
+  if (t[i] !== 'git') return false;
+  for (i += 1; i < t.length && t[i].startsWith('-'); i += t[i] === '-c' || t[i] === '-C' ? 2 : 1);
+  return t[i] === 'commit' || t[i] === 'merge' || t[i] === 'push';
+};
+
+/** True when any command in the line (split at ; & | and an opening parenthesis) commits, merges, pushes or opens a PR. */
+const isDecision = (command) => command.split(/[;&|(]/u).some(decides);
+
+const hasMm3 = (dir) => {
+  try {
+    return statSync(join(dir, '.mm3')).isDirectory();
+  } catch {
+    return false;
+  }
+};
+
+/** True when `.mm3/` is in the project folder Claude Code names, or in the cwd or any folder above it. */
+const inMm3Project = (input) => {
+  const start = [process.env.CLAUDE_PROJECT_DIR, typeof input.cwd === 'string' ? input.cwd : undefined].filter((d) => typeof d === 'string' && d !== '');
+  for (const s of start) {
+    for (let dir = s, prev = ''; dir !== prev; prev = dir, dir = dirname(dir)) if (hasMm3(dir)) return true;
+  }
+  return false;
+};
+
+/** Which moment this call is: the delegation, the decision, or none. */
+const momentOf = (input) => {
+  if (input.tool_name === 'Agent' || input.tool_name === 'Task') return 'delegate';
+  const command = input.tool_input && typeof input.tool_input.command === 'string' ? input.tool_input.command : '';
+  if (input.tool_name === 'Bash' && isDecision(command)) return 'decide';
+  return null;
+};
+
+/** The marker folder: private to this user (mode 0700, named by uid), made here, and used only if it is a real folder we own. */
+const markerDir = () => {
+  const dir = join(tmpdir(), `mm3-nudge-${typeof process.getuid === 'function' ? process.getuid() : 'user'}`);
+  try {
+    mkdirSync(dir, { mode: 0o700 });
+  } catch (e) {
+    if (e?.code !== 'EEXIST') return undefined;
+  }
+  const st = lstatSync(dir);
+  const mine = typeof process.getuid !== 'function' || st.uid === process.getuid();
+  return st.isDirectory() && !st.isSymbolicLink() && mine && (st.mode & 0o077) === 0 ? dir : undefined;
+};
+
+/** False when this agent already heard this moment in this session. A marker that cannot be written, or a folder that is not safe to write in, does not silence it. */
+const firstTime = (input, moment) => {
+  if (typeof input.session_id !== 'string' || input.session_id === '') return true;
+  const safe = (s) => String(s ?? '').replace(/[^A-Za-z0-9_-]/gu, '_').slice(0, 80);
+  try {
+    const dir = markerDir();
+    if (dir === undefined) return true;
+    writeFileSync(join(dir, `${safe(input.session_id)}-${safe(input.agent_id)}-${moment}`), '', { flag: 'wx', mode: 0o600 });
+    return true;
+  } catch (e) {
+    return e?.code !== 'EEXIST';
+  }
+};
+
+const run = (raw) => {
+  const input = JSON.parse(raw);
+  if (input === null || typeof input !== 'object' || (input.hook_event_name !== undefined && input.hook_event_name !== 'PreToolUse')) return;
+  const moment = momentOf(input);
+  if (moment === null || !inMm3Project(input) || !firstTime(input, moment)) return;
+  process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: moment === 'delegate' ? AGENT_LINE : DECIDE_LINE } }));
+};
+
+try {
+  let raw = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (c) => { raw += c; });
+  process.stdin.on('end', () => {
+    try {
+      run(raw);
+    } catch {
+      /* fail open: say nothing */
+    }
+    process.exit(0);
+  });
+  process.stdin.on('error', () => process.exit(0));
+} catch {
+  process.exit(0);
+}

@@ -1,0 +1,29 @@
+{
+  "description": "MM3 nudge: one line, once per moment, before a helper is spawned and before a commit, merge, push or PR. Never blocks.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs"],
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs"],
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

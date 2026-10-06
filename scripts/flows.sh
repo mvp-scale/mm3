@@ -10,7 +10,7 @@
 # by the order below — reordering flows changes the ids and gate values later flows assert on.
 #   npm run test:flows
 set -u
-cd "$(git rev-parse --show-toplevel)"
+cd "$(dirname "$0")/.."
 CLI="$(pwd)/dist/cli.js"
 
 if [ ! -f "$CLI" ]; then
@@ -148,7 +148,7 @@ pass "03-class" "first paid call: MM3-0001, budget file created, fake labeled no
 flow_done "03-class"
 
 # The budget line says runs LEFT ("485 of 493 runs left"); runs used is the cap minus that.
-runs_used() { node "$CLI" budget | sed -E 's/.*\· ([0-9]+) of ([0-9]+) runs.*/\2 \1/' | awk '{print $1 - $2}'; }
+runs_used() { node "$CLI" budget | head -1 | sed -E 's/.*\· ([0-9]+) of ([0-9]+) runs.*/\2 \1/' | awk '{print $1 - $2}'; }
 
 # ---- 4. class again, identical -> exact reuse ---------------------------------------------------------------
 flow_start
@@ -350,12 +350,27 @@ need_has "10-outcome" "repeat is a no-op" "already recorded"
 pass "10-outcome" "repeating the same outcome is a no-op"
 flow_done "10-outcome"
 
-# ---- 11. budget: set tiny -> a reused run ignores it -> next PAID verb exits 3 -> reset -> paid verb works again
+# ---- 11. budget: the caps live in the config. set tiny + load -> a reused run ignores it -> next PAID verb exits 3
+#         -> raise the cap + load (the count restarts) -> paid verb works again; the removed commands say where to go
 flow_start
 RUNS_NOW=$(runs_used)
-run budget set --usd 0.01 --runs "$RUNS_NOW"
-need_exit "11-budget" "budget set --usd 0.01 --runs $RUNS_NOW" 0
-pass "11-budget" "cap set at the current run count ($RUNS_NOW)"
+# A changed budget restarts the count on load; a budget.since written in the file wins, so the cap is set against
+# everything already counted (the window starts at the beginning of the ledger).
+printf 'budget:\n  usd: 0.01\n  runs: %s\n  since: 1970-01-01T00:00:00Z\n' "$RUNS_NOW" > "$D/.mm3/config.yaml"
+run config --load
+need_exit "11-budget" "config --load with a tiny cap" 0
+pass "11-budget" "cap set at the current run count ($RUNS_NOW) through the config"
+
+run budget
+need_exit "11-budget" "budget shows the count and the way to change it" 0
+need_has "11-budget" "budget shows the count and the way to change it" "mm3 config --load"
+run budget set --usd 5
+need_exit "11-budget" "budget set was removed" 2
+need_has "11-budget" "budget set was removed" "was removed"
+run budget reset
+need_exit "11-budget" "budget reset was removed" 2
+need_has "11-budget" "budget reset was removed" "was removed"
+pass "11-budget" "budget set and reset are gone and say where to go"
 
 # fix #5a: the exact same request as 03-class/04-reuse asks nothing new (every answer is already on the
 # ledger), so it must succeed even though the run cap is already at its limit — a fully-reused run is free,
@@ -369,24 +384,28 @@ pass "11-budget" "a fully-reused run is never blocked by the cap"
 sed 's/This login handler is safe to merge/This login handler is safe to merge (budget check)/' req-class.yaml > req-class-budget.yaml
 run class req-class-budget.yaml
 need_exit "11-budget" "next paid verb over cap" 3
-# fix #5c: only the run cap tripped here (spend is still $0.00 of the $0.01 cap) — the hint says "set --runs",
-# not "reset" (which fits when the dollar cap is the one involved).
-need_has "11-budget" "next paid verb over cap" "mm3 budget set --runs"
+# fix #5c: only the run cap tripped here (spend is still $0.00 of the $0.01 cap) — the hint names budget.runs only.
+need_has "11-budget" "next paid verb over cap" "raise budget.runs in .mm3/config.yaml, then run mm3 config --load"
 pass "11-budget" "the next paid verb is blocked with the right hint (exit 3)"
 
-run budget reset
-need_exit "11-budget" "budget reset" 0
-pass "11-budget" "budget reset"
+# Raise the cap in the config and load it: a changed budget restarts the count.
+sleep 1
+printf 'budget:\n  usd: 0.01\n  runs: %s\n' "$((RUNS_NOW + 5))" > "$D/.mm3/config.yaml"
+run config --load
+need_exit "11-budget" "raise the cap and load" 0
+need_has "11-budget" "raise the cap and load" "count restarted"
+pass "11-budget" "raising the cap and loading restarts the count"
 
 # The same fresh goal, now askable for real (the blocked attempt above was never logged) — proves spend resumes.
 run class req-class-budget.yaml
 need_exit "11-budget" "paid verb works again" 0
 RUNS_AFTER_RESET=$(runs_used)
-[ "$RUNS_AFTER_RESET" = "1" ] || fail "11-budget" "paid verb works again" "expected run count 1 after reset, got $RUNS_AFTER_RESET"
-pass "11-budget" "a fresh paid call works again after reset"
+[ "$RUNS_AFTER_RESET" = "1" ] || fail "11-budget" "paid verb works again" "expected run count 1 after the restart, got $RUNS_AFTER_RESET"
+pass "11-budget" "a fresh paid call works again after the cap is raised"
 
 # Headroom for the flows still to come.
-run budget set --usd 5 --runs 500
+printf 'budget:\n  usd: 5\n  runs: 500\n' > "$D/.mm3/config.yaml"
+run config --load
 need_exit "11-budget" "restore headroom for later flows" 0
 flow_done "11-budget"
 

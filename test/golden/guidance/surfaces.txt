@@ -1,0 +1,2853 @@
+=== mcp/instructions
+MM3 is active here: use it to ground analysis in evidence, not as an afterthought. Run `mm3 agent` first for the commands and rules, then `mm3 agent <verb>` before writing a request.
+IMPORTANT: work top-down. Ask a few high-leverage questions per layer and drill only where MM3 flags something. "Exhaustive" means every layer covered through that funnel, not every file.
+- Open goal, in order: `view` (free reuse) → `scan` only when you do not know where to look → `drill` the flagged item → `loop` to check a design. Known location: `class` on the representative code.
+- Pilot first: send one small request, read the answer, fix the questions, then widen. Send no more than a few before you have read one.
+- A sweep that says `gate: fail` is normal (any file failing any concern fails it): read the failing categories and the `next:` line; do not stop and do not repeat it.
+- Before writing a request run `mm3 agent probe` (distinct roles per probe, a "none fits" option on every choice) and tag it with mdl (`uses`, `area`).
+- Before a judgment call about code or a design (safe to merge? is it fixed? which option?), get an MM3 verdict: a call costs a fraction of a cent and every run is recorded, so the next decision starts from evidence, not from scratch.
+- Cite the run id (MM3-####) for every claim that comes from MM3, and mark the rest as your own reading.
+- Delegating? Give helpers `mm3 agent delegate`, and check their reports against the ledger with `mm3 view MM3-####`: a helper can report work it did not do.
+=== mcp/tool-definition
+{
+  "name": "mm3",
+  "description": "Quick, citable evidence for judgment calls on code or a design (safe to merge? is it fixed? which option?). First call args: [\"agent\"] to learn the commands and rules, then args: [\"agent\", \"<command>\"] before writing a request. Otherwise runs any mm3 CLI command in this project — the same arguments and stdin the mm3 CLI takes (e.g. args: [\"class\",\"-\"], stdin: <request YAML>, or args: [\"doctor\"]). Returns the same text output mm3 would print, and marks the result an error when the exit code is not 0.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "args": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "mm3 CLI arguments, e.g. [\"doctor\"] or [\"class\",\"-\"]"
+      },
+      "stdin": {
+        "type": "string",
+        "description": "Text to feed as stdin, for a \"-\" argument (e.g. the request YAML)."
+      },
+      "project": {
+        "type": "string",
+        "description": "The project directory to use (MM3_HOME), when it is not the current working directory."
+      }
+    },
+    "required": [
+      "args"
+    ]
+  }
+}
+=== agents-md/block
+If the `mm3` tool is available, MM3 is active in this project. Run `mm3 agent` first for the commands and rules, then `mm3 agent <verb>` before writing a request.
+IMPORTANT: work top-down. Ask a few high-leverage questions per layer and drill only where MM3 flags something. "Exhaustive" means every layer covered through that funnel, not every file.
+- Open goal, in order: `view` (free reuse) → `scan` only when you do not know where to look → `drill` the flagged item → `loop` to check a design. Known location: `class` on the representative code.
+- Pilot first: send one small request, read the answer, fix the questions, then widen. Send no more than a few before you have read one.
+- A sweep that says `gate: fail` is normal (any file failing any concern fails it): read the failing categories and the `next:` line; do not stop and do not repeat it.
+- Before writing a request run `mm3 agent probe` (distinct roles per probe, a "none fits" option on every choice) and tag it with mdl (`uses`, `area`).
+- Before a judgment call about code or a design (safe to merge? is it fixed? which option?), get an MM3 verdict: a call costs a fraction of a cent and every run is recorded, so the next decision starts from evidence, not from scratch.
+- Cite the run id (MM3-####) for every claim that comes from MM3, and mark the rest as your own reading.
+- Delegating? Give helpers `mm3 agent delegate`, and check their reports against the ledger with `mm3 view MM3-####`: a helper can report work it did not do.
+=== agent/overview
+verbs (pick by goal):
+- view: free; what's already known, before any paid call
+- class: one decision on one thing (merge, choose, triage, check a fix)
+- replay: re-check a run's questions across two git refs: after a fix, or what changed between releases or commits
+- scan: sweep many files when the problem's location is unknown
+- drill: go down from one flagged item of an earlier run
+- loop: check a design or plan before code exists
+tools:
+- report: brief from history; free, no new checks
+- outcome: record held/overruled/failed on a run (held needs a second actor)
+- budget: show or set the spend and run caps
+- template: print a valid starting request for a verb
+rules:
+- before writing or editing any request, read the mm3-probe skill (or run `mm3 agent probe`): what makes a probe worth asking.
+- depth: quick|standard|thorough = by default exactly 9, 18 or 27 yes/no questions across 3k concerns categories (a project can change the counts: mm3 config), each with 3 probes in a distinct role — family: access, injection, secrets, input, output, availability, correctness, design, design-risk, done or other (role table: mm3 agent probe) — a sweep: by default at most 10, 20 or 30 items per layer.
+- where: at most 5 path entries — this is all the code a run sees.
+- a question (or the goal) is at most 160 characters, one line — longer text is rejected outright.
+- pass: yes clears at >= 0.70; pass: no clears at <= 0.30; in between is unsure.
+- questions are numbered 1…N across the whole request, decisions included.
+- where: resolves against the MCP `project` argument or `MM3_HOME` (CLI), never your session cwd — pass `project` (or set `MM3_HOME`) when you started elsewhere.
+- open goal, in order: view (free reuse) → scan (find where) → drill (go deeper on a flagged item; follow next:) → loop (check the design) → replay (after a change).
+- what changed or drifted between releases or commits: replay a prior run with compare: {before: <ref>, after: <ref>} (no prior run: class or scan once at one ref first); git diff is not an mm3 check.
+- every number or claim you report comes from an mm3 answer (cite its id, e.g. MM3-0042) or is labelled your own estimate.
+- a check done without mm3 (git diff, reading code to answer a question) is a workaround: say so; never claim none.
+- notes: budget: … left is headroom, not a limit: stop only at ⚠ or exit 3, then tell the owner.
+run: mm3 agent <verb|tool> — before writing that request
+run: mm3 agent probe — before writing questions: how to phrase one
+run: mm3 agent verdict — before reading a response: how to read it
+run: mm3 agent delegate — before handing MM3 work to a helper agent: what to paste into its prompt
+run: mm3 init --agents --yes — to set this project up for agents: writes the MM3 guidance into AGENTS.md (alone, not with mm3 init)
+run: no key → mm3 init to add one
+=== help/overview
+MM3 turns a short numbered yes/no checklist into a calibrated pass/fail/unsure verdict — evidence,
+never a command. Think of it as a citable second opinion, not a linter.
+MM3 = MAK³ (make: use what is proven) + MDL³ (model: learn what is missing), each across Know / Judge / Prove.
+
+## Invoke it
+In Claude Code: call the `mm3` MCP tool directly — same args as the CLI (e.g. args: ["class", "-"]),
+the request YAML as stdin — no PATH lookup needed. Elsewhere: use `mm3` if it's
+on PATH, else `npx --no-install mm3`; if neither works, tell the user to run
+"npx @mvpscale/mm3 init" and stop.
+
+## Pick your verb
+| Grid | Know | Judge | Prove |
+|---|---|---|---|
+| MAK³ — make: use what's proven     | view (free) | class (1 call) | replay (up to 2 calls) |
+| MDL³ — model: learn what's missing | scan (1 call) | drill (1 call) | loop (1 call/layer) |
+
+- view: free; what's already known, before any paid call
+- class: one decision on one thing (merge, choose, triage, check a fix)
+- replay: re-check a run's questions across two git refs: after a fix, or what changed between releases or commits
+- scan: sweep many files when the problem's location is unknown
+- drill: go down from one flagged item of an earlier run
+- loop: check a design or plan before code exists
+
+## The contract (memorize — these cause most first-try rejects)
+- depth: quick|standard|thorough = by default exactly 9, 18 or 27 yes/no questions across 3k concerns categories (a project can change the counts: mm3 config), each with 3 probes in a distinct role — family: access, injection, secrets, input, output, availability, correctness, design, design-risk, done or other (role table: mm3 agent probe) — a sweep: by default at most 10, 20 or 30 items per layer.
+- where: at most 5 path entries — this is all the code a run sees.
+- a question (or the goal) is at most 160 characters, one line — longer text is rejected outright.
+- pass: yes clears at >= 0.70; pass: no clears at <= 0.30; in between is unsure.
+- questions are numbered 1…N across the whole request, decisions included.
+- every question in a category must point the same way as its pass: (one reversed question fails the whole gate).
+
+## Read the verdict
+Read `goal` (+ any `choice`) first, then the failing category, then follow the `next:` line. A stop always
+reads `✖ field: problem → fix` — the error text names exactly what to change.
+
+Go deeper: `mm3 help <verb>` (view, class, replay, scan, drill, loop) or `mm3 help <topic>`
+(authoring, verdict, mdl, reuse).
+
+## Tools
+- report: brief from history; free, no new checks (`mm3 help report`)
+- outcome: record held/overruled/failed on a run (held needs a second actor) (`mm3 help outcome`)
+- budget: show or set the spend and run caps (`mm3 help budget`)
+- template: print a valid starting request for a verb
+=== agent/view
+verb: view
+rules:
+- a code file (not a request) is a place, not a request — view <folder>, ".", a tag, or MM3-#### all work.
+- where: at most 5 path entries — this is all the code a run sees.
+- a question (or the goal) is at most 160 characters, one line — longer text is rejected outright.
+patterns:
+- why: View needs where: to check for reuse
+  bad:
+    mak:
+      goal: This handler is safe to merge
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does the handler sanitize the amount field before use?
+  good:
+    mak:
+      goal: This handler is safe to merge
+      where: [src/pay/handler.ts]
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does the handler sanitize the amount field before use?
+- why: Over: is for sweeps; view checks one thing
+  bad:
+    mak:
+      goal: The handler is safe to merge
+      where: [src/pay/handler.ts]
+      over:
+        file: src/pay/*.ts
+        function: each
+      ask:
+        function:
+          concerns:
+            injection:
+              pass: no
+              1: Does {function} put request text straight into a query?
+  good:
+    mak:
+      goal: The handler is safe to merge
+      where: [src/pay/handler.ts]
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does the handler put request text straight into a query?
+=== agent/class
+verb: class
+rules:
+- goal wording changes the verdict (that's a feature, not a bug) — phrase it as the claim you need proven.
+- depth: quick|standard|thorough = by default exactly 9, 18 or 27 yes/no questions across 3k concerns categories (a project can change the counts: mm3 config), each with 3 probes in a distinct role — family: access, injection, secrets, input, output, availability, correctness, design, design-risk, done or other (role table: mm3 agent probe) — a sweep: by default at most 10, 20 or 30 items per layer.
+- where: at most 5 path entries — this is all the code a run sees.
+- a question (or the goal) is at most 160 characters, one line — longer text is rejected outright.
+- questions are numbered 1…N across the whole request, decisions included.
+patterns:
+- why: Big whole files refused — name the range
+  bad:
+    mak:
+      goal: This function is safe to merge
+      where: [src/pay/validate.ts]
+  good:
+    mak:
+      goal: This function is safe to merge
+      where: [src/pay/validate.ts:120-180]
+- why: Add the range the question is actually about
+  bad:
+    mak:
+      goal: This handler is safe to merge
+      where: [src/pay/handler.ts]
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does validateInput() sanitize the amount field?
+  good:
+    mak:
+      goal: This handler is safe to merge
+      where: [src/pay/handler.ts, src/pay/validate.ts]
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does validateInput() sanitize the amount field?
+- why: Name the file in the question, in backticks
+  bad:
+    mak:
+      goal: The payment path is safe to merge
+      where: [src/pay/handler.ts, src/pay/validate.ts]
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does it sanitize the amount field before use?
+  good:
+    mak:
+      goal: The payment path is safe to merge
+      where: [src/pay/handler.ts, src/pay/validate.ts]
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does `src/pay/validate.ts` sanitize the amount field before use?
+=== agent/replay
+verb: replay
+rules:
+- the files must be committed at the ref you name (or use "worktree" for the working tree) — replay runs git in the repo that actually holds them.
+- replay re-runs the parent's own questions; it never takes ask: (use class for new questions).
+- a sweep parent (scan, loop, drill's sweep form) is replayed too: it re-sweeps at both refs and reports fixed/still/regressed per item — only a drill sweep CONTINUATION (over: starting with "each") is refused.
+patterns:
+- why: Replay re-runs parent's questions; never ask:
+  bad:
+    mak:
+      goal: The injection fix works
+      parent: MM3-0042
+      compare: {before: main, after: HEAD}
+      expect: [injection]
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does it still concatenate the value into the query?
+            2: Does it skip a parameterized query?
+            3: Is the value taken from request input without validation?
+  good:
+    mak:
+      goal: The injection fix works
+      parent: MM3-0042
+      compare: {before: main, after: HEAD}
+      expect: [injection]
+=== agent/scan
+verb: scan
+rules:
+- add a scale question to a layer to rank findings by severity, worst first, instead of an unordered map.
+- scan by file when the file itself is the unit that matters, not a function inside it.
+- depth: quick|standard|thorough = by default exactly 9, 18 or 27 yes/no questions across 3k concerns categories (a project can change the counts: mm3 config), each with 3 probes in a distinct role — family: access, injection, secrets, input, output, availability, correctness, design, design-risk, done or other (role table: mm3 agent probe) — a sweep: by default at most 10, 20 or 30 items per layer.
+- a question (or the goal) is at most 160 characters, one line — longer text is rejected outright.
+- questions are numbered 1…N across the whole request, decisions included.
+patterns:
+- why: Ask what {function} itself does, not its caller
+  bad:
+    mak:
+      goal: Handlers don't trust request input
+      depth: quick
+      over:
+        file: src/handlers/*.ts
+        function: each
+      ask:
+        function:
+          concerns:
+            injection:
+              pass: no
+              1: Does the caller of {function} sanitize its input first?
+              2: Does {function} put request text straight into a query?
+              3: Does {function} run that query with db.query?
+            access:
+              pass: no
+              4: Does {function} return a record without checking its owner?
+              5: Does {function} skip comparing the record owner to the caller?
+              6: Could {function} be called without a permission check?
+            leaks:
+              pass: no
+              7: Does {function} return a raw database error?
+              8: Does {function} log the request body?
+              9: Does {function}'s response include unrequested fields?
+          decisions:
+            severity:
+              pass: [none]
+              10:
+                scale: How severe is the worst issue?
+                levels: [none, high]
+            route:
+              pass: [ship]
+              11:
+                choice: Where should this go?
+                options: [ship, block]
+  good:
+    mak:
+      goal: Handlers don't trust request input
+      depth: quick
+      over:
+        file: src/handlers/*.ts
+        function: each
+      ask:
+        function:
+          concerns:
+            injection:
+              pass: no
+              1: Does {function} sanitize its input before use?
+              2: Does {function} put request text straight into a query?
+              3: Does {function} run that query with db.query?
+            access:
+              pass: no
+              4: Does {function} return a record without checking its owner?
+              5: Does {function} skip comparing the record owner to the caller?
+              6: Could {function} be called without a permission check?
+            leaks:
+              pass: no
+              7: Does {function} return a raw database error?
+              8: Does {function} log the request body?
+              9: Does {function}'s response include unrequested fields?
+          decisions:
+            severity:
+              pass: [none]
+              10:
+                scale: How severe is the worst issue?
+                levels: [none, high]
+            route:
+              pass: [ship]
+              11:
+                choice: Where should this go?
+                options: [ship, block]
+=== agent/drill
+verb: drill
+rules:
+- follow the `next:` line rather than hand-authoring parent/from — it already names the id and the category or item.
+- a question (or the goal) is at most 160 characters, one line — longer text is rejected outright.
+- questions are numbered 1…N across the whole request, decisions included.
+patterns:
+- why: Drill needs from: which item or category
+  bad:
+    mak:
+      goal: Find exactly where request text reaches the query
+      parent: MM3-0051
+      ask:
+        concerns:
+          source:
+            pass: no
+            1: Is the value concatenated straight into the string?
+            2: Does it skip a parameterized query?
+            3: Is the value taken from request input without validation?
+        decisions:
+          severity:
+            pass: [none]
+            4:
+              scale: How severe is this?
+              levels: [none, high]
+          route:
+            pass: [ship]
+            5:
+              choice: Where should this go?
+              options: [ship, block]
+  good:
+    mak:
+      goal: Find exactly where request text reaches the query
+      parent: MM3-0051
+      from: access
+      ask:
+        concerns:
+          source:
+            pass: no
+            1: Is the value concatenated straight into the string?
+            2: Does it skip a parameterized query?
+            3: Is the value taken from request input without validation?
+        decisions:
+          severity:
+            pass: [none]
+            4:
+              scale: How severe is this?
+              levels: [none, high]
+          route:
+            pass: [ship]
+            5:
+              choice: Where should this go?
+              options: [ship, block]
+=== agent/loop
+verb: loop
+rules:
+- a sub-layer (like story under part) is a SIBLING key under over:, never nested inside its parent item.
+- a story/part name is one word or kebab-case, at most 20 characters, and never contains "/".
+- every question under a layer is asked of every item at that layer — phrase it so that holds for all of them.
+- depth: quick|standard|thorough = by default exactly 9, 18 or 27 yes/no questions across 3k concerns categories (a project can change the counts: mm3 config), each with 3 probes in a distinct role — family: access, injection, secrets, input, output, availability, correctness, design, design-risk, done or other (role table: mm3 agent probe) — a sweep: by default at most 10, 20 or 30 items per layer.
+- a question (or the goal) is at most 160 characters, one line — longer text is rejected outright.
+- questions are numbered 1…N across the whole request, decisions included.
+patterns:
+- why: Loop sweeps written ideas, not file globs
+  bad:
+    mak:
+      goal: The checkout redesign is sound
+      depth: quick
+      over:
+        file: src/checkout/*.ts
+      ask:
+        file:
+          concerns:
+            done:
+              pass: yes
+              1: Does {file} own one clear responsibility?
+  good:
+    mak:
+      goal: The checkout redesign is sound
+      depth: quick
+      over:
+        part: [gateway, payments, ledger]
+      ask:
+        part:
+          concerns:
+            responsibility:
+              pass: yes
+              1: Does {part} own one clear responsibility?
+              2: Can {part} be deployed without the others?
+              3: Would another part need to change if {part} changed?
+            dependency:
+              pass: no
+              4: Does {part} reach into another part's own data?
+              5: Does {part} depend on another part's release order?
+              6: Would removing another part break {part} silently?
+            testability:
+              pass: yes
+              7: Can {part} be tested without standing up the others?
+              8: Does {part} expose a clear boundary to test against?
+              9: Is {part} small enough to review on its own?
+          decisions:
+            risk:
+              pass: [none]
+              10:
+                scale: How risky is {part}?
+                levels: [none, high]
+            route:
+              pass: [build-now]
+              11:
+                choice: What should happen to {part} next?
+                options: [build-now, rework]
+=== agent/report
+tool: report
+rules:
+- free: never calls a provider, never writes to the ledger
+- views: hits (default), patterns, history, web, graph, problems, mdl, calls, fields
+- web writes one file, .mm3/viewer.html, and tries to open it — the only view that writes anything
+- graph/problems/mdl/calls read the graph tier (its own watermark, refreshed on read, never on a paid call)
+- fields: undeclared mdl keys with counts/samples/a suggested type; --accept <field> writes it into config mdl:
+patterns:
+- why: no view beyond hits, patterns, history, web, graph, problems, mdl, calls or fields exists
+  bad:
+    mm3 report level2
+  good:
+    mm3 report patterns
+=== agent/outcome
+tool: outcome
+rules:
+- syntax: mm3 outcome <MM3-####> held|overruled|failed --by <actor>
+- no --note flag: keep a reason in your own notes, not here
+- an actor can't mark its own asked run held: use a different --by, or record overruled or failed
+- same outcome, same actor, twice: exit 0, no-op
+patterns:
+- why: held needs a second actor; never self-certify
+  bad:
+    mm3 outcome MM3-0002 held --by claude
+  good:
+    mm3 outcome MM3-0002 held --by <the user or a reviewer agent, not you>
+=== agent/budget
+tool: budget
+rules:
+- read-only: prints what is left and how to change it
+- the caps live in .mm3/config.yaml: budget.usd, budget.runs (and budget.per, budget.since, budget.warnAt)
+- change one, then run mm3 config --load: a changed budget restarts the count
+- over either cap: exit 3, before spending anything
+patterns:
+- why: `budget set` and `budget reset` were removed, the config is the one place to change it
+  bad:
+    mm3 budget set --usd 5 --runs 500
+  good:
+    # edit budget.usd / budget.runs in .mm3/config.yaml, then:
+    mm3 config --load
+=== agent/template
+tool: template
+rules:
+- syntax: mm3 template <verb> [--parent MM3-#### --from <item-or-category>]
+- or: mm3 template <verb> --from <request.yaml> [--where <path>]... [--goal <text>]
+- free: no project needed, never spends, never writes
+- --parent only applies to drill, and needs --from too
+- --where/--goal need --from; refused together with --parent
+patterns:
+- why: --parent only works with drill
+  bad:
+    mm3 template class --parent MM3-0002 --from injection
+  good:
+    mm3 template drill --parent MM3-0002 --from injection
+=== agent/probe
+tool: probe
+rules:
+- One narrow judgment per question — break a complex or ill-defined question into separate questions that each evaluate one property.
+- The question carries its full meaning on its own — a question's number is a label for the response only; the model never sees it.
+- It's answerable from the code in where: — name the file in backticks when there's more than one, and send only the context the question needs.
+- Yes/no questions keep one polarity per category — phrase so "yes" is the affirmative you mean, not an inverted "is free of…".
+- Scale levels describe concrete situations, not relative points — every level is judged on its own; the model sees neither its number nor its neighbours.
+- Choice options include a "none fits" outcome for when nothing else matches.
+- Phrase the goal as the safe state ("X rejects Y"), not the vulnerability ("X runs input as code") — a goal is asked as a yes/no, so the same affirmative-alignment rule applies to it.
+- Add the visible-scope probe as a recommended extra question: "Can this be answered from the code shown?"
+- a question (or the goal) is at most 160 characters, one line — longer text is rejected outright.
+- injection: reach · guard · sink
+- access: actor · check · resource
+- secrets: store · transport · exposure
+- input: source · validate · reject
+- output: source · encode · render
+- availability: trigger · limit · recovery
+- correctness: input · rule · result
+- design: responsibility · dependency · testability
+- design-risk: abuse · failure · data
+- done: concrete · testable · owned
+- bad: "Is this method secure?" — a yes means nothing: no mechanism, no angle, no place
+- good: Is `id` from `req.query` concatenated into the SQL string? (reach)
+- good: Is `id` bound as a parameter instead? (guard)
+- good: Does the query run with `db.query` on that string? (sink)
+- see: the mm3-probe skill for the full model and worked examples
+=== agent/verdict
+tool: verdict
+rules:
+- pass: yes clears at >= 0.70; pass: no clears at <= 0.30; in between is unsure.
+- `need:` on a category: `all` (default, every answer clears the bar) · `most` (>= 2/3 clear, none a clear miss) · `any` (at least one clears)
+- the gate passes only when the goal and every category pass; in a sweep, an item passes only when its own categories and every child does too
+- `consensus` (STRONG · SPLIT · WEAK): whether the yes/no answers agree with each other — shown on `class`, and `drill` on a one-subject parent; a sweep or `replay` response never computes it
+- `escalate: true` on non-STRONG consensus, `depth: thorough`, or a goal that reads as irreversible (delete, deploy, drop, pay, migrate, secret, credential) — don't act on this alone
+- a probability near 0.50 means the evidence points both ways about equally, not a medium-strength yes — that's exactly why it lands in `unsure` rather than a weak pass
+- the answer's shape is guaranteed (a number in range, a level that's really one of yours) — whether it's the RIGHT number is what consensus, escalate and your own reading are for, not the schema
+- `replay`'s per-category grade: `fixed` (failed or unsure before, passes now), `still` (failed or unsure before, still doesn't), `regressed` (passed before, not any more — regressed alone fails the gate even when every `after` category passes)
+- `reused: [MM3-####]` names prior runs an answer's evidence and question text matched exactly — free, not a new call
+- the cache returns old answers to old questions; learning comes from new ones
+- `mm3 report hits` flags a one-subject answer `stale` once the code at its own `where` has changed since — re-run it rather than trust it
+- a run can fail to answer for different reasons, and the exit code says which: a bad request never reaches the classifier (exit 2); a provider or ledger problem does (exit 1); a blocked budget never spends at all (exit 3) — read which one you got before treating a stop as `unsure`
+- a stop always reads `✖ field: problem → fix`; run `mm3 help <verb>` when one doesn't make sense
+=== agent/mdl
+tool: mdl — optional, free, ≤25 lines. Flat keys; the only nesting is a list.
+Every field is optional: fill what you know, omit what doesn't apply.
+
+FIELDS
+  why      validate | find | debug
+  area     data | api | ui | auth | hosting | build | tests          (list ≤2; omit for whole-system questions: uses carries the map)
+  stage    design | build | review | pre-merge | post-fix | release | operate   (operate = live production/incident)
+  change   feature | fix | refactor | dependency | config   (only when a code change is involved)
+  risk     low | medium | high         the stakes if this answer is wrong
+  problem  one line ≤160: what you're solving, in your own words
+  uses     list ≤5 of chains (grammar below)
+  blast    person | system | container | component | code   the widest level one failure reaches (person = users' data or accounts)
+  touches  list ≤5 domain objects/fields (not concepts like "authentication", not language built-ins)
+  <other>  any kebab-case key: one line ≤160 or a list ≤5, recorded as-is
+  unknown  allowed as a value for any closed field
+
+ARCHITECTURE: the C4 model (c4model.com). Five levels, each inside the one above:
+
+  system: shop
+  └── container: web-app                      an app or data store
+  │   ├── component: orders-handler           a group of code inside a container
+  │   │   └── code: createOrder               your own function (not a built-in)
+  │   └── component: orders-dao
+  └── container: database
+  person: customer                             outside the system
+  system: payment-service                      an outside service is its own system
+
+WRITE IT FLAT
+  inside  →  parent/child in the name:  component:web-app/orders-handler
+  uses    →  ->  between parts:         a -> b -> c
+  guessed or not built yet  →  end any part with ?:  component:web-app/refunds?  system:email-service?
+
+  chain   :=  part ( " -> " part )*
+  part    :=  level ":" name ( "/" name )* [ "?" ]
+  level   :=  person | system | container | component | code
+  name    :=  lowercase kebab-case, or a code identifier at the code level
+
+EXAMPLE
+  mdl:
+    why: validate
+    problem: request input reaches a raw query in order creation
+    uses:
+      - person:customer -> container:web-app
+      - component:web-app/orders-handler -> component:web-app/orders-dao -> container:database
+    blast: container
+    touches: [Order, amount]
+=== agent/config
+tool: config
+rules:
+- syntax: mm3 config [--write | --load [file]]
+- free: plain config never writes, never spends, works with or without a project
+- prints every effective setting (budget, provider, baseURL, model, pricing, timeoutMs, retries, backoffMs, sweep, requestMaxBytes, reuse, depth, evidence, lens, mdl) and which of default/config/env it came from
+- .mm3/config.yaml IS the config: every request reads it, so an edit applies at once and deleting the file means defaults
+- to return to the defaults, delete .mm3/config.yaml, then run mm3 config --load (it records the change); do not guess old values
+- mm3 config --load [file] checks the file (a named file is copied to .mm3/config.yaml as is) and records a receipt in the ledger: ✔ valid · loaded · N changed since the last load, or every ✖ problem and nothing recorded
+- doctor and mm3 config compare the file with the latest receipt: ✔ config: loaded <time>, or ⚠ config.yaml is in effect but its latest change is not recorded → mm3 config --load
+- a changed budget (usd, runs, per) restarts the count when loaded; the receipt says so
+- a config.yaml with a problem stops paid runs (class, scan, drill, loop, replay) with every ✖ and the fix; reads still answer
+- sparse overrides only, precedence env > config > default
+- the display is not a file: to customize run mm3 config --write → writes .mm3/config.yaml (commented guide) only if missing, never overwrites
+- a misnamed .mm3/config.ymal (or config.yml, config.json) gets a did-you-mean note here and in doctor
+=== agent/doctor
+tool: doctor
+rules:
+- syntax: mm3 doctor  ·  or: mm3 doctor <file | ->
+- free: no call, no spend, never writes
+- bare form: reports provider/route/key/project/node/config in one pass — also validates .mm3/config.yaml when present
+- <file|-> form: checks ONE document, no project needed — a mak: key means a request (same checks as --dry-run); anything else is checked as config
+- <file|-> never touches the ledger, reuse or budget, even inside a project
+=== agent/delegate
+tool: delegate
+rules:
+- paste this card into the prompt of every helper you hand MM3 work to
+- use only the `mm3` MCP tool, never the shell (there is no mm3 command on PATH), one request at a time; never read .mm3/log.jsonl
+- write each request by editing the output of `mm3 template <verb>`, not from scratch; quote any question that holds ": " or " #"; a verb that stops with ✖ says the fix, apply it and resend
+- report each MM3 run id with its gate, and say what you did NOT run; the lead checks the ids against the ledger before relying on the report
+- start with one small request, then the batch; a helper that stops early or says it finished is checked, not trusted
+IMPORTANT: work top-down. Ask a few high-leverage questions per layer and drill only where MM3 flags something. "Exhaustive" means every layer covered through that funnel, not every file.
+- Open goal, in order: `view` (free reuse) → `scan` only when you do not know where to look → `drill` the flagged item → `loop` to check a design. Known location: `class` on the representative code.
+- Pilot first: send one small request, read the answer, fix the questions, then widen. Send no more than a few before you have read one.
+- A sweep that says `gate: fail` is normal (any file failing any concern fails it): read the failing categories and the `next:` line; do not stop and do not repeat it.
+- Before writing a request run `mm3 agent probe` (distinct roles per probe, a "none fits" option on every choice) and tag it with mdl (`uses`, `area`).
+- Before a judgment call about code or a design (safe to merge? is it fixed? which option?), get an MM3 verdict: a call costs a fraction of a cent and every run is recorded, so the next decision starts from evidence, not from scratch.
+- Cite the run id (MM3-####) for every claim that comes from MM3, and mark the rest as your own reading.
+- Delegating? Give helpers `mm3 agent delegate`, and check their reports against the ledger with `mm3 view MM3-####`: a helper can report work it did not do.
+=== help/view
+Agents: mm3 agent view
+## view
+MAK³ x Know: what do we already know here? Free — it reads the ledger and never calls out.
+When: before any paid call, when entering unfamiliar code, or to find proven questions.
+
+Example:
+mm3 view src/handlers          # what does the ledger already know about this folder?
+mm3 view MM3-0042               # this run's own lineage, up and down
+
+Sharp rules:
+- a code file (not a request) is a place, not a request — view <folder>, ".", a tag, or MM3-#### all work.
+- where: at most 5 path entries — this is all the code a run sees.
+- a question (or the goal) is at most 160 characters, one line — longer text is rejected outright.
+
+## Good / bad
+- `view` checks reuse for one subject against the code in `where:` — with none named, it has nothing to check.
+  bad:
+    mak:
+      goal: This handler is safe to merge
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does the handler sanitize the amount field before use?
+  good:
+    mak:
+      goal: This handler is safe to merge
+      where: [src/pay/handler.ts]
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does the handler sanitize the amount field before use?
+
+- `over:` builds a sweep across many items — `view` checks one subject and rejects `over:` outright.
+  bad:
+    mak:
+      goal: The handler is safe to merge
+      where: [src/pay/handler.ts]
+      over:
+        file: src/pay/*.ts
+        function: each
+      ask:
+        function:
+          concerns:
+            injection:
+              pass: no
+              1: Does {function} put request text straight into a query?
+  good:
+    mak:
+      goal: The handler is safe to merge
+      where: [src/pay/handler.ts]
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does the handler put request text straight into a query?
+=== help/class
+Agents: mm3 agent class
+## class
+MAK³ x Judge: does the evidence support this one goal? One call, one subject.
+When: a decision on one subject: merge, choose, triage, check a fix.
+
+Example:
+mak:
+  goal: This login handler is safe to merge   # phrase as the exact claim to prove
+  depth: quick                                # => exactly 10 yes/no below
+  where: [src/user.ts:1-3]                     # include the wiring, not just the handler
+  ask:
+    injection: {pass: no, 1: Is request text put into a query unvalidated?, ...}
+mdl: {why: validate, area: auth}
+
+Sharp rules:
+- goal wording changes the verdict (that's a feature, not a bug) — phrase it as the claim you need proven.
+- depth: quick|standard|thorough = by default exactly 9, 18 or 27 yes/no questions across 3k concerns categories (a project can change the counts: mm3 config), each with 3 probes in a distinct role — family: access, injection, secrets, input, output, availability, correctness, design, design-risk, done or other (role table: mm3 agent probe) — a sweep: by default at most 10, 20 or 30 items per layer.
+- where: at most 5 path entries — this is all the code a run sees.
+- a question (or the goal) is at most 160 characters, one line — longer text is rejected outright.
+- questions are numbered 1…N across the whole request, decisions included.
+
+## Good / bad
+- A file this size gets read past the point that actually matters — name the range that does, instead of sending the whole file.
+  bad:
+    mak:
+      goal: This function is safe to merge
+      where: [src/pay/validate.ts]
+  good:
+    mak:
+      goal: This function is safe to merge
+      where: [src/pay/validate.ts:120-180]
+
+- `where:` is all the code a run sees — a question about anything outside it has nothing to answer from.
+  bad:
+    mak:
+      goal: This handler is safe to merge
+      where: [src/pay/handler.ts]
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does validateInput() sanitize the amount field?
+  good:
+    mak:
+      goal: This handler is safe to merge
+      where: [src/pay/handler.ts, src/pay/validate.ts]
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does validateInput() sanitize the amount field?
+
+- With more than one file in `where:`, a question that never names one leaves the classifier guessing which file it means.
+  bad:
+    mak:
+      goal: The payment path is safe to merge
+      where: [src/pay/handler.ts, src/pay/validate.ts]
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does it sanitize the amount field before use?
+  good:
+    mak:
+      goal: The payment path is safe to merge
+      where: [src/pay/handler.ts, src/pay/validate.ts]
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does `src/pay/validate.ts` sanitize the amount field before use?
+=== help/replay
+Agents: mm3 agent replay
+## replay
+MAK³ x Prove: did the change work? It replays a parent run's questions on two states.
+When: after a fix, a refactor, a dependency bump, or to compare fix A with fix B.
+
+Example:
+mak:
+  goal: The injection fix works
+  parent: MM3-0042
+  compare: {before: main, after: HEAD}
+
+Sharp rules:
+- the files must be committed at the ref you name (or use "worktree" for the working tree) — replay runs git in the repo that actually holds them.
+- replay re-runs the parent's own questions; it never takes ask: (use class for new questions).
+- a sweep parent (scan, loop, drill's sweep form) is replayed too: it re-sweeps at both refs and reports fixed/still/regressed per item — only a drill sweep CONTINUATION (over: starting with "each") is refused.
+
+## Good / bad
+- `replay` re-runs the parent run's own questions — it never takes `ask:`; write new questions with `class` instead.
+  bad:
+    mak:
+      goal: The injection fix works
+      parent: MM3-0042
+      compare: {before: main, after: HEAD}
+      expect: [injection]
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does it still concatenate the value into the query?
+            2: Does it skip a parameterized query?
+            3: Is the value taken from request input without validation?
+  good:
+    mak:
+      goal: The injection fix works
+      parent: MM3-0042
+      compare: {before: main, after: HEAD}
+      expect: [injection]
+=== help/scan
+Agents: mm3 agent scan
+## scan
+MDL³ x Know: where in this code should we look? A sweep across code, read by us.
+When: a new codebase, a release check, a PR's changed files, or a vague bug with no location yet.
+
+Example:
+mak:
+  goal: Handlers don't trust request input
+  depth: quick
+  over: {file: src/handlers/*.ts, function: each}     # scan by file when the file itself is the unit
+  ask:
+    function:
+      injection: {pass: no, 1: Does {function} put request text straight into a query?}
+
+Sharp rules:
+- add a scale question to a layer to rank findings by severity, worst first, instead of an unordered map.
+- scan by file when the file itself is the unit that matters, not a function inside it.
+- depth: quick|standard|thorough = by default exactly 9, 18 or 27 yes/no questions across 3k concerns categories (a project can change the counts: mm3 config), each with 3 probes in a distinct role — family: access, injection, secrets, input, output, availability, correctness, design, design-risk, done or other (role table: mm3 agent probe) — a sweep: by default at most 10, 20 or 30 items per layer.
+- a question (or the goal) is at most 160 characters, one line — longer text is rejected outright.
+- questions are numbered 1…N across the whole request, decisions included.
+
+## Good / bad
+- `{function}` is filled in per item — asking about something outside it answers from evidence that item never sent.
+  bad:
+    mak:
+      goal: Handlers don't trust request input
+      depth: quick
+      over:
+        file: src/handlers/*.ts
+        function: each
+      ask:
+        function:
+          concerns:
+            injection:
+              pass: no
+              1: Does the caller of {function} sanitize its input first?
+              2: Does {function} put request text straight into a query?
+              3: Does {function} run that query with db.query?
+            access:
+              pass: no
+              4: Does {function} return a record without checking its owner?
+              5: Does {function} skip comparing the record owner to the caller?
+              6: Could {function} be called without a permission check?
+            leaks:
+              pass: no
+              7: Does {function} return a raw database error?
+              8: Does {function} log the request body?
+              9: Does {function}'s response include unrequested fields?
+          decisions:
+            severity:
+              pass: [none]
+              10:
+                scale: How severe is the worst issue?
+                levels: [none, high]
+            route:
+              pass: [ship]
+              11:
+                choice: Where should this go?
+                options: [ship, block]
+  good:
+    mak:
+      goal: Handlers don't trust request input
+      depth: quick
+      over:
+        file: src/handlers/*.ts
+        function: each
+      ask:
+        function:
+          concerns:
+            injection:
+              pass: no
+              1: Does {function} sanitize its input before use?
+              2: Does {function} put request text straight into a query?
+              3: Does {function} run that query with db.query?
+            access:
+              pass: no
+              4: Does {function} return a record without checking its owner?
+              5: Does {function} skip comparing the record owner to the caller?
+              6: Could {function} be called without a permission check?
+            leaks:
+              pass: no
+              7: Does {function} return a raw database error?
+              8: Does {function} log the request body?
+              9: Does {function}'s response include unrequested fields?
+          decisions:
+            severity:
+              pass: [none]
+              10:
+                scale: How severe is the worst issue?
+                levels: [none, high]
+            route:
+              pass: [ship]
+              11:
+                choice: Where should this go?
+                options: [ship, block]
+=== help/drill
+Agents: mm3 agent drill
+## drill
+MDL³ x Judge: why did this one thing fail? It goes down from one item in a parent run.
+When: after a fail or unsure from class, scan, loop or replay.
+
+Example:
+mm3 template drill --parent MM3-0060 --from src/handlers/user.ts/findUser   # follow next:, don't hand-author the ids
+
+Sharp rules:
+- follow the `next:` line rather than hand-authoring parent/from — it already names the id and the category or item.
+- a question (or the goal) is at most 160 characters, one line — longer text is rejected outright.
+- questions are numbered 1…N across the whole request, decisions included.
+
+## Good / bad
+- `drill` needs `from:` — the item or category of the parent run to go down into — without it there's nothing to drill from.
+  bad:
+    mak:
+      goal: Find exactly where request text reaches the query
+      parent: MM3-0051
+      ask:
+        concerns:
+          source:
+            pass: no
+            1: Is the value concatenated straight into the string?
+            2: Does it skip a parameterized query?
+            3: Is the value taken from request input without validation?
+        decisions:
+          severity:
+            pass: [none]
+            4:
+              scale: How severe is this?
+              levels: [none, high]
+          route:
+            pass: [ship]
+            5:
+              choice: Where should this go?
+              options: [ship, block]
+  good:
+    mak:
+      goal: Find exactly where request text reaches the query
+      parent: MM3-0051
+      from: access
+      ask:
+        concerns:
+          source:
+            pass: no
+            1: Is the value concatenated straight into the string?
+            2: Does it skip a parameterized query?
+            3: Is the value taken from request input without validation?
+        decisions:
+          severity:
+            pass: [none]
+            4:
+              scale: How severe is this?
+              levels: [none, high]
+          route:
+            pass: [ship]
+            5:
+              choice: Where should this go?
+              options: [ship, block]
+=== help/loop
+Agents: mm3 agent loop
+## loop
+MDL³ x Prove: does this idea hold up? A sweep across layers of ideas the agent writes.
+When: a design, a plan or a feature request before any code exists.
+
+Example:
+mak:
+  goal: The checkout redesign is sound
+  depth: quick
+  over:
+    part:                              # part and story are SIBLINGS, both under over:
+      - name: gateway
+        story: [guest checkout, saved cards]
+  ask:
+    story:
+      done: {pass: yes, 1: Is "{story}" testable against {part} as written?}   # asked of EVERY story
+
+Sharp rules:
+- a sub-layer (like story under part) is a SIBLING key under over:, never nested inside its parent item.
+- a story/part name is one word or kebab-case, at most 20 characters, and never contains "/".
+- every question under a layer is asked of every item at that layer — phrase it so that holds for all of them.
+- depth: quick|standard|thorough = by default exactly 9, 18 or 27 yes/no questions across 3k concerns categories (a project can change the counts: mm3 config), each with 3 probes in a distinct role — family: access, injection, secrets, input, output, availability, correctness, design, design-risk, done or other (role table: mm3 agent probe) — a sweep: by default at most 10, 20 or 30 items per layer.
+- a question (or the goal) is at most 160 characters, one line — longer text is rejected outright.
+- questions are numbered 1…N across the whole request, decisions included.
+
+## Good / bad
+- `loop` sweeps ideas you write yourself, not files on disk — a code-glob layer belongs to `scan`, not `loop`.
+  bad:
+    mak:
+      goal: The checkout redesign is sound
+      depth: quick
+      over:
+        file: src/checkout/*.ts
+      ask:
+        file:
+          concerns:
+            done:
+              pass: yes
+              1: Does {file} own one clear responsibility?
+  good:
+    mak:
+      goal: The checkout redesign is sound
+      depth: quick
+      over:
+        part: [gateway, payments, ledger]
+      ask:
+        part:
+          concerns:
+            responsibility:
+              pass: yes
+              1: Does {part} own one clear responsibility?
+              2: Can {part} be deployed without the others?
+              3: Would another part need to change if {part} changed?
+            dependency:
+              pass: no
+              4: Does {part} reach into another part's own data?
+              5: Does {part} depend on another part's release order?
+              6: Would removing another part break {part} silently?
+            testability:
+              pass: yes
+              7: Can {part} be tested without standing up the others?
+              8: Does {part} expose a clear boundary to test against?
+              9: Is {part} small enough to review on its own?
+          decisions:
+            risk:
+              pass: [none]
+              10:
+                scale: How risky is {part}?
+                levels: [none, high]
+            route:
+              pass: [build-now]
+              11:
+                choice: What should happen to {part} next?
+                options: [build-now, rework]
+=== help/authoring
+## authoring
+How to write a request that survives its first try. Under the hood a yes/no question asks the classifier's
+Noul primitive, a `scale:` asks Score, and a `choice:` asks Choice — one narrow, coherent judgment per
+question, so keep each one to a single thing.
+- depth: quick|standard|thorough = by default exactly 9, 18 or 27 yes/no questions across 3k concerns categories (a project can change the counts: mm3 config), each with 3 probes in a distinct role — family: access, injection, secrets, input, output, availability, correctness, design, design-risk, done or other (role table: mm3 agent probe) — a sweep: by default at most 10, 20 or 30 items per layer.
+- where: at most 5 path entries — this is all the code a run sees.
+- a question (or the goal) is at most 160 characters, one line — longer text is rejected outright.
+- every question in a category must point the same way as its pass:.
+- decisions: 2–5 categories, scale or choice only, at least one scale and one choice.
+- questions are numbered 1…N across the whole request, decisions included.
+- `where:` is ALL the code a run sees — nothing outside it exists, however obvious the wiring seems.
+- phrase the goal as the exact claim you need proven ("this handler is safe to merge", not "review this handler") — wording changes the verdict, on purpose.
+- a `{blank}` in a sweep question is filled in per item; it must name that layer or one above it.
+- a question's number is a label for the response only — the model never sees it, so the question text itself has to carry its full meaning on its own.
+- a `scale:` level should name a concrete situation that stands on its own ("crashes in production"), not a bare relative point ("high").
+- give a `choice:` a genuine no-match option (e.g. `none`) whenever the code might fit none of the others.
+- ask everything you need about this evidence in one request — a second call (`drill`) is for when you need to look at something new, not more angles on what you already sent.
+
+## Good / bad
+- A file this size gets read past the point that actually matters — name the range that does, instead of sending the whole file.
+  bad:
+    mak:
+      goal: This function is safe to merge
+      where: [src/pay/validate.ts]
+  good:
+    mak:
+      goal: This function is safe to merge
+      where: [src/pay/validate.ts:120-180]
+
+- `where:` is all the code a run sees — a question about anything outside it has nothing to answer from.
+  bad:
+    mak:
+      goal: This handler is safe to merge
+      where: [src/pay/handler.ts]
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does validateInput() sanitize the amount field?
+  good:
+    mak:
+      goal: This handler is safe to merge
+      where: [src/pay/handler.ts, src/pay/validate.ts]
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does validateInput() sanitize the amount field?
+
+- With more than one file in `where:`, a question that never names one leaves the classifier guessing which file it means.
+  bad:
+    mak:
+      goal: The payment path is safe to merge
+      where: [src/pay/handler.ts, src/pay/validate.ts]
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does it sanitize the amount field before use?
+  good:
+    mak:
+      goal: The payment path is safe to merge
+      where: [src/pay/handler.ts, src/pay/validate.ts]
+      ask:
+        concerns:
+          injection:
+            pass: no
+            1: Does `src/pay/validate.ts` sanitize the amount field before use?
+=== help/verdict
+## verdict
+How to read what comes back:
+- pass: yes clears at >= 0.70; pass: no clears at <= 0.30; in between is unsure.
+- `need:` on a category: `all` (default, every answer clears the bar) · `most` (>= 2/3 clear, none a clear miss) · `any` (at least one clears).
+- the gate passes only when the goal and every category pass; in a sweep, an item passes only when its own categories and every child does too.
+- `consensus` (STRONG · SPLIT · WEAK): whether the yes/no answers agree with each other — shown on `class`, and `drill` on a one-subject parent; a sweep or `replay` response never computes it.
+- `escalate: true` on non-STRONG consensus, `depth: thorough`, or a goal that reads as irreversible (delete, deploy, drop, pay, migrate, secret, credential) — don't act on this alone.
+- a probability near 0.50 means the evidence points both ways about equally, not a medium-strength yes — that's exactly why it lands in `unsure` rather than a weak pass.
+- the answer's shape is guaranteed (a number in range, a level that's really one of yours) — whether it's the RIGHT number is what consensus, escalate and your own reading are for, not the schema.
+- `replay`'s per-category grade: `fixed` (failed or unsure before, passes now), `still` (failed or unsure before, still doesn't), `regressed` (passed before, not any more — regressed alone fails the gate even when every `after` category passes).
+- `reused: [MM3-####]` names prior runs an answer's evidence and question text matched exactly — free, not a new call.
+- the cache returns old answers to old questions; learning comes from new ones.
+- `mm3 report hits` flags a one-subject answer `stale` once the code at its own `where` has changed since — re-run it rather than trust it.
+- a run can fail to answer for different reasons, and the exit code says which: a bad request never reaches the classifier (exit 2); a provider or ledger problem does (exit 1); a blocked budget never spends at all (exit 3) — read which one you got before treating a stop as `unsure`.
+- a stop always reads `✖ field: problem → fix`; run `mm3 help <verb>` when one doesn't make sense.
+=== help/mdl
+## mdl
+mdl: is optional context that never reaches the classifier — it only shapes what the ledger learns. Every
+field is optional; the block is capped at 25 YAML lines:
+
+| field | closed values | what you get back |
+|---|---|---|
+| why    | validate, find, debug | why this run happened, for later pattern-mining |
+| area   | data, api, ui, auth, hosting, build, tests (single, or a list of up to 2) | which slice of the system it touched |
+| stage  | design, build, review, pre-merge, post-fix, release, operate | where in the workflow it landed |
+| change | feature, fix, refactor, dependency, config | what kind of change was under review |
+| risk   | low, medium, high | how risky the change looked going in |
+| problem | free text, one line, 3–160 chars | what the agent was solving, in its own words |
+| uses   | up to 5 C4 chains: level:name ( -> level:name)* | which parts of the system this run touches |
+| touches | up to 5 short entries | the entities/objects this run is about |
+| blast  | code, component, container, system, person | how far a fix's blast radius reaches |
+
+Any other lower-kebab key (≤20 characters) is also accepted: one line or a short list,
+recorded as-is. Every closed field above also accepts `unknown`. For this project's exact allowed values,
+run `mm3 agent mdl` — it renders the full C4 legend (the `uses` grammar, the chain examples) too.
+
+- mdl.why is one of validate, find or debug.
+- mdl.area is one of data, api, ui, auth, hosting, build or tests, single or a list of up to 2.
+- mdl.stage is one of design, build, review, pre-merge, post-fix, release or operate.
+- mdl.change is one of feature, fix, refactor, dependency or config.
+- mdl.risk is one of low, medium or high.
+- every closed mdl field also accepts "unknown".
+- the mdl block is capped at 25 YAML lines.
+- every field is optional; the response always echoes back which ones were recorded as `mdl: {recorded: [...]}`, or `{recorded: none}`.
+=== help/reuse
+## reuse
+The exact same question, asked of the exact same code, is answered for free from the ledger — no call, no
+spend, and the response says so. This is exact-match reuse: same evidence, same question text, same
+provider and model; nothing here is a semantic or fuzzy match.
+- `view <request-file>` checks this before you spend anything: it shows `reuse: MM3-####` when the exact
+  question set was already asked on unchanged code.
+- a sweep (scan, loop, drill on a sweep parent) reuses per item: unchanged items cost nothing, and the
+  response counts how many were reused.
+- a fully-reused run should never be blocked by the spend cap, since it spends nothing — if you see that,
+  it's a bug, not a feature.
+- reuse keys on the evidence and the question's own text, not on how the answer is graded: moving a
+  category's `pass:` or `need:` re-grades the same free answer instead of re-asking the question.
+=== help/probe
+## probe
+A valid probe: the shape of a well-formed question, best practice for a higher-quality answer — guidance,
+not new validator enforcement. Each rule below is TypeSafe's own published guidance, paraphrased, with its
+source page cited.
+
+- One narrow judgment per question — break a complex or ill-defined question into separate questions that each evaluate one property. (TypeSafe: concepts/how-to-build-with-system-one.md)
+- The question carries its full meaning on its own — a question's number is a label for the response only; the model never sees it. (TypeSafe: concepts/how-to-build-with-system-one.md)
+- It's answerable from the code in where: — name the file in backticks when there's more than one, and send only the context the question needs. (TypeSafe: concepts/how-to-build-with-system-one.md)
+- Yes/no questions keep one polarity per category — phrase so "yes" is the affirmative you mean, not an inverted "is free of…". (TypeSafe: primitives/noul.md)
+- Scale levels describe concrete situations, not relative points — every level is judged on its own; the model sees neither its number nor its neighbours. (TypeSafe: primitives/score.md)
+- Choice options include a "none fits" outcome for when nothing else matches. (TypeSafe: primitives/choice.md)
+- Phrase the goal as the safe state ("X rejects Y"), not the vulnerability ("X runs input as code") — a goal is asked as a yes/no, so the same affirmative-alignment rule applies to it. (TypeSafe: primitives/noul.md)
+- Add the visible-scope probe as a recommended extra question: "Can this be answered from the code shown?" (TypeSafe: concepts/how-to-build-with-system-one.md)
+- a question (or the goal) is at most 160 characters, one line — longer text is rejected outright.
+
+Round 3 smoke testing found this directly: a goal phrased as the vulnerability ("runs request input as code")
+read pass/fail backwards, and its probability stayed at p 0.98 before AND after the fix that removed the
+vulnerability — the wording, not the classifier, was wrong. That's rule 7 above.
+
+## Angles: a concern is one path; its ~3 probes are three angles on it
+This part is MM3's own model, not TypeSafe's — pick the family that matches the category's path,
+then write one probe per role:
+
+- injection: reach · guard · sink
+- access: actor · check · resource
+- secrets: store · transport · exposure
+- input: source · validate · reject
+- output: source · encode · render
+- availability: trigger · limit · recovery
+- correctness: input · rule · result
+- design: responsibility · dependency · testability
+- design-risk: abuse · failure · data
+- done: concrete · testable · owned
+
+A bad probe: "Is this method secure?" — a yes means nothing: no mechanism, no angle, no place. Rewritten as three angles:
+- Is `id` from `req.query` concatenated into the SQL string? (reach)
+- Is `id` bound as a parameter instead? (guard)
+- Does the query run with `db.query` on that string? (sink)
+
+See the mm3-probe skill for the full model, the decisions shapes (severity scale, route/scope choice),
+mdl's problem/uses/touches/blast fields, and one recipe per verb.
+=== help/report
+## report
+A free, read-only view across everything the ledger holds, not one place: what's known, what recurs, what changed.
+When: briefing a teammate or picking up a codebase cold, instead of hand-assembling several `view` calls.
+
+Example:
+mm3 report            # same as: mm3 report hits
+mm3 report patterns
+mm3 report history
+mm3 report web        # writes .mm3/viewer.html and tries to open it
+
+Sharp rules:
+- free: never calls a provider, never writes to the ledger, and works even with no on-disk index.
+- no options beyond the view name — hits (default), patterns, history or web; anything else is a stop.
+- `hits`: the newest run's own gate per place, worst first; a one-subject answer is flagged `stale` once the code there has changed since.
+- `patterns`: every distinct question set ever run, with its pass/fail/unsure split, places touched, and outcomes.
+- `history`: a merged, newest-first feed of `replay` results (fixed/regressed) and recorded outcomes.
+- `web`: writes one self-contained `.mm3/viewer.html` (a place x concern consensus map, a heat map, a session summary) and tries to open it in a browser; always prints the file's path, opened or not. The only view that writes anything, and only ever that one file — never the ledger.
+- every view caps its rows and says plainly how many more exist, rather than dropping them silently.
+
+## Good / bad
+- there is no view beyond hits, patterns, history, web, graph, problems, mdl, calls and fields — nothing else to ask it for.
+  bad:
+    mm3 report level2
+    → ✖ report: "level2" is not a view → use hits, patterns, history, web, graph, problems, mdl, calls or fields
+  good:
+    mm3 report patterns
+=== help/outcome
+## outcome
+Records what happened to a run after the fact, so weak spots roll up later in `mm3 report history`: `held` (it was right), `overruled` (it was wrong) or `failed` (it was useless). Not a mak:-YAML verb: it never calls a provider, only appends one line to the ledger.
+
+Example:
+mm3 outcome MM3-0002 overruled --by claude
+mm3 outcome MM3-0002 held --by the-owner       # a different actor than the one who asked it
+
+Sharp rules:
+- exact form: mm3 outcome <MM3-####> held|overruled|failed --by <actor> — no other flags (there is no `--note`; keep a reason in your own notes, not here).
+- the agent that asked a run can't mark it `held` itself — `overruled` and `failed` have no such restriction.
+- recording the exact same outcome, by the exact same actor, again is a no-op (exit 0, "already recorded by <actor>"), not a second entry.
+
+## Good / bad
+- an agent can't certify its own run as correct — `held` needs a second party.
+  bad:
+    mm3 outcome MM3-0002 held --by claude   # claude is the actor that asked MM3-0002
+    → ✖ outcome: claude asked MM3-0002, so it can't mark it held → another agent or the owner records "held"
+  good:
+    mm3 outcome MM3-0002 held --by <the user or a reviewer agent, not you>
+
+- `outcome` takes no reason field.
+  bad:
+    mm3 outcome MM3-0002 overruled --by claude --note "wrong file blamed"
+    → ✖ args: unknown flag --note → mm3 outcome <MM3-####> held|overruled|failed --by <actor>
+  good:
+    mm3 outcome MM3-0002 overruled --by claude   # keep the reason in your own notes
+=== help/budget
+## budget
+Shows the project's spend and run count, and how to change the caps. Not a mak:-YAML verb: it never calls a provider and never writes. The caps live in `.mm3/config.yaml` (`budget.usd`, `budget.runs`); change one and run `mm3 config --load`.
+
+Example:
+mm3 budget                          # the count, and the way to change it
+
+# to raise the cap: edit .mm3/config.yaml, then
+mm3 config --load
+
+Sharp rules:
+- read-only: `show` is the only subcommand. `set` and `reset` were removed and stop with where to go.
+- a load whose `budget:` section changed (usd, runs or per) restarts the count from that moment; a load that changes other settings keeps it. To restart with the same caps, set `budget.since` to now.
+- any verb call that would go over either cap stops at exit 3 before it spends anything.
+
+## Good / bad
+- the caps are changed in the config, not here.
+  bad:
+    mm3 budget set --usd 5
+    → ✖ budget: set was removed → edit budget.usd / budget.runs in .mm3/config.yaml, then run mm3 config --load
+  good:
+    # edit budget.usd / budget.runs in .mm3/config.yaml, then:
+    mm3 config --load
+=== help/doctor
+## doctor
+Free, offline, no key needed. Not a mak:-YAML verb: it never calls a provider. Bare `doctor` reports which provider/key/project would answer a real call, plus the Node/node:sqlite runtime and, when a project is found, whether `.mm3/config.yaml` is valid. `doctor <file>` (or `-` for stdin) instead checks just that one document, with no project needed at all: a `mak:` key means a request, checked the same way --dry-run would; anything else is checked as a config.yaml-shaped file.
+
+Example:
+mm3 doctor                    # the full system report
+mm3 doctor .mm3/config.yaml
+mm3 doctor my-request.yaml
+cat my-request.yaml | mm3 doctor -
+
+Sharp rules:
+- exit 0 clean, exit 2 with every problem found in one pass — never calls the classifier, never writes anything.
+- `doctor <file|->` never touches the ledger, reuse or budget, even from inside a real project.
+- kind is auto-detected (a top-level `mak:` key means a request); it is never guessed from the file name or extension.
+=== template/view
+# view <this file>: free — checks the ledger for a prior run of the exact same questions on this code, no call.
+# where is the only field view needs; depth/ask are optional here since a partial draft (view before class is
+# ready to spend) is exactly what view is for — the section/count rules below become notes, not stops.
+mak:
+  goal: This login handler is safe to merge   # required — one line: what you want to be true
+  # verb: view                                # optional — must match the command you run, or the request is sent back
+  depth: quick                                # optional — if given, checked against ask: below (a note here; class would stop on it)
+  where: [src/handlers/user.ts:1-40]          # required — up to 5 path[:start-end] entries
+  ask:                                        # optional — a partial draft (even zero categories, or fewer than the full 3k) is fine for view
+    concerns:
+      injection:
+        pass: no
+        1: Is the user id taken from `req.query` without validation?
+        2: Is the id concatenated into the SQL string instead of bound as a parameter?
+mdl:                                         # optional block; every field inside it is optional too
+  why: validate                               # optional — validate | find | debug
+  area: auth                                  # optional — data | api | ui | auth | hosting | build | tests
+  # stage: build                              # optional — design | build | review | pre-merge | post-fix | release
+  # change: fix                               # optional — feature | fix | refactor | dependency | config
+  # risk: medium                              # optional — low | medium | high
+  # parent: MM3-0001                           # optional — a related run, for lineage
+  # problem: Checking whether the injection fix from MM3-0040 is already proven here   # optional — one line, your own words
+  # uses:                                     # optional — up to 5 C4 chains: level:name ( -> level:name)*; run `mm3 agent mdl` for the grammar
+  #   - container:api -> component:user-handler
+  # touches: [userId]                         # optional — up to 5 entities/objects this run is about
+  # blast: component                          # optional — code | component | container | system | person
+=== template/class
+# class: one subject, one verdict. Edit goal, where and ask; mdl is optional but cheap context.
+# mak.verb (shown once here, commented) is legal on every verb — it's optional everywhere, not just class.
+mak:
+  goal: This login handler is safe to merge   # required — phrase as the exact claim to prove — wording changes the verdict
+  # verb: class                               # optional — must match the command you run, or the request is sent back
+  depth: quick                                # required — by default quick=9, standard=18, thorough=27 yes/no questions across 3/6/9 concerns categories (decisions don't count; mm3 config shows this project's)
+  where: [src/handlers/user.ts:1-40]          # required — up to 5 path[:start-end] entries — this is ALL the code it sees
+                                               # a whole file over ~20,000 chars won't send — name the range instead
+                                               # a question about code NOT in where: has nothing to answer from — add it here
+                                               # with more than one file, name the one you mean in the question (in `backticks`)
+  ask:                                        # required — two sections: concerns (yes/no) and decisions (scale/choice)
+                                               # questions are numbered 1…N across the WHOLE request, decisions included — no gaps, no restart at decisions
+    concerns:                                 # exactly 3k categories for the depth above (quick: 3 by default), each with exactly 3 probes — three angles on one path (mm3 agent probe)
+      injection:
+        pass: no                              # every question in this category must answer "no" when things are fine
+        need: most                            # optional (default all) — all: every answer clears · most: >= 2/3, none a clear miss · any: at least one
+        tags: [sql, backend]                  # optional — up to 3 short tags on this category, kept for later pattern-mining
+        1: Is the user id taken from `req.query` without validation?                       # reach
+        2: Is the id concatenated into the SQL string instead of bound as a parameter?     # guard (note the polarity: "yes" here is bad)
+        3: Does the query run with `db.query` on that concatenated string?                 # sink
+      access:
+        pass: no
+        4: Is the session's own user id used to look up the record, not one from the request?   # actor
+        5: Is the record's owner compared against the caller before it's returned?              # check
+        6: Could any caller read another user's record by changing the id alone?                # resource
+      leaks:
+        family: output                          # output's own roles (mm3 agent probe): source, encode, render
+        pass: no
+        7: Does a failed query send the raw database error back to the caller?    # source
+        8: Is the error message written to a response body verbatim?             # encode (no sanitizing before it goes out)
+        9: Does the response include fields the caller never asked for?          # render
+    decisions:                                # 2-5 categories; at least one scale and one choice; don't count toward depth
+      severity:
+        pass: [none, low]
+        10:
+          scale: How severe is the worst issue found?
+          levels: [none, low, medium, high, critical]
+      route:
+        pass: [ship]
+        11:
+          choice: Where should this go?
+          options: [ship, fix, block]
+      # scope:                                 # optional, recommended (TypeSafe best practice) — the visible-scope probe
+      #   pass: [enough]
+      #   12:
+      #     choice: Can this be answered from the code shown?
+      #     options: [enough, partial, missing]
+mdl:                                         # optional block; every field inside it is optional too
+  why: validate                               # optional — validate | find | debug
+  area: auth                                  # optional — data | api | ui | auth | hosting | build | tests
+  # stage: build                              # optional — design | build | review | pre-merge | post-fix | release
+  # change: fix                               # optional — feature | fix | refactor | dependency | config
+  # risk: medium                              # optional — low | medium | high
+  # parent: MM3-0001                           # optional — a related run, for lineage (mak.parent is accepted on every verb too)
+  # problem: The user id from the request reaches a SQL query unchecked      # optional — one line, your own words: what you're solving now
+  # uses:                                     # optional — up to 5 C4 chains: level:name ( -> level:name)*; run `mm3 agent mdl` for the grammar
+  #   - component:web-app/user-handler -> container:db
+  # touches: [userId, findUser]               # optional — up to 5 entities/objects this run is about
+  # blast: component                          # optional — code | component | container | system | person
+=== template/replay
+# replay: re-runs a parent run's own questions across two committed git refs — never new ask:.
+mak:
+  goal: The injection fix works               # required — usually the parent run's own goal (mm3 replay --parent/--compare fills this in for you)
+  # verb: replay                              # optional — must match the command you run, or the request is sent back
+  parent: MM3-0042                             # required — the run whose questions get replayed
+  compare: {before: main, after: HEAD}        # required — two refs, or "worktree" for the working tree; files must be committed
+  expect: [injection]                         # required — which of the parent's concerns this replay should turn to pass; the answer grades the prediction too
+                                               # replay never takes ask:, over:, from:, where: or depth: — it re-runs the parent's own questions
+mdl:                                         # optional block; every field inside it is optional too
+  why: validate                               # optional — validate | find | debug
+  area: auth                                  # optional — data | api | ui | auth | hosting | build | tests
+  # stage: post-fix                           # optional — design | build | review | pre-merge | post-fix | release
+  # change: fix                               # optional — feature | fix | refactor | dependency | config
+  # risk: medium                              # optional — low | medium | high
+  # parent: MM3-0001                           # optional — a related run, for lineage (distinct from mak.parent above)
+  # problem: Removing the SQL injection in findUser flagged by MM3-0042        # optional — one line, your own words
+  # uses:                                     # optional — up to 5 C4 chains: level:name ( -> level:name)*; run `mm3 agent mdl` for the grammar
+  #   - component:user-handler -> container:db
+  # touches: [userId, findUser]               # optional — up to 5 entities/objects this run is about
+  # blast: component                          # optional — code | component | container | system | person
+=== template/scan
+# scan: sweeps code MM3 reads itself. over: builds layers (file -> function -> call); ask: keys by layer,
+# and the contract (3k concerns x 3 angles + 2-5 decisions) is enforced on the finest layer (here: function).
+mak:
+  goal: Handlers don't trust request input    # required
+  # verb: scan                                # optional — must match the command you run, or the request is sent back
+  depth: quick                                # required — at most 10 items asked per layer (standard 20, thorough 30) — extra items are skipped, not failed
+  over:                                       # required
+    file: src/handlers/*.ts                   # a glob, scanned by file (add a severity scale below to rank findings)
+    function: each                            # "each" splits the layer above into its next unit (function, then call)
+  ask:                                        # required — one concerns:/decisions: pair per layer named in over — {function} fills in per item
+                                               # questions are numbered 1…N across the WHOLE request, decisions included — no gaps, no restart at decisions
+    function:
+      concerns:                               # exactly 3k categories for the depth above (quick: 3 by default), each with exactly 3 probes
+        injection:
+          pass: no                            # ask what {function} itself does, not what code outside it does
+          1: Does {function} take request text straight from `req.query` or `req.body`?       # reach
+          2: Is that value concatenated into a query string instead of bound as a parameter?  # guard
+          3: Does {function} run the query with `db.query` on that string?                    # sink
+        access:
+          pass: no
+          4: Does {function} use an id from the request instead of the session?
+          5: Does {function} skip comparing the record's owner to the caller?
+          6: Could {function} return another user's record by changing the id alone?
+        leaks:
+          family: output                        # output's own roles (mm3 agent probe): source, encode, render
+          pass: no
+          7: Does {function} return a raw database error to the caller?              # source
+          8: Does {function} log the full request body?                             # encode (no redaction before it's written out)
+          9: Does {function}'s response include fields the caller never asked for?   # render
+      decisions:                              # 2-5 categories; at least one scale and one choice
+        severity:
+          pass: [none, low]
+          10:
+            scale: How severe is the worst issue in {function}?
+            levels: [none, low, medium, high, critical]
+        route:
+          pass: [ship]
+          11:
+            choice: Where should {function} go?
+            options: [ship, fix, block]
+        # scope:                                 # optional, recommended (TypeSafe best practice) — the visible-scope probe
+        #   pass: [enough]
+        #   12:
+        #     choice: Can this be answered from the code shown?
+        #     options: [enough, partial, missing]
+                                               # scan never takes where: (over: is what it reads), from:, compare: or parent:
+mdl:                                         # optional block; every field inside it is optional too
+  why: find                                   # optional — validate | find | debug
+  area: api                                   # optional — data | api | ui | auth | hosting | build | tests
+  # stage: build                              # optional — design | build | review | pre-merge | post-fix | release
+  # change: fix                               # optional — feature | fix | refactor | dependency | config
+  # risk: medium                              # optional — low | medium | high
+  # parent: MM3-0001                           # optional — a related run, for lineage
+  # problem: Screening every request handler for unvalidated input reaching a query or a missing permission check   # optional
+  # uses:                                     # optional — up to 5 C4 chains: level:name ( -> level:name)*; run `mm3 agent mdl` for the grammar
+  #   - container:api -> component:handlers -> container:db
+  # touches: [handlers]                       # optional — up to 5 entities/objects this run is about
+  # blast: system                             # optional — code | component | container | system | person
+=== template/drill
+# drill --parent <sweep-run> --from <item>: goes one layer down from one flagged item. No where: — it inherits
+# the parent's own code. New, narrower questions go under ask:; "plumbing is filled in, the questions are yours".
+mak:
+  goal: Find exactly where request text reaches the query   # required
+  # verb: drill                               # optional — must match the command you run, or the request is sent back
+  parent: MM3-0060                             # required — the sweep run this drills into
+  from: src/handlers/user.ts/findUser         # required — an item id the parent flagged (names joined by /), not a category
+  depth: quick                                # optional — at most 10 items asked per layer (standard 20, thorough 30); also sets the concerns count on the finest layer below
+  over:                                       # optional — only when the parent was a sweep; a one-subject parent has none (see drill-subject.yaml)
+    call: each                                # the NEXT layer down from the item named above
+  ask:                                        # required — the parent's 3 angles become 3 new concerns here, each attacked from 3 angles of its own
+                                               # questions are numbered 1…N across the WHOLE request, decisions included — no gaps, no restart at decisions
+    call:
+      concerns:                                 # reach/guard/sink are injection's own 3 roles (mm3 agent probe) — named
+        reach:                                  # by role here, not by family, so family: is given explicitly on each
+          family: injection
+          pass: no
+          1: Does {call} pass request text into SQL?
+          2: Is {call}'s argument built by string concatenation?
+          3: Is {call} reachable from an unauthenticated route?
+        guard:
+          family: injection
+          pass: yes
+          4: Is {call}'s argument parsed to a number before use?
+          5: Is {call}'s argument bound as a parameter instead of concatenated?
+          6: Is {call}'s argument validated against an allow-list?
+        sink:
+          family: injection
+          pass: no
+          7: Does {call} hit `db.query` directly?
+          8: Does {call} run inside a transaction with no timeout?
+          9: Does {call}'s result get returned to the caller unfiltered?
+      decisions:
+        severity:
+          pass: [none, low]
+          10:
+            scale: How severe is {call}'s worst issue?
+            levels: [none, low, medium, high, critical]
+        route:
+          pass: [ship]
+          11:
+            choice: What should happen to {call} next?
+            options: [ship, fix, block]
+                                               # drill never takes compare: or where: — it inherits the parent's own code
+mdl:                                         # optional block; every field inside it is optional too
+  why: debug                                  # optional — validate | find | debug
+  area: data                                  # optional — data | api | ui | auth | hosting | build | tests
+  # stage: post-fix                           # optional — design | build | review | pre-merge | post-fix | release
+  # change: fix                               # optional — feature | fix | refactor | dependency | config
+  # risk: medium                              # optional — low | medium | high
+  # parent: MM3-0060                           # optional — a related run, for lineage (distinct from mak.parent above)
+  # problem: Narrowing scan's injection flag on findUser down to the exact call that's unsafe   # optional
+  # uses:                                     # optional — up to 5 C4 chains: level:name ( -> level:name)*; run `mm3 agent mdl` for the grammar
+  #   - component:user-handler -> code:findUser -> container:db
+  # touches: [findUser]                       # optional — up to 5 entities/objects this run is about
+  # blast: code                               # optional — code | component | container | system | person
+=== template/loop
+# loop: sweeps ideas the agent itself writes (a design, a plan) before any code exists. No file evidence.
+mak:
+  goal: The checkout redesign is sound        # required
+  # verb: loop                                # optional — must match the command you run, or the request is sent back
+  depth: quick                                # required — sets the concerns count on the finest layer (story) below; also caps items per layer (10/20/30 by default)
+  where: [src/checkout/]                      # optional — context only (folder that will hold this); loop reads no files
+  over:                                       # required
+    part:                           # part and story are SIBLINGS here, both under over: — not one nested in the other
+      - name: gateway
+        story: [guest checkout, saved cards]   # names/tags: one word or kebab-case, <= 20 chars, no "/"
+      - name: payments
+        story: [refunds, retries, partial capture]
+      - ledger
+  ask:                                        # required — one concerns:/decisions: pair per layer; only the finest layer (story) needs the full 3k + decisions
+    part:                          # part is not the finest layer: thin on purpose, counts aren't enforced here (a note if thin)
+      concerns:
+        boundaries:
+          family: design                        # design's own roles (mm3 agent probe): responsibility, dependency, testability
+          pass: yes
+          1: Does {part} own one clear responsibility?              # responsibility
+          2: Can {part} be deployed without the others?              # dependency
+    story:                          # every story question is asked of EVERY story — phrase it so that holds; story is the finest layer
+      concerns:
+        done:                                   # "done" is itself a family — its 3 roles: concrete, testable, owned
+          pass: yes
+          3: Is "{story}" testable against {part} as written?        # testable
+          4: Does "{story}" have a named owner?                      # owned
+          5: Is "{story}" small enough to ship on its own?           # concrete
+        risk:
+          family: design-risk                   # design-risk's own roles: abuse, failure, data
+          pass: no
+          6: Does "{story}" need data {part} doesn't own?                              # data
+          7: Could "{story}" be built by bypassing {part}'s own boundary?              # abuse
+          8: Could "{story}" fail silently in production?                             # failure
+        fit:
+          family: design                        # design's own roles: responsibility, dependency, testability
+          pass: yes
+          9: Does "{story}" match how {part} is meant to be used?    # responsibility
+          10: Would "{story}" survive {part} being replaced later?   # dependency
+          11: Is "{story}" covered by an existing test today?        # testability
+      decisions:
+        risk-level:
+          pass: [none, low]
+          12:
+            scale: How risky is "{story}"?
+            levels: [none, low, medium, high, critical]
+        route:
+          pass: [build-now]
+          13:
+            choice: What should happen to "{story}" next?
+            options: [build-now, rework, redesign]
+                                               # loop never takes from:, compare: or parent: — it has no parent run to build on
+mdl:                                         # optional block; every field inside it is optional too
+  why: validate                               # optional — validate | find | debug
+  area: api                                   # optional — data | api | ui | auth | hosting | build | tests
+  # stage: design                             # optional — design | build | review | pre-merge | post-fix | release
+  # change: feature                           # optional — feature | fix | refactor | dependency | config
+  # risk: medium                              # optional — low | medium | high
+  # parent: MM3-0001                           # optional — a related run, for lineage
+  # problem: Stress-testing the checkout split into gateway/payments/ledger before writing any code   # optional
+  # uses:                                     # optional — up to 5 C4 chains: level:name ( -> level:name)*; run `mm3 agent mdl` for the grammar
+  #   - system:checkout -> container:gateway
+  #   - system:checkout -> container:payments
+  # touches: [gateway, payments, ledger]       # optional — up to 5 entities/objects this run is about
+  # blast: system                             # optional — code | component | container | system | person
+=== skills/mm3-probe/SKILL.md
+---
+name: mm3-probe
+description: Use before writing or editing any MM3 request — a probe, a category, or a template. Teaches which yes/no questions are worth asking (three angles per concern, one role table per family) and which are empty ("is this secure?"), plus the decisions/mdl fields that make a request worth reusing.
+---
+
+An MM3 request is only as good as its questions. The schema (`references/request.schema.json` in the `mm3` skill) enforces the *shape* — exact counts, one kind per category, numbered with no gaps. It cannot tell a sharp question from a vacuous one. This skill teaches the difference before you write either.
+
+Read this before filling in `ask:` on a template — `mm3 template <verb>` gives you the plumbing; this gives you the questions.
+
+## Contents
+
+- What a probe is and how depth counts probes
+- The contract in one screen
+- A concern is one path; its three probes are three angles on it
+- What makes a good probe and Bad probes, and why
+- Decisions: severity, route, and the optional scope check
+- [A good/bad pair per family](references/probe.md): worked examples for every family
+- [mdl in about 70 tokens](references/mdl.md): what to tag a request with so the ledger learns
+- [One recipe per verb](references/recipes.md): class, drill, scan, loop, replay, view
+
+## What a probe is
+
+**A probe is three well-formed questions that look at one problem from three angles.** TypeSafe defines what a good question is: one measurable fact, nothing stacked, nothing subjective. A single question can still push the answer the wrong way, so MM3 never relies on one. It asks three, from three angles chosen by the problem's **family** (for injection: reach, guard, sink). Agreement across the three makes the category's result more accurate and more consistent, and when they disagree you can see where it fails. The families and their angles are in the table below; `other` is for a problem that fits none, and you name its three angles yourself.
+
+**Depth is how many probes you ask.** `quick`, `standard` and `thorough` mean 3, 6 or 9 probes by default (9, 18 or 27 questions). A project can change the numbers in `config.yaml`.
+
+In the request YAML a probe is one `concerns:` category holding exactly 3 questions (the field name is part of the contract and stays as it is).
+
+## The contract in one screen
+
+`ask:` has two sections:
+
+- **concerns** — one category per probe: 3, 6 or 9 of them for quick, standard or thorough by default (9, 18 or 27 questions; a project's config can change the counts), each with **exactly 3 yes/no questions**.
+- **decisions** — 2–5 categories, scale or choice only, at least one of each kind. These don't count toward depth.
+
+Why exactly 3 probes, never 1? A single yes/no like "is this handler secure?" can't disagree with itself — there's nothing for `need:` to weigh, and nothing tells you *where* it fails if it does. Three probes that each check a different point on the same path can disagree, and when they do, that disagreement is the finding: reach and sink both read unsafe while guard reads safe is a very different result from all three reading unsafe. One question gives you a verdict with no evidence behind it; three angles give you a verdict you can act on.
+
+## A concern is one path; its three probes are three angles on it
+
+Pick a **family** for the concern (an optional field, defaulting to the category name when that name is itself one of the eleven: `access · injection · secrets · input · output · availability · correctness · design · design-risk · done · other`). Each family has its own three roles — the three places along that concern's path where something can go wrong:
+
+| family | role 1 | role 2 | role 3 |
+|---|---|---|---|
+| injection | reach — does untrusted input get here | guard — is it checked on the way | sink — does it hit a sink that runs or queries it |
+| access | actor — whose identity is used | check — is ownership/role verified | resource — what's returned or changed |
+| secrets | store — where it lives at rest | transport — how it moves | exposure — where it can surface |
+| input | source — where the value comes from | validate — what's checked before use | reject — what happens when it fails |
+| output | source — what data feeds the response | encode — is it escaped/encoded for its context | render — where and how it's emitted |
+| availability | trigger — what can invoke the costly path | limit — is there a cap or throttle | recovery — what happens when it's exceeded or fails |
+| correctness | input — what the function receives | rule — the specific rule it must satisfy | result — what it actually returns/does |
+| design | responsibility — what this piece owns | dependency — what it relies on | testability — can it be verified in isolation |
+| design-risk | abuse — how it could be misused | failure — how it degrades or breaks | data — what it stores or exposes it shouldn't |
+| done | concrete — specific and scoped | testable — has a checkable definition | owned — has a named owner |
+| other | — | — | — |
+
+`other` has no fixed roles: it's the escape hatch for a concern that doesn't fit the ten above. Still write three distinct, observable probes — just name the three roles yourself instead of borrowing one of the rows.
+
+A good category names one of these families explicitly (`family: injection`) whenever its own name doesn't already match one of the eleven — a category named `reach`/`guard`/`sink` (common in `drill`, where the parent's angles each become their own concern) still belongs to the `injection` family, it just isn't spelled that way in the category name.
+
+[`references/probe.md`](references/probe.md) in this skill has a full good/bad pair for every family above.
+
+## What makes a good probe
+
+1. **It could flip the gate.** If the answer came back the other way, the category's verdict — and what you'd do next — changes. If nothing would change, cut it.
+2. **It plays a role no sibling probe plays.** Two probes in the same role are a paraphrase of each other: cost with no added clarity.
+3. **It's observable in the code you sent.** A reader can point at the line that answers it — not infer it from how the code behaves at runtime, and not offer an opinion about it.
+4. **One judgment.** Don't chain two questions with "and" — that's two probes wearing one number.
+5. **One polarity per category.** Every probe in a category answers the same direction for `pass:` — don't mix "is it unsafe" with "is it free of X" in one category.
+6. **Names the element when more than one could be meant** — `` `id` `` or `` `req.query.id` ``, not "the value," when the code shown has several candidates.
+7. **Asks about the property (invariant), not the fix mechanism.** Phrase a probe about the invariant a fix establishes — the thing that stays true no matter how the code is later written — not the specific mechanism or line that happens to make it true today. Name the function/variable/symbol involved (backtick it); never a line number.
+
+## Invariants over mechanisms, and why
+
+Two real cases broke probes written the other way round:
+
+- **research.js, a reject-and-replace fix**: a `guard` probe was written against the specific check the first fix added ("does it call `isValidUrl` before the request?"). The next fix replaced that check with a different mechanism entirely (reject-and-replace instead of validate-and-allow) — same invariant (untrusted input can't reach the request), different code. The probe's premise was gone, so it re-scored low (0.19/0.15) on a fix that was actually correct, because it was really asking "does the old mechanism still exist?", not "does the property hold?".
+- **Line-number-anchored probes** ("does the check at line 32 catch this?"): once the fix shifted surrounding lines, four probes anchored to line numbers kept reading `still` against code that had already moved past them — the lines they pointed at no longer held the logic they were written about.
+
+Write the probe about the outcome instead: "Is the URL validated (by whatever mechanism) before the request is made?" survives a reject-and-replace rewrite; "Does `isValidUrl` gate the request?" doesn't. "Does `handleRequest` reject a malformed URL before dispatching it?" survives a line shift; "does line 32 reject it?" doesn't.
+
+## Bad probes, and why
+
+"Is this method secure?" and "Does this method have security features?" both fail rule 3 above: neither names a mechanism, a role, or a place to check. A "yes" to either proves nothing — there's no code line that makes it true or false, so the model is really just guessing at a vibe. The same failure shows up in a subtler form: "Would a standard security scanner flag this code?" sounds concrete, but it isn't observable in the code itself — it's a guess about a *different* tool's behavior, not a fact about this one.
+
+The fix is to split by role. Instead of one opinion question about an injection concern:
+
+- **reach**: "Is `id` taken from `req.query` and passed to `findUser` without validation?"
+- **guard**: "Is `id` bound as a parameterized argument rather than concatenated into the query string?" (note the flipped polarity from reach/sink — say so in the category's `pass:`)
+- **sink**: "Does `findUser` run the query with `db.query` on that string?"
+
+Each one names a variable, a function, and a line a reader can actually check. None of them ask for an opinion.
+
+## Decisions: severity, route, and the optional scope check
+
+Every request's decisions section needs at least one **scale** and one **choice**. Two patterns cover almost every request:
+
+- **severity** (scale): concrete levels a reader can place a finding at without comparing it to its neighbors — `none, low, medium, high, critical`, each meaning something specific on its own (e.g. "critical: exploitable with no auth"), not just "worse than the one before it."
+- **route** (choice): what should happen next, always including the "nothing to do" option — `ship, fix, block` (`ship` *is* the none-needed answer; there's no separate "none" entry needed when one option already means that).
+
+A third, optional pattern is worth adding to `class`/`scan` whenever the code you sent might not be the whole picture: a **scope** choice, `enough, partial, missing` — `partial`/`missing` are both a signal to widen `where:` and re-run, not to trust the verdict as-is.
+
+## mdl and the recipes
+
+Two short files hold the rest, linked directly from here:
+
+- [mdl in about 70 tokens](references/mdl.md): the free context the ledger learns from (`why`, `area`, `uses` as C4 chains, `touches`, `blast`).
+- [One recipe per verb](references/recipes.md): how each verb shapes its probes (class, drill, scan, loop, replay, view).
+
+`mm3 agent probe` (and `mm3 help probe`) carry the enforced phrasing rules this skill builds on, cited to their TypeSafe source pages, plus this same role table and good/bad pair in a dense, no-prose form.
+=== skills/mm3-probe/references/mdl.md
+# mdl in about 70 tokens
+
+`mdl:` never reaches the classifier — it's free context the ledger learns from. Every field is optional: fill what you know, omit what doesn't apply. `why`/`area`/`stage`/`change`/`risk`/`blast` are closed lists — for this project's actual allowed values, run `mm3 agent mdl` (they're config-driven, so they're never hard-coded here). Two fields carry more than a bare value:
+
+- `problem` — one line: what you're actually solving right now.
+- `uses` — up to 5 chains describing what this run touches, in the C4 model (c4model.com): five levels, each inside the one above.
+
+  ```
+  system: shop
+  └── container: web-app                      an app or data store
+  │   ├── component: orders-handler           a group of code inside a container
+  │   │   └── code: createOrder               your own function (not a built-in)
+  │   └── component: orders-dao
+  └── container: database
+  person: customer                             outside the system
+  system: payment-service                      an outside service is its own system
+  ```
+
+  Write it flat: `/` for "inside" (`component:web-app/orders-handler`), `->` for "uses" (`a -> b -> c`), `?` on any part for "guessed or not built yet" (`component:web-app/refunds?`, `system:email-service?`). Grammar: `chain := part (" -> " part)*`, `part := level ":" name ("/" name)* ["?"]`, `level := person | system | container | component | code`, `name` = lowercase kebab-case (or a code identifier at the code level).
+
+Plus:
+
+- `touches` — up to 5 domain objects/fields this run is about (not concepts like "authentication", not language built-ins).
+- `blast` — the widest level one failure reaches (`person` = users' data or accounts, not "everyone").
+
+Example, on a run fixing an injection flaw in a user-lookup handler:
+
+```yaml
+mdl:
+  why: validate
+  problem: Removing the SQL injection in findUser flagged by an earlier scan
+  uses:
+    - person:customer -> container:web-app
+    - component:web-app/user-handler -> code:findUser -> container:db
+  touches: [userId, findUser]
+  blast: component
+```
+=== skills/mm3-probe/references/probe.md
+# A good/bad pair per family
+
+One bad probe (an opinion with no mechanism, role, or place to check) and one good category (3 probes, one per role) for each family. Examples are NodeGoat-neutral: any small Node/Express handler shape works the same way. `family:` is shown explicitly only where the category name wouldn't auto-match it.
+
+## Contents
+
+- injection: reach · guard · sink
+- access: actor · check · resource
+- secrets: store · transport · exposure
+- input: source · validate · reject
+- output: source · encode · render
+- availability: trigger · limit · recovery
+- correctness: input · rule · result
+- design: responsibility · dependency · testability
+- design-risk: abuse · failure · data
+- done: concrete · testable · owned
+- other: no fixed roles
+
+## injection — reach · guard · sink
+
+Bad: "Is this method secure?"
+
+```yaml
+lookup:
+  family: injection
+  pass: no
+  1: Is `id` taken from `req.query` and passed to `findUser` without validation?     # reach
+  2: Is `id` bound as a parameterized argument instead of concatenated into the query string?  # guard (flipped polarity)
+  3: Does `findUser` run the query with `db.query` on that string?                   # sink
+```
+
+## access — actor · check · resource
+
+Bad: "Does this endpoint have access control?"
+
+```yaml
+ownership:
+  family: access
+  pass: no
+  1: Is the session's own user id used to look up the record, not one taken from the request?   # actor
+  2: Is the record's owner compared against the caller before it's returned?                     # check
+  3: Could a caller read another user's record by changing the id alone?                         # resource
+```
+
+## secrets — store · transport · exposure
+
+Bad: "Are secrets handled safely here?"
+
+```yaml
+apikey:
+  family: secrets
+  pass: no
+  1: Is the API key read from an environment variable rather than hardcoded in `src/config.ts`?  # store (flipped polarity)
+  2: Could the key be sent in a URL query string instead of a header?                             # transport
+  3: Could the key appear in a client-visible error message or log line?                          # exposure
+```
+
+## input — source · validate · reject
+
+Bad: "Is user input validated?"
+
+```yaml
+amount:
+  family: input
+  pass: no
+  1: Is `amount` taken directly from the request body?                          # source
+  2: Does the handler skip checking that `amount` is a positive number?          # validate
+  3: Does the handler proceed to charge even when that check fails?              # reject (flipped polarity)
+```
+
+## output — source · encode · render
+
+Bad: "Is the output safe?"
+
+```yaml
+profile:
+  family: output
+  pass: no
+  1: Does the response body include the full database row for `user`?           # source
+  2: Is `user.name` written into the page without HTML-escaping?                # encode
+  3: Is `user.name` rendered inside a `<script>` context rather than plain HTML? # render
+```
+
+## availability — trigger · limit · recovery
+
+Bad: "Could this endpoint go down?"
+
+```yaml
+bulklookup:
+  family: availability
+  pass: no
+  1: Can a single request send an unbounded `ids` array to this handler?        # trigger
+  2: Is the size of `ids` left uncapped before the handler processes it?        # limit
+  3: Does a slow downstream call have no timeout, so the request hangs instead of failing fast?  # recovery
+```
+
+## correctness — input · rule · result
+
+Bad: "Is the logic correct?"
+
+```yaml
+discount:
+  family: correctness
+  pass: yes
+  1: Does `calculateTotal` receive the price before any discount is applied?     # input
+  2: Does the discount rule match the spec (10% over 100 USD, not 100 USD inclusive)?  # rule
+  3: Does the function return the same total for the same inputs on repeat calls? # result
+```
+
+## design — responsibility · dependency · testability
+
+Bad: "Is this well designed?"
+
+```yaml
+boundaries:
+  family: design
+  pass: yes
+  1: Does `UserService` own only user data, not billing?                        # responsibility
+  2: Does `UserService` depend on `BillingService` through an interface, not a concrete import?  # dependency
+  3: Can `UserService` be tested without a live database connection?            # testability
+```
+
+## design-risk — abuse · failure · data
+
+Bad: "Is this risky?"
+
+```yaml
+exposure-risk:
+  family: design-risk
+  pass: no
+  1: Could a caller repeatedly hit this endpoint to enumerate valid user ids?    # abuse
+  2: Does the service hang rather than degrade when the downstream API is unavailable?  # failure
+  3: Does this design store more personal data than the feature actually needs?  # data
+```
+
+## done — concrete · testable · owned
+
+Bad: "Is this finished?"
+
+```yaml
+done:
+  family: done
+  pass: yes
+  1: Is "guest checkout" scoped to one specific flow, not the whole redesign?    # concrete
+  2: Does "guest checkout" have a written acceptance check it can be verified against?  # testable
+  3: Does "guest checkout" have one named owner?                                # owned
+```
+
+## other — no fixed roles
+
+Bad: "Is this fine?"
+
+`other` is the escape hatch for a concern that doesn't fit the ten families above. There's no fixed role table — still write three distinct, observable probes, and pick your own three role names (as comments) so a reader can see they're not paraphrases of each other. Reach for one of the ten families first; only fall back to `other` when the concern genuinely doesn't fit any of them.
+=== skills/mm3-probe/references/recipes.md
+# One recipe per verb
+
+- **class** — one subject, the full contract: `3k` concerns categories × 3 angles, plus decisions. Name the file and line range in `where:`; name the element in a probe whenever `where:` covers more than one file.
+- **drill** — starts from one flagged concern or item, never cold. The parent's 3 angles each become their own new concern here, re-probed 3 ways of their own — going from "the injection concern failed" to "specifically the guard step failed, at this call."
+- **scan** — one concerns/decisions block, written once with a `{blank}` for the finest layer (e.g. `{function}`), applied to every item that layer sweeps. Add a severity scale to rank findings worst-first.
+- **loop** — the deepest layer (e.g. `story`) carries the full contract; `design`/`design-risk`/`done` fit an idea better than code-specific families like `injection`/`secrets`.
+- **replay** — no new probes at all: it replays the parent's exact questions on two git states. The only new field is `expect:`, your own prediction of which parent concerns should flip to pass.
+- **view** — a free, no-spend check of a draft's `ask:` against everything above, before you pay for a real run.
+=== skills/mm3/SKILL.md
+---
+name: mm3
+description: Use when analyzing, mapping, auditing, reviewing or porting a codebase (architecture work); before merging or shipping a risky change; after a fix to prove it worked; when scanning for a pattern before you know where it lives; or when checking a design or plan before writing code. Turns a short numbered yes/no checklist into a calibrated pass/fail/unsure verdict, reuses answers for unchanged code, and logs every run so weak spots surface over time.
+---
+
+## What MM3 is
+
+MM3 turns a short numbered yes/no checklist into a calibrated pass/fail/unsure verdict — evidence, never a command. Every request has a `mak:` block (**make**: the request itself, one goal, then plumbing) and an optional `mdl:` block (**model**: why you're here, so the ledger learns). The six verbs split into MAK³ (use what is proven: `view`, `class`, `replay`) and MDL³ (learn what is missing: `scan`, `drill`, `loop`), each across Know, Judge and Prove.
+
+## Use it well
+
+IMPORTANT: work top-down. Ask a few high-leverage questions per layer and drill only where MM3 flags something. "Exhaustive" means every layer covered through that funnel, not every file.
+
+- Open goal, in order: `view` (free reuse) → `scan` only when you do not know where to look → `drill` the flagged item → `loop` to check a design. Known location: `class` on the representative code.
+- Pilot first: send one small request, read the answer, fix the questions, then widen. Send no more than a few before you have read one.
+- A sweep that says `gate: fail` is normal (any file failing any concern fails it): read the failing categories and the `next:` line; do not stop and do not repeat it.
+- Before writing a request run `mm3 agent probe` (distinct roles per probe, a "none fits" option on every choice) and tag it with mdl (`uses`, `area`).
+- Before a judgment call about code or a design (safe to merge? is it fixed? which option?), get an MM3 verdict: a call costs a fraction of a cent and every run is recorded, so the next decision starts from evidence, not from scratch.
+- Cite the run id (MM3-####) for every claim that comes from MM3, and mark the rest as your own reading.
+- Delegating? Give helpers `mm3 agent delegate`, and check their reports against the ledger with `mm3 view MM3-####`: a helper can report work it did not do.
+
+## Run this first
+
+Run `mm3 agent` first: it names every command an agent needs — the six verbs plus `report`, `outcome`, `budget`, `template` — and the universal rules, in one dense, no-prose card. Then run `mm3 agent <command>` before writing a request: a verb's own card is its enforced rules and good/bad examples; a tool's is its syntax and a good/bad pair. `mm3 help` is the human-readable version of the same contract: a one-screen card, plus `help <verb>` (view, class, replay, scan, drill, loop) and `help <topic>` (authoring, verdict, mdl, reuse) going deeper — both free, no project needed. `mm3 report [hits|patterns|history]` reads back what the ledger has learned across every place so far — free, no options beyond the view name; a read tool, not a seventh verb.
+
+## Invoke it
+
+In Claude Code, call the `mm3` MCP tool directly — same args as the CLI (e.g. `args: ["class", "-"]`), the request YAML as `stdin`. There is no CLI on PATH; don't look for one. `doctor` through the tool shows where its key comes from, never the key itself.
+
+Elsewhere, find the command before you use it: use `mm3` if it's on PATH, else `npx --no-install mm3`; if neither works, tell the user to run `npx @mvpscale/mm3 init` in this project, and stop — never install anything on the user's behalf.
+
+## Get started
+
+`mm3 template <verb>` prints a filled-in sample with its rules as YAML comments — edit `goal`, `where` and `ask`, then run it. `view <request-file>` checks for a free, reused answer first; `--dry-run` validates and counts questions with no spend. The exact field rules are in `references/request.schema.json`; a sample per verb, plus common patterns, is in `templates/*.yaml`.
+=== skills/mm3/references/request.schema.json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mvp-scale/mm3/skills/mm3/references/request.schema.json",
+  "title": "MM3 request",
+  "description": "Two blocks. mak: one goal plus plumbing to the TypeSafe classifier. mdl: optional context so the ledger learns. ask has two sections: concerns (yes/no) and decisions (scale/choice). Checks JSON Schema can't express (exact counts per depth, per-section kind restrictions, numbers unique and 1..N with no gaps, a category holds one kind of question, paths inside the project) are done by the MM3 validator, which answers '✖ field: problem → fix'.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mak"
+  ],
+  "properties": {
+    "mak": {
+      "$ref": "#/$defs/mak"
+    },
+    "mdl": {
+      "$ref": "#/$defs/mdl"
+    }
+  },
+  "$defs": {
+    "line": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[^\\n]*$"
+    },
+    "tag": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 20
+    },
+    "sectionTag": {
+      "allOf": [
+        { "$ref": "#/$defs/tag" },
+        { "not": { "enum": ["concerns", "decisions"] } }
+      ]
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^(?:MM3|SW)-\\d{4,}$"
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^[^\\s:]+(:\\d+(-\\d+)?)?$",
+      "description": "a project path, optional :start-end"
+    },
+    "mak": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "goal"
+      ],
+      "properties": {
+        "goal": {
+          "$ref": "#/$defs/line",
+          "description": "one line: what you want to be true"
+        },
+        "depth": {
+          "enum": [
+            "quick",
+            "standard",
+            "thorough"
+          ],
+          "description": "quick | standard | thorough = k = 1 | 2 | 3 by default. One subject: the concerns section holds exactly 3k categories, each with exactly 3 yes/no probes (9 | 18 | 27 total by default). A sweep: at most 10 | 20 | 30 items per layer by default. A project's config.yaml can change these counts (mm3 config)"
+        },
+        "where": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/path"
+          }
+        },
+        "parent": {
+          "$ref": "#/$defs/runId",
+          "description": "required by drill and change: the run this builds on. Allowed on every verb otherwise, as lineage only"
+        },
+        "ask": {
+          "description": "one subject: {concerns: {...}, decisions: {...}} straight under ask. A sweep: {<layer>: {concerns: {...}, decisions: {...}}}, keyed by layer; {layer} blanks are filled in per item. A legacy flat category directly under ask (no concerns:/decisions: wrapper) is refused.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sections"
+            },
+            {
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": {
+                "$ref": "#/$defs/sectionTag"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/sections"
+              }
+            }
+          ]
+        },
+        "over": {
+          "type": "object",
+          "description": "sweeps: layer name → items. An item is a string, or {name: <item>, <next-layer>: [...]}. Different items may have different child layers. A layer can also be a path pattern (scan) or 'each' (we split the layer above into functions, calls or steps). Item ids are the names joined by '/': payments/refunds. 'concerns'/'decisions' are reserved for ask's own sections",
+          "minProperties": 1,
+          "propertyNames": {
+            "$ref": "#/$defs/sectionTag"
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 30
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "from": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "drill: an item id from the parent run (names joined by '/': billing-engine/refunds), or a category name for a one-subject parent"
+        },
+        "compare": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "before",
+            "after"
+          ],
+          "properties": {
+            "before": {
+              "type": "string"
+            },
+            "after": {
+              "type": "string"
+            }
+          },
+          "description": "replay: two git refs"
+        },
+        "expect": {
+          "oneOf": [
+            {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 9,
+              "items": {
+                "$ref": "#/$defs/tag"
+              }
+            },
+            {
+              "const": "none"
+            }
+          ],
+          "description": "replay, required: which of the parent's concerns this replay should turn to pass, or \"none\" to predict no flips at all"
+        },
+        "verb": {
+          "enum": [
+            "view",
+            "class",
+            "replay",
+            "scan",
+            "drill",
+            "loop"
+          ],
+          "description": "optional; the tool or command name wins. If both are present and differ, the request is sent back"
+        }
+      },
+      "description": "Per-verb requirements (checked by the validator): class needs depth, where, ask · view needs where (a partial draft is fine) · replay needs parent, compare and expect, and never ask (it re-runs the parent's questions; for new questions, use class) · scan and loop need depth, over, ask · drill needs parent and from; depth is optional. A sweep shows its total question count and cost before any call."
+    },
+    "sections": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "concerns": {
+          "$ref": "#/$defs/categoriesMap"
+        },
+        "decisions": {
+          "$ref": "#/$defs/categoriesMap"
+        }
+      }
+    },
+    "categoriesMap": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/$defs/tag"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/category"
+      }
+    },
+    "category": {
+      "type": "object",
+      "required": [
+        "pass"
+      ],
+      "properties": {
+        "pass": {
+          "description": "yes/no questions (concerns): yes (each answer ≥ 0.70) or no (each ≤ 0.30). Scale or choice (decisions): the passing levels or options",
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "enum": [
+                "yes",
+                "no"
+              ]
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "need": {
+          "enum": [
+            "all",
+            "most",
+            "any"
+          ],
+          "default": "all",
+          "description": "all: every answer clears the bar · most: ≥ 2/3 and none the wrong way · any: at least one"
+        },
+        "tags": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/tag"
+          }
+        },
+        "family": {
+          "enum": [
+            "access",
+            "injection",
+            "secrets",
+            "input",
+            "output",
+            "availability",
+            "correctness",
+            "design",
+            "design-risk",
+            "done",
+            "other"
+          ],
+          "description": "concerns only; defaults to the category name when that name is itself a family"
+        }
+      },
+      "propertyNames": {
+        "anyOf": [
+          {
+            "enum": [
+              "pass",
+              "need",
+              "tags",
+              "family"
+            ]
+          },
+          {
+            "pattern": "^[1-9][0-9]*$"
+          }
+        ]
+      },
+      "patternProperties": {
+        "^[1-9][0-9]*$": {
+          "$ref": "#/$defs/question"
+        }
+      }
+    },
+    "question": {
+      "oneOf": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "pattern": "\\?$"
+            }
+          ],
+          "description": "a yes/no question ending in ?"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scale",
+            "levels"
+          ],
+          "properties": {
+            "scale": {
+              "$ref": "#/$defs/line"
+            },
+            "levels": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 10,
+              "uniqueItems": true,
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "choice",
+            "options"
+          ],
+          "properties": {
+            "choice": {
+              "$ref": "#/$defs/line"
+            },
+            "options": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 8,
+              "uniqueItems": true,
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "mdl": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "why": {
+          "enum": [
+            "validate",
+            "find",
+            "debug",
+            "unknown"
+          ]
+        },
+        "area": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/mdlArea"
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 2,
+              "items": {
+                "$ref": "#/$defs/mdlArea"
+              }
+            }
+          ]
+        },
+        "stage": {
+          "enum": [
+            "design",
+            "build",
+            "review",
+            "pre-merge",
+            "post-fix",
+            "release",
+            "operate",
+            "unknown"
+          ]
+        },
+        "change": {
+          "enum": [
+            "feature",
+            "fix",
+            "refactor",
+            "dependency",
+            "config",
+            "unknown"
+          ]
+        },
+        "risk": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "unknown"
+          ]
+        },
+        "parent": {
+          "$ref": "#/$defs/runId"
+        },
+        "problem": {
+          "$ref": "#/$defs/line",
+          "description": "one line: what the agent is solving right now"
+        },
+        "uses": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/mdlChain"
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 5,
+              "items": {
+                "$ref": "#/$defs/mdlChain"
+              }
+            }
+          ],
+          "description": "one C4 chain, or a list of up to 5: level:name ( -> level:name)*"
+        },
+        "touches": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[^\\n]*$"
+          }
+        },
+        "blast": {
+          "enum": [
+            "code",
+            "component",
+            "container",
+            "system",
+            "person",
+            "unknown"
+          ]
+        }
+      },
+      "patternProperties": {
+        "^(?=.{1,20}$)(?!(?:why|area|stage|change|risk|parent|problem|uses|touches|blast)$)[a-z][a-z0-9]*(-[a-z0-9]+)*$": {
+          "description": "any other lower-kebab key (≤20 characters): one line ≤160, or a list of ≤5 such lines, recorded as-is",
+          "oneOf": [
+            {
+              "type": "string",
+              "maxLength": 160,
+              "pattern": "^[^\\n]*$"
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 5,
+              "items": {
+                "type": "string",
+                "maxLength": 160,
+                "pattern": "^[^\\n]*$"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "mdlArea": {
+      "enum": [
+        "data",
+        "api",
+        "ui",
+        "auth",
+        "hosting",
+        "build",
+        "tests",
+        "unknown"
+      ]
+    },
+    "mdlChain": {
+      "type": "string",
+      "maxLength": 160,
+      "pattern": "^(?:person|system|container|component|code):[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\??(?: -> (?:person|system|container|component|code):[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\??)*$",
+      "description": "a C4 chain: level:name ( -> level:name)*, level in person|system|container|component|code"
+    }
+  }
+}
+=== skills/mm3/templates/class.yaml
+# class: one subject, one verdict. Edit goal, where and ask; mdl is optional but cheap context.
+# mak.verb (shown once here, commented) is legal on every verb — it's optional everywhere, not just class.
+mak:
+  goal: This login handler is safe to merge   # required — phrase as the exact claim to prove — wording changes the verdict
+  # verb: class                               # optional — must match the command you run, or the request is sent back
+  depth: quick                                # required — by default quick=9, standard=18, thorough=27 yes/no questions across 3/6/9 concerns categories (decisions don't count; mm3 config shows this project's)
+  where: [src/handlers/user.ts:1-40]          # required — up to 5 path[:start-end] entries — this is ALL the code it sees
+                                               # a whole file over ~20,000 chars won't send — name the range instead
+                                               # a question about code NOT in where: has nothing to answer from — add it here
+                                               # with more than one file, name the one you mean in the question (in `backticks`)
+  ask:                                        # required — two sections: concerns (yes/no) and decisions (scale/choice)
+                                               # questions are numbered 1…N across the WHOLE request, decisions included — no gaps, no restart at decisions
+    concerns:                                 # exactly 3k categories for the depth above (quick: 3 by default), each with exactly 3 probes — three angles on one path (mm3 agent probe)
+      injection:
+        pass: no                              # every question in this category must answer "no" when things are fine
+        need: most                            # optional (default all) — all: every answer clears · most: >= 2/3, none a clear miss · any: at least one
+        tags: [sql, backend]                  # optional — up to 3 short tags on this category, kept for later pattern-mining
+        1: Is the user id taken from `req.query` without validation?                       # reach
+        2: Is the id concatenated into the SQL string instead of bound as a parameter?     # guard (note the polarity: "yes" here is bad)
+        3: Does the query run with `db.query` on that concatenated string?                 # sink
+      access:
+        pass: no
+        4: Is the session's own user id used to look up the record, not one from the request?   # actor
+        5: Is the record's owner compared against the caller before it's returned?              # check
+        6: Could any caller read another user's record by changing the id alone?                # resource
+      leaks:
+        family: output                          # output's own roles (mm3 agent probe): source, encode, render
+        pass: no
+        7: Does a failed query send the raw database error back to the caller?    # source
+        8: Is the error message written to a response body verbatim?             # encode (no sanitizing before it goes out)
+        9: Does the response include fields the caller never asked for?          # render
+    decisions:                                # 2-5 categories; at least one scale and one choice; don't count toward depth
+      severity:
+        pass: [none, low]
+        10:
+          scale: How severe is the worst issue found?
+          levels: [none, low, medium, high, critical]
+      route:
+        pass: [ship]
+        11:
+          choice: Where should this go?
+          options: [ship, fix, block]
+      # scope:                                 # optional, recommended (TypeSafe best practice) — the visible-scope probe
+      #   pass: [enough]
+      #   12:
+      #     choice: Can this be answered from the code shown?
+      #     options: [enough, partial, missing]
+mdl:                                         # optional block; every field inside it is optional too
+  why: validate                               # optional — validate | find | debug
+  area: auth                                  # optional — data | api | ui | auth | hosting | build | tests
+  # stage: build                              # optional — design | build | review | pre-merge | post-fix | release
+  # change: fix                               # optional — feature | fix | refactor | dependency | config
+  # risk: medium                              # optional — low | medium | high
+  # parent: MM3-0001                           # optional — a related run, for lineage (mak.parent is accepted on every verb too)
+  # problem: The user id from the request reaches a SQL query unchecked      # optional — one line, your own words: what you're solving now
+  # uses:                                     # optional — up to 5 C4 chains: level:name ( -> level:name)*; run `mm3 agent mdl` for the grammar
+  #   - component:web-app/user-handler -> container:db
+  # touches: [userId, findUser]               # optional — up to 5 entities/objects this run is about
+  # blast: component                          # optional — code | component | container | system | person
+=== skills/mm3/templates/decide.yaml
+# decide pattern (class-shaped): a choice question turns a verdict into a decision among named options, not
+# just pass/fail. No new verb or option; just run class.
+mak:
+  goal: Which fix should ship for the injection bug
+  depth: quick                      # exactly 3 concerns categories x 3 probes for quick; decisions don't count toward it
+  where: [src/handlers/user.ts:1-40]
+  ask:
+    concerns:
+      safety:
+        family: correctness                     # correctness's own roles (mm3 agent probe): input, rule, result
+        pass: yes
+        1: Does the parameterized-query fix remove the injection?           # result
+        2: Does it handle every call site, not just the reported one?       # rule (the fix's own completeness rule)
+        3: Is the fix free of a new injection point of its own?             # input (the fix's own new inputs)
+      quality:
+        pass: yes
+        4: Is the query still readable after the fix?
+        5: Does it avoid a new dependency?
+        6: Does it match the codebase's existing query style?
+      tests:
+        pass: yes
+        7: Does it keep the existing tests passing?
+        8: Is there a test that would have caught the original bug?
+        9: Is the fix small enough to review in one sitting?
+    decisions:
+      confidence:
+        pass: [high]
+        10:
+          scale: How confident is this fix, overall?
+          levels: [low, medium, high]
+      route:
+        pass: [parameterize]          # the option(s) that count as the passing answer, from the list below
+        11:
+          choice: Which fix should ship?
+          options: [parameterize, escape, rewrite, block-merge]
+mdl:
+  why: validate
+  area: data
+=== skills/mm3/templates/drill-subject.yaml
+# drill --parent <one-subject-run> --from <category>: this parent asked about one subject, not a sweep, so
+# from: names one of its categories and ask: sends brand-new, narrower questions — the parent's 3 angles
+# (its category's 3 probes) become 3 new concerns here, each attacked from 3 angles of its own. No "over" here.
+mak:
+  goal: Find exactly where request text reaches the query
+  parent: MM3-0051
+  from: access                     # a category from the parent run, not an item — no "over" here
+  ask:
+    concerns:                                   # reach/guard/sink are injection's own 3 roles (mm3 agent probe) — named
+      reach:                                    # by role here, not by family, so family: is given explicitly on each
+        family: injection
+        pass: no
+        1: Is the value taken from `req.query` without validation?
+        2: Is it concatenated straight into the query string?
+        3: Does it skip a parameterized query on the way in?
+      guard:
+        family: injection
+        pass: yes
+        4: Is the value parsed to a number before use?
+        5: Is it bound as a parameter instead of concatenated?
+        6: Is it checked against the caller's own session id?
+      sink:
+        family: injection
+        pass: no
+        7: Does the query run with `db.query` on that string?
+        8: Is the query built inside a loop, once per row?
+        9: Does the result get returned to the caller unfiltered?
+    decisions:
+      severity:
+        pass: [none, low]
+        10:
+          scale: How severe is the worst issue?
+          levels: [none, low, medium, high, critical]
+      route:
+        pass: [ship]
+        11:
+          choice: What should happen next?
+          options: [ship, fix, block]
+mdl:
+  why: debug
+  area: data
+=== skills/mm3/templates/drill.yaml
+# drill --parent <sweep-run> --from <item>: goes one layer down from one flagged item. No where: — it inherits
+# the parent's own code. New, narrower questions go under ask:; "plumbing is filled in, the questions are yours".
+mak:
+  goal: Find exactly where request text reaches the query   # required
+  # verb: drill                               # optional — must match the command you run, or the request is sent back
+  parent: MM3-0060                             # required — the sweep run this drills into
+  from: src/handlers/user.ts/findUser         # required — an item id the parent flagged (names joined by /), not a category
+  depth: quick                                # optional — at most 10 items asked per layer (standard 20, thorough 30); also sets the concerns count on the finest layer below
+  over:                                       # optional — only when the parent was a sweep; a one-subject parent has none (see drill-subject.yaml)
+    call: each                                # the NEXT layer down from the item named above
+  ask:                                        # required — the parent's 3 angles become 3 new concerns here, each attacked from 3 angles of its own
+                                               # questions are numbered 1…N across the WHOLE request, decisions included — no gaps, no restart at decisions
+    call:
+      concerns:                                 # reach/guard/sink are injection's own 3 roles (mm3 agent probe) — named
+        reach:                                  # by role here, not by family, so family: is given explicitly on each
+          family: injection
+          pass: no
+          1: Does {call} pass request text into SQL?
+          2: Is {call}'s argument built by string concatenation?
+          3: Is {call} reachable from an unauthenticated route?
+        guard:
+          family: injection
+          pass: yes
+          4: Is {call}'s argument parsed to a number before use?
+          5: Is {call}'s argument bound as a parameter instead of concatenated?
+          6: Is {call}'s argument validated against an allow-list?
+        sink:
+          family: injection
+          pass: no
+          7: Does {call} hit `db.query` directly?
+          8: Does {call} run inside a transaction with no timeout?
+          9: Does {call}'s result get returned to the caller unfiltered?
+      decisions:
+        severity:
+          pass: [none, low]
+          10:
+            scale: How severe is {call}'s worst issue?
+            levels: [none, low, medium, high, critical]
+        route:
+          pass: [ship]
+          11:
+            choice: What should happen to {call} next?
+            options: [ship, fix, block]
+                                               # drill never takes compare: or where: — it inherits the parent's own code
+mdl:                                         # optional block; every field inside it is optional too
+  why: debug                                  # optional — validate | find | debug
+  area: data                                  # optional — data | api | ui | auth | hosting | build | tests
+  # stage: post-fix                           # optional — design | build | review | pre-merge | post-fix | release
+  # change: fix                               # optional — feature | fix | refactor | dependency | config
+  # risk: medium                              # optional — low | medium | high
+  # parent: MM3-0060                           # optional — a related run, for lineage (distinct from mak.parent above)
+  # problem: Narrowing scan's injection flag on findUser down to the exact call that's unsafe   # optional
+  # uses:                                     # optional — up to 5 C4 chains: level:name ( -> level:name)*; run `mm3 agent mdl` for the grammar
+  #   - component:user-handler -> code:findUser -> container:db
+  # touches: [findUser]                       # optional — up to 5 entities/objects this run is about
+  # blast: code                               # optional — code | component | container | system | person
+=== skills/mm3/templates/loop.yaml
+# loop: sweeps ideas the agent itself writes (a design, a plan) before any code exists. No file evidence.
+mak:
+  goal: The checkout redesign is sound        # required
+  # verb: loop                                # optional — must match the command you run, or the request is sent back
+  depth: quick                                # required — sets the concerns count on the finest layer (story) below; also caps items per layer (10/20/30 by default)
+  where: [src/checkout/]                      # optional — context only (folder that will hold this); loop reads no files
+  over:                                       # required
+    part:                           # part and story are SIBLINGS here, both under over: — not one nested in the other
+      - name: gateway
+        story: [guest checkout, saved cards]   # names/tags: one word or kebab-case, <= 20 chars, no "/"
+      - name: payments
+        story: [refunds, retries, partial capture]
+      - ledger
+  ask:                                        # required — one concerns:/decisions: pair per layer; only the finest layer (story) needs the full 3k + decisions
+    part:                          # part is not the finest layer: thin on purpose, counts aren't enforced here (a note if thin)
+      concerns:
+        boundaries:
+          family: design                        # design's own roles (mm3 agent probe): responsibility, dependency, testability
+          pass: yes
+          1: Does {part} own one clear responsibility?              # responsibility
+          2: Can {part} be deployed without the others?              # dependency
+    story:                          # every story question is asked of EVERY story — phrase it so that holds; story is the finest layer
+      concerns:
+        done:                                   # "done" is itself a family — its 3 roles: concrete, testable, owned
+          pass: yes
+          3: Is "{story}" testable against {part} as written?        # testable
+          4: Does "{story}" have a named owner?                      # owned
+          5: Is "{story}" small enough to ship on its own?           # concrete
+        risk:
+          family: design-risk                   # design-risk's own roles: abuse, failure, data
+          pass: no
+          6: Does "{story}" need data {part} doesn't own?                              # data
+          7: Could "{story}" be built by bypassing {part}'s own boundary?              # abuse
+          8: Could "{story}" fail silently in production?                             # failure
+        fit:
+          family: design                        # design's own roles: responsibility, dependency, testability
+          pass: yes
+          9: Does "{story}" match how {part} is meant to be used?    # responsibility
+          10: Would "{story}" survive {part} being replaced later?   # dependency
+          11: Is "{story}" covered by an existing test today?        # testability
+      decisions:
+        risk-level:
+          pass: [none, low]
+          12:
+            scale: How risky is "{story}"?
+            levels: [none, low, medium, high, critical]
+        route:
+          pass: [build-now]
+          13:
+            choice: What should happen to "{story}" next?
+            options: [build-now, rework, redesign]
+                                               # loop never takes from:, compare: or parent: — it has no parent run to build on
+mdl:                                         # optional block; every field inside it is optional too
+  why: validate                               # optional — validate | find | debug
+  area: api                                   # optional — data | api | ui | auth | hosting | build | tests
+  # stage: design                             # optional — design | build | review | pre-merge | post-fix | release
+  # change: feature                           # optional — feature | fix | refactor | dependency | config
+  # risk: medium                              # optional — low | medium | high
+  # parent: MM3-0001                           # optional — a related run, for lineage
+  # problem: Stress-testing the checkout split into gateway/payments/ledger before writing any code   # optional
+  # uses:                                     # optional — up to 5 C4 chains: level:name ( -> level:name)*; run `mm3 agent mdl` for the grammar
+  #   - system:checkout -> container:gateway
+  #   - system:checkout -> container:payments
+  # touches: [gateway, payments, ledger]       # optional — up to 5 entities/objects this run is about
+  # blast: system                             # optional — code | component | container | system | person
+=== skills/mm3/templates/proof.yaml
+# proof pattern (class-shaped): the tightest shape for one narrow claim — every question phrased so "yes" is
+# the fine answer, need: all (the default) on every category. The contract still needs exactly 3 concerns
+# categories at quick depth; keep the other two just as narrow as the first, not padding.
+mak:
+  goal: The refund handler cannot double-charge a card
+  depth: quick
+  where: [src/billing/refund.ts:1-60]
+  ask:
+    concerns:
+      dedupe:
+        pass: yes                     # every one of these must clear >= 0.70, or the claim doesn't hold
+        1: Is the charge id checked against a set of already-processed ids before charging?
+        2: Does a retry reuse the original charge id instead of minting a new one?
+        3: Is there a unique constraint on (order_id, charge_id) at the database level?
+      locking:
+        pass: yes
+        4: Does the code lock the order row before charging?
+        5: Is the lock held until the charge completes or fails?
+        6: Is that check done inside the same transaction as the charge?
+      recovery:
+        pass: yes
+        7: Does a failed charge roll back any partial state?
+        8: Does the webhook handler for a duplicate event no-op?
+        9: Would a duplicate request return the original result instead of charging again?
+    decisions:
+      confidence:
+        pass: [high]
+        10:
+          scale: How confident is this proof, overall?
+          levels: [low, medium, high]
+      route:
+        pass: [ship]
+        11:
+          choice: Where should this go?
+          options: [ship, fix, block]
+mdl:
+  why: validate
+  area: data
+=== skills/mm3/templates/rank.yaml
+# rank pattern (scan-shaped): add a scale question to the finest layer to rank findings by severity (level x
+# probability), worst first, instead of getting back an unordered map. No new verb or option; just run scan.
+mak:
+  goal: Which of these handlers leaks the most on error
+  depth: quick
+  over:
+    file: src/handlers/*.ts         # scan by file when a whole file is the unit that matters, not a function inside it
+  ask:
+    file:
+      concerns:
+        leaks:
+          pass: no
+          1: Does {file} return a raw error message to the caller?
+          2: Does {file} log request bodies at error level?
+          3: Does {file} include a stack trace in the response?
+        handling:
+          pass: yes
+          4: Does {file} catch every error path it can throw?
+          5: Does {file} return a generic message to the caller on error?
+          6: Does {file} log enough detail internally to debug the failure?
+        surface:
+          pass: no
+          7: Does {file} expose more than one route that can trigger the same leak?
+          8: Does {file} skip the shared error handler other files use?
+          9: Would fixing {file} alone close the leak?
+      decisions:
+        severity:                     # the scale that does the ranking — add one to any layer you want ordered
+          pass: [none, low]
+          10:
+            scale: How severe would a leak here be?
+            levels: [none, low, medium, high, critical]
+        route:
+          pass: [ship]
+          11:
+            choice: Where should {file} go?
+            options: [ship, fix, block]
+mdl:
+  why: find
+  area: api
+=== skills/mm3/templates/replay.yaml
+# replay: re-runs a parent run's own questions across two committed git refs — never new ask:.
+mak:
+  goal: The injection fix works               # required — usually the parent run's own goal (mm3 replay --parent/--compare fills this in for you)
+  # verb: replay                              # optional — must match the command you run, or the request is sent back
+  parent: MM3-0042                             # required — the run whose questions get replayed
+  compare: {before: main, after: HEAD}        # required — two refs, or "worktree" for the working tree; files must be committed
+  expect: [injection]                         # required — which of the parent's concerns this replay should turn to pass; the answer grades the prediction too
+                                               # replay never takes ask:, over:, from:, where: or depth: — it re-runs the parent's own questions
+mdl:                                         # optional block; every field inside it is optional too
+  why: validate                               # optional — validate | find | debug
+  area: auth                                  # optional — data | api | ui | auth | hosting | build | tests
+  # stage: post-fix                           # optional — design | build | review | pre-merge | post-fix | release
+  # change: fix                               # optional — feature | fix | refactor | dependency | config
+  # risk: medium                              # optional — low | medium | high
+  # parent: MM3-0001                           # optional — a related run, for lineage (distinct from mak.parent above)
+  # problem: Removing the SQL injection in findUser flagged by MM3-0042        # optional — one line, your own words
+  # uses:                                     # optional — up to 5 C4 chains: level:name ( -> level:name)*; run `mm3 agent mdl` for the grammar
+  #   - component:user-handler -> container:db
+  # touches: [userId, findUser]               # optional — up to 5 entities/objects this run is about
+  # blast: component                          # optional — code | component | container | system | person
+=== skills/mm3/templates/scan.yaml
+# scan: sweeps code MM3 reads itself. over: builds layers (file -> function -> call); ask: keys by layer,
+# and the contract (3k concerns x 3 angles + 2-5 decisions) is enforced on the finest layer (here: function).
+mak:
+  goal: Handlers don't trust request input    # required
+  # verb: scan                                # optional — must match the command you run, or the request is sent back
+  depth: quick                                # required — at most 10 items asked per layer (standard 20, thorough 30) — extra items are skipped, not failed
+  over:                                       # required
+    file: src/handlers/*.ts                   # a glob, scanned by file (add a severity scale below to rank findings)
+    function: each                            # "each" splits the layer above into its next unit (function, then call)
+  ask:                                        # required — one concerns:/decisions: pair per layer named in over — {function} fills in per item
+                                               # questions are numbered 1…N across the WHOLE request, decisions included — no gaps, no restart at decisions
+    function:
+      concerns:                               # exactly 3k categories for the depth above (quick: 3 by default), each with exactly 3 probes
+        injection:
+          pass: no                            # ask what {function} itself does, not what code outside it does
+          1: Does {function} take request text straight from `req.query` or `req.body`?       # reach
+          2: Is that value concatenated into a query string instead of bound as a parameter?  # guard
+          3: Does {function} run the query with `db.query` on that string?                    # sink
+        access:
+          pass: no
+          4: Does {function} use an id from the request instead of the session?
+          5: Does {function} skip comparing the record's owner to the caller?
+          6: Could {function} return another user's record by changing the id alone?
+        leaks:
+          family: output                        # output's own roles (mm3 agent probe): source, encode, render
+          pass: no
+          7: Does {function} return a raw database error to the caller?              # source
+          8: Does {function} log the full request body?                             # encode (no redaction before it's written out)
+          9: Does {function}'s response include fields the caller never asked for?   # render
+      decisions:                              # 2-5 categories; at least one scale and one choice
+        severity:
+          pass: [none, low]
+          10:
+            scale: How severe is the worst issue in {function}?
+            levels: [none, low, medium, high, critical]
+        route:
+          pass: [ship]
+          11:
+            choice: Where should {function} go?
+            options: [ship, fix, block]
+        # scope:                                 # optional, recommended (TypeSafe best practice) — the visible-scope probe
+        #   pass: [enough]
+        #   12:
+        #     choice: Can this be answered from the code shown?
+        #     options: [enough, partial, missing]
+                                               # scan never takes where: (over: is what it reads), from:, compare: or parent:
+mdl:                                         # optional block; every field inside it is optional too
+  why: find                                   # optional — validate | find | debug
+  area: api                                   # optional — data | api | ui | auth | hosting | build | tests
+  # stage: build                              # optional — design | build | review | pre-merge | post-fix | release
+  # change: fix                               # optional — feature | fix | refactor | dependency | config
+  # risk: medium                              # optional — low | medium | high
+  # parent: MM3-0001                           # optional — a related run, for lineage
+  # problem: Screening every request handler for unvalidated input reaching a query or a missing permission check   # optional
+  # uses:                                     # optional — up to 5 C4 chains: level:name ( -> level:name)*; run `mm3 agent mdl` for the grammar
+  #   - container:api -> component:handlers -> container:db
+  # touches: [handlers]                       # optional — up to 5 entities/objects this run is about
+  # blast: system                             # optional — code | component | container | system | person
+=== skills/mm3/templates/view.yaml
+# view <this file>: free — checks the ledger for a prior run of the exact same questions on this code, no call.
+# where is the only field view needs; depth/ask are optional here since a partial draft (view before class is
+# ready to spend) is exactly what view is for — the section/count rules below become notes, not stops.
+mak:
+  goal: This login handler is safe to merge   # required — one line: what you want to be true
+  # verb: view                                # optional — must match the command you run, or the request is sent back
+  depth: quick                                # optional — if given, checked against ask: below (a note here; class would stop on it)
+  where: [src/handlers/user.ts:1-40]          # required — up to 5 path[:start-end] entries
+  ask:                                        # optional — a partial draft (even zero categories, or fewer than the full 3k) is fine for view
+    concerns:
+      injection:
+        pass: no
+        1: Is the user id taken from `req.query` without validation?
+        2: Is the id concatenated into the SQL string instead of bound as a parameter?
+mdl:                                         # optional block; every field inside it is optional too
+  why: validate                               # optional — validate | find | debug
+  area: auth                                  # optional — data | api | ui | auth | hosting | build | tests
+  # stage: build                              # optional — design | build | review | pre-merge | post-fix | release
+  # change: fix                               # optional — feature | fix | refactor | dependency | config
+  # risk: medium                              # optional — low | medium | high
+  # parent: MM3-0001                           # optional — a related run, for lineage
+  # problem: Checking whether the injection fix from MM3-0040 is already proven here   # optional — one line, your own words
+  # uses:                                     # optional — up to 5 C4 chains: level:name ( -> level:name)*; run `mm3 agent mdl` for the grammar
+  #   - container:api -> component:user-handler
+  # touches: [userId]                         # optional — up to 5 entities/objects this run is about
+  # blast: component                          # optional — code | component | container | system | person

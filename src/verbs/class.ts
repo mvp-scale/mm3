@@ -9,7 +9,7 @@
  */
 import { providerIdentity } from '../classifier/select.ts';
 import { checkBudget, peekBudget } from '../budget/budget.ts';
-import { resolveConfig } from '../config/load.ts';
+import { configOf } from '../config/load.ts';
 import type { Value } from '../contract/emit.ts';
 import { gradeSubject } from '../contract/grade.ts';
 import { answerKey, goalQuestion, subjectEvidence, subjectQuestions } from '../contract/translate.ts';
@@ -22,7 +22,7 @@ import { redact } from '../ledger/redact.ts';
 import { cacheTelemetry, lookupAnswers, reusedAgeNotes } from '../ledger/reuse.ts';
 import { staleNotes } from '../ledger/stale.ts';
 import { actorOf, askAll, createdNote, preflight, record, recordFree, splitReuse, type PlannedCall } from './pay.ts';
-import { loadRequest, stopText } from './request.ts';
+import { contractLimits, loadRequest, stopText } from './request.ts';
 import { commonNotes, consensusAndEscalate, COST_ESTIMATED_NOTE, dryRunText, outcomeNext, probeWarnings, respondText, reusedIds, subjectMak, mdlRecorded } from './respond.ts';
 import type { VerbContext, VerbResult } from './types.ts';
 
@@ -30,14 +30,14 @@ const CAP_NOTE = 'would be blocked: the budget cap is already reached';
 
 export async function runClass(text: string, ctx: VerbContext): Promise<VerbResult> {
   // a project's own .mm3/config.yaml mdl: overrides apply to every mdl: block it validates.
-  const cfg = resolveConfig(ctx.paths, ctx.env).config;
+  const cfg = configOf(ctx).config;
   const mdlFields = effectiveMdlFields(cfg.mdl);
-  const loaded = loadRequest(text, 'class', mdlFields);
+  const loaded = loadRequest(text, 'class', mdlFields, contractLimits(cfg, 'class'));
   if (!loaded.ok) return loaded.result;
   const { request } = loaded;
 
   // Evidence is read before touching budget or ledger at all: a bad path is a request problem, not a paid one.
-  const evidence = readCodeEvidence(ctx.paths.root, request.mak.where);
+  const evidence = readCodeEvidence(ctx.paths.root, request.mak.where, { limits: { perFileChars: cfg.evidence.perItemChars, totalChars: cfg.evidence.totalChars } });
   if (!evidence.ok) return { exit: 2, text: stopText(evidence.errors, 'class') };
 
   const identity = providerIdentity(ctx.env, { resolveStored: ctx.resolveStored });
@@ -102,7 +102,7 @@ export async function runClass(text: string, ctx: VerbContext): Promise<VerbResu
   const keys: Record<string, string> = {};
   for (const [q, k] of keyed) keys[q.id] = k;
 
-  const { consensus, escalate } = consensusAndEscalate(request.mak.categories, answers, request.mak.depth, loaded.notes);
+  const { consensus, escalate } = consensusAndEscalate(request.mak.categories, answers, request.mak.depth, loaded.notes, cfg.lens);
   const subject = gradeSubject(request.mak.categories, answers);
 
   // Which prior runs this run's answers came from, when any were reused — not just that reuse happened.
@@ -125,6 +125,7 @@ export async function runClass(text: string, ctx: VerbContext): Promise<VerbResu
         budget,
         ctx.provider.adapter,
         ctx.paths,
+        ctx.notes,
       ),
     );
 

@@ -36,5 +36,6 @@ A journey asks what one agent can do on a $1 cap that covers everything, using t
 - **`report stops`:** record each rejected request as the field and rule id only, never the request text. The most common mistakes then show which `help` pattern to improve first.
 - **Templates show the full envelope:** every optional field present, marked optional or required, so an agent trims what it doesn't need.
 - **Ledger index strategy:** decide which searches to index (reuse by answer key, run by id, outcome, place history, tags, patterns over time). Some rebuild tuning was measured earlier and not applied.
+- **Free ledger views by place, not by exact question:** `view` only hits when the questions and code are identical, so a fresh question about a known file comes back "no runs yet". Ready-made views over the ledger answer "what do I know about this file / area / category?" for free, with indexes on place, category and run. An agent that was shown the database built that join by hand (places, runs, categories) to find what was not yet covered. Not started.
 - **Knowledge layer:** consensus across every run tied to a commit, PR or release. Where answers agree across runs and agents they're strong signals; where they flip they're weak. `mm3 report graph` is the first piece.
 - **A challenger pair of questions** (opposite polarity). The design is undecided.

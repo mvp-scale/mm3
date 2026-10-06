@@ -5,9 +5,10 @@
  */
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
+import { DEFAULT_CONFIG } from '../config/defaults.ts';
 
 export const SKIP_DIRS = new Set(['.git', 'node_modules', '.mm3', 'dist']);
-export const MAX_FILES = 500;
+export const MAX_FILES = DEFAULT_CONFIG.evidence.maxFiles;
 
 const escape = (s: string): string => s.replace(/[.+^$()|[\]\\]/gu, '\\$&');
 
@@ -44,10 +45,10 @@ function staticPrefix(pattern: string): string {
   return fixed.join('/');
 }
 
-/** Files under root matching the pattern, sorted, at most MAX_FILES. A pattern with a `..` segment or an
+/** Files under root matching the pattern, sorted, at most `maxFiles` (default MAX_FILES). A pattern with a `..` segment or an
  * absolute path is rejected outright (no files, not truncated); `walk` also refuses to read outside root,
  * as defense in depth, though `rel` is built only from real directory entries and should never leave it. */
-export function expandGlob(root: string, pattern: string): { files: string[]; truncated: boolean } {
+export function expandGlob(root: string, pattern: string, maxFiles: number = MAX_FILES): { files: string[]; truncated: boolean } {
   const clean = pattern.replace(/^\.\//u, '');
   if (path.isAbsolute(clean) || clean.split('/').includes('..')) return { files: [], truncated: false };
   const re = globToRegExp(clean);
@@ -71,7 +72,7 @@ export function expandGlob(root: string, pattern: string): { files: string[]; tr
       if (e.isDirectory()) {
         if (!SKIP_DIRS.has(e.name)) walk(child);
       } else if (e.isFile() && re.test(child)) {
-        if (files.length >= MAX_FILES) {
+        if (files.length >= maxFiles) {
           truncated = true;
           return;
         }

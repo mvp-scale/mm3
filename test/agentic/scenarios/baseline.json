@@ -1,0 +1,312 @@
+{
+  "name": "baseline",
+  "about": "What MM3 must always do for an agent, whatever the version. Grows; nothing is removed. Level 2 asks an agent for its next step from text alone; level 3 lets an agent do the task for real on Juice Shop.",
+  "project": "juice-shop v20.2.0 (the clean checkout in the journey staging area; copied per run)",
+  "context": [
+    {
+      "id": "first-move",
+      "situation": "You were asked: \"Is routes/login.ts safe to ship? Use MM3 to check it.\" You have not called MM3 yet.",
+      "ask": "What is your very next tool call? Give the tool and its arguments only.",
+      "expect": [
+        "agent"
+      ],
+      "note": "the first call should be the card, `mm3 agent` (or a free `view`/`template`), not a guessed request"
+    },
+    {
+      "id": "stop-empty",
+      "situation": "You called the mm3 tool with args [\"class\",\"-\"] and no stdin. It answered: ✖ request: empty → start with \"mak:\" (mm3 template class prints a skeleton)",
+      "ask": "What is your next tool call? Give the tool and its arguments only.",
+      "expect": [
+        "template"
+      ],
+      "note": "should ask for the skeleton, or resend with the YAML in stdin"
+    },
+    {
+      "id": "stop-decisions",
+      "situation": "You sent a class request. It answered: ✖ mak.ask.decisions: 0 categories → give 2–5 → see: mm3 agent probe",
+      "ask": "What do you change in your request before resending? One or two sentences.",
+      "expect": [
+        "decision"
+      ],
+      "note": "should add a decisions section with 2-5 categories"
+    },
+    {
+      "id": "stop-yaml",
+      "situation": "You sent a class request. It answered: ✖ yaml: line 2 does not parse → use the indented form, and put any question with \": \" or \" #\" in quotes",
+      "ask": "What do you change in your request before resending? One or two sentences.",
+      "expect": [
+        "quot"
+      ],
+      "note": "should quote the question that holds a colon"
+    },
+    {
+      "id": "stop-ignored-field",
+      "situation": "You called the mm3 tool with {args:[\"class\",\"-\"], request:<yaml>}. It answered: ✖ arguments: ignored \"request\" → the tool takes only args, stdin and project: the request YAML goes in \"stdin\" (args: [\"class\",\"-\"])\n→ see: mm3 agent class",
+      "ask": "What is your next tool call? Give the tool and its arguments only.",
+      "expect": [
+        "stdin"
+      ],
+      "note": "should put the YAML in stdin"
+    },
+    {
+      "id": "delegate",
+      "situation": "You will hand three files to three helper agents and want each of them to use MM3 correctly.",
+      "ask": "What do you do before writing the helpers' prompts, and what goes in them? One or two sentences.",
+      "expect": [
+        "agent delegate"
+      ],
+      "note": "should fetch `mm3 agent delegate` and paste it into every helper prompt"
+    }
+  ],
+  "full": [
+    {
+      "id": "B1-class-a-file",
+      "goal": "An agent asked a plain question about one file gets a recorded verdict and reports it with its run id.",
+      "prompt": "Is routes/login.ts in this project safe to ship? Use MM3 to check it, and tell me the verdict and the MM3 run id.",
+      "model": "sonnet",
+      "routes": [
+        "cli",
+        "mcp"
+      ],
+      "promise": 3,
+      "checkpoints": [
+        "engaged",
+        "verdict-in-promise",
+        "last-request-accepted",
+        "answer-cites-run-id",
+        "run-id-in-ledger",
+        "stays-on-mm3"
+      ],
+      "title": "Ask a plain question",
+      "story": "A developer asks their agent: \"Is routes/login.ts safe to ship? Use MM3 to check it.\" The agent has MM3 and no other help.",
+      "success": "MM3 gives the agent a recorded verdict within 3 tries, and the agent tells the developer the run id, which really exists.",
+      "matters": "If agents cannot do this, a new user's first minute with MM3 fails."
+    },
+    {
+      "id": "B2-delegate",
+      "goal": "A lead agent hands three files to three helpers; each helper gets the delegate card, gets a verdict, and reports its run id; the lead reports all of them.",
+      "prompt": "Review routes/login.ts, routes/basket.ts and routes/search.ts for access-control problems. Hand each file to its own helper agent, use MM3, and report each MM3 run id.",
+      "model": "sonnet",
+      "routes": [
+        "mcp"
+      ],
+      "helpers": 3,
+      "promise": 3,
+      "checkpoints": [
+        "engaged",
+        "helpers-spawned",
+        "delegate-card-in-prompts",
+        "verdict-in-promise",
+        "helpers-cite-ids",
+        "answer-cites-run-id",
+        "run-id-in-ledger",
+        "stays-on-mm3"
+      ],
+      "title": "Hand the work to helper agents",
+      "story": "A developer asks the lead agent to review three files, one helper agent per file, using MM3.",
+      "success": "Every helper gets MM3 working, gets a verdict and reports its run id, and the lead reports all three.",
+      "matters": "Real work is split across helpers. If helpers start without MM3's guidance they flounder or skip MM3."
+    },
+    {
+      "id": "B3-one-stop",
+      "goal": "A request with ONE defect (no decisions section) stops with the fix named, and the agent's next request is accepted.",
+      "prompt": "Get an MM3 verdict for the request below and tell me the MM3 run id. Send it exactly as written first.\n\nmak:\n  goal: routes/login.ts is safe to ship\n  depth: quick\n  where: [routes/login.ts]\n  ask:\n    concerns:\n      auth:\n        pass: no\n        1: Is the password compared in plain text?\n        2: Is the user looked up by a value from the request?\n        3: Does a failed login say which part was wrong?\n      session:\n        pass: no\n        4: Is the session id predictable?\n        5: Is the session kept after logout?\n        6: Is the session id sent over plain http?\n      leaks:\n        pass: no\n        7: Does the login error reveal whether the email exists?\n        8: Is the raw database error sent back?\n        9: Does the response include fields the caller never asked for?",
+      "model": "sonnet",
+      "routes": [
+        "mcp"
+      ],
+      "promise": 2,
+      "checkpoints": [
+        "engaged",
+        "first-fix-works",
+        "answer-cites-run-id",
+        "run-id-in-ledger",
+        "stays-on-mm3"
+      ],
+      "title": "Recover from one mistake",
+      "story": "The agent is handed an MM3 request with one deliberate mistake: the decisions section is missing.",
+      "success": "MM3's error message tells the agent what to change, and its next request is accepted.",
+      "matters": "MM3 promises that an error message is enough to fix a mistake. This checks the promise."
+    },
+    {
+      "id": "F1-change-a-setting",
+      "title": "Change a setting and see it recorded",
+      "story": "A developer asks: \"Set MM3's spend cap for this project to 3 dollars, and tell me what MM3 recorded about the change.\"",
+      "success": "The config file holds the new cap, the agent loaded it, and the ledger holds a receipt showing the change, which the agent reports.",
+      "matters": "This is the one-config-file feature. If agents cannot change a setting reliably, it is no easier than before.",
+      "goal": "An agent changes a setting through MM3's config file, loads it, and says what was recorded.",
+      "prompt": "Set MM3's spend cap for this project to 3 dollars, and tell me what MM3 recorded about the change.",
+      "model": "sonnet",
+      "routes": [
+        "mcp"
+      ],
+      "promise": 3,
+      "checkpoints": [
+        "engaged",
+        "config-file-has-cap",
+        "config-receipt-shows-cap",
+        "answer-states-the-change",
+        "stays-on-mm3"
+      ]
+    },
+    {
+      "id": "F2-spend-cap",
+      "title": "Hit the spend cap and carry on",
+      "story": "MM3 is limited to one run in this project, and the developer is the owner: \"Check whether routes/login.ts is safe to ship, then whether routes/basket.ts is. If MM3 stops you, raise its run cap to 5 yourself and carry on.\"",
+      "success": "Both checks get done: the agent raises the cap in the config file the way MM3 says, loads it so it is recorded, and reports what happened and both run ids. Seeing the cap first and raising it before the stop is just as good as being stopped.",
+      "matters": "The budget stop is what protects a user's spend. If an agent cannot get past it the right way, or does so without a recorded change, the cap means nothing.",
+      "goal": "An agent hits the run cap, raises it through the config file the way the stop says, and finishes the work.",
+      "prompt": "MM3 is limited to one run in this project and I am the owner. Check whether routes/login.ts is safe to ship, then whether routes/basket.ts is. If MM3 stops you, raise its run cap to 5 yourself and carry on. Tell me what happened and both MM3 run ids.",
+      "setup": "config-runs-1",
+      "setupNote": "Before the agent starts, .mm3/config.yaml holds exactly:  budget:\\n  runs: 1",
+      "model": "sonnet",
+      "routes": [
+        "mcp"
+      ],
+      "promise": 3,
+      "checkpoints": [
+        "engaged",
+        "cap-raised-in-config",
+        "two-verdicts",
+        "continued-after-stop",
+        "answer-cites-run-id",
+        "run-id-in-ledger",
+        "stays-on-mm3"
+      ]
+    },
+    {
+      "id": "F3-install-health",
+      "title": "Check the install is healthy",
+      "story": "A developer asks: \"Is my MM3 install healthy? MM3 is the mm3 command here. If something needs updating, tell me which copy and how.\" The agent can ask MM3 itself; Claude's own record shows the plugin at an older commit than the MM3 copy the agent has.",
+      "success": "The agent runs doctor, finds the versions warning, and gives the right fix: update the plugin, or install the nightly copy, and never the older latest.",
+      "matters": "The versions line exists so a user knows which copy to update. A fix that downgrades a nightly copy would be worse than no advice.",
+      "goal": "An agent finds the version mismatch with doctor and reports the right fix.",
+      "prompt": "Is my MM3 install healthy? MM3 is the mm3 command here. If something needs updating, tell me which copy and how.",
+      "setup": "plugin-record-mismatch",
+      "setupNote": "Before the agent starts, a fake Claude config folder (outside the project) records an mm3 plugin install at commit f337f61, version 0.1.1, and the agent's shell may run only mm3.",
+      "model": "sonnet",
+      "routes": [
+        "cli"
+      ],
+      "promise": 3,
+      "checkpoints": [
+        "engaged",
+        "doctor-versions-seen",
+        "right-fix-reported",
+        "stays-on-mm3"
+      ],
+      "shell": "mm3-only"
+    },
+    {
+      "id": "F4-set-up-project",
+      "title": "Set up a project for agents",
+      "story": "A developer asks: \"Set this project up so that any agent working here knows to use MM3.\"",
+      "success": "AGENTS.md carries the MM3 block and a CLAUDE.md imports it, so Claude Code actually reads it.",
+      "matters": "Without the import the block reaches no agent. This was found by a real agent run, and the fix needs to work for the next one.",
+      "goal": "An agent sets a project up for agents with init, and the guidance reaches Claude Code.",
+      "prompt": "Set this project up so that any agent working here knows to use MM3.",
+      "model": "sonnet",
+      "routes": [
+        "mcp"
+      ],
+      "promise": 3,
+      "checkpoints": [
+        "engaged",
+        "agents-block-written",
+        "claude-md-imports",
+        "stays-on-mm3"
+      ]
+    },
+    {
+      "id": "F5-ignored-field",
+      "title": "Fix a wrong-field call from the stop alone",
+      "story": "A developer hands their agent a ready MM3 request. The agent has already tried once, putting the YAML in a field called \"request\", and the tool answered with its stop. The agent starts from that stop, with its text quoted exactly as the real tool returns it, and is told to carry on and get a verdict.",
+      "success": "The agent's very first MM3 call after the stop put the request in \"stdin\" and was accepted, it got a verdict, and it reports a run id that really exists.",
+      "matters": "Before 0.1.2 this mistake answered \"request: empty\", which blames the wrong thing and sends an agent in circles. The new stop has to be enough for an agent to fix itself in one call. This job tests exactly that, and nothing else: it starts the agent at the stop, so it does not depend on the agent making the mistake.",
+      "goal": "An agent handed the real wrong-field stop fixes its call in one go (the request in \"stdin\") and gets a verdict.",
+      "prompt": "You are partway through a task. You sent the MM3 tool the call {args: [\"class\",\"-\"], request: <the YAML below>} and it answered:\n\n✖ arguments: ignored \"request\" → the tool takes only args, stdin and project: the request YAML goes in \"stdin\" (args: [\"class\",\"-\"])\n→ see: mm3 agent class\n\nCarry on: get an MM3 verdict for the request below, and tell me the verdict and the MM3 run id.\n\nmak:\n  goal: routes/login.ts is safe to ship\n  depth: quick\n  where: [routes/login.ts]\n  ask:\n    concerns:\n      auth:\n        pass: no\n        1: Is the password compared in plain text?\n        2: Is the user looked up by a value from the request?\n        3: Does a failed login say which part was wrong?\n      session:\n        pass: no\n        4: Is the session id predictable?\n        5: Is the session kept after logout?\n        6: Is the session id sent over plain http?\n      leaks:\n        pass: no\n        7: Does the login error reveal whether the email exists?\n        8: Is the raw database error sent back?\n        9: Does the response include fields the caller never asked for?\n    decisions:\n      severity:\n        pass: [none, low]\n        10:\n          scale: How severe is the worst issue?\n          levels: [none, low, medium, high, critical]\n      route:\n        pass: [ship]\n        11:\n          choice: Where should this go?\n          options: [ship, fix, block]",
+      "setupNote": "Nothing is set up before the agent starts. The stop the agent is told it met is quoted in the prompt, and a test checks that the quoted text is character-for-character what the real plugin returns for that mistake, so it cannot drift from the product. The agent is not told which field to use: the stop says that.",
+      "model": "sonnet",
+      "routes": [
+        "mcp"
+      ],
+      "promise": 3,
+      "checkpoints": [
+        "engaged",
+        "ignored-stop-fixed",
+        "verdict-in-promise",
+        "answer-cites-run-id",
+        "run-id-in-ledger",
+        "stays-on-mm3"
+      ]
+    },
+    {
+      "id": "F6-guidance-reaches-helper",
+      "title": "Pass the guidance to a helper",
+      "story": "A developer asks the lead agent: \"Have one helper check routes/login.ts with MM3, and tell me the MM3 run id the helper got.\" The helper does not share the lead's instructions; whatever it knows about MM3 has to come from the lead.",
+      "success": "The lead's prompt to the helper carries the delegate card or tells the helper to fetch it with `mm3 agent delegate`, the helper makes its own MM3 request and gets a verdict, and the run id the lead reports really exists in the ledger.",
+      "matters": "Helpers do not inherit the plugin's guidance. `mm3 agent delegate` is the only way it reaches them, so if leads do not hand it over, helpers start blind or skip MM3.",
+      "goal": "A lead agent hands one helper the delegate card, and the helper uses MM3 and reports a run id the lead passes on.",
+      "prompt": "Have one helper agent check routes/login.ts for access-control problems with MM3, and tell me the MM3 run id the helper got.",
+      "model": "sonnet",
+      "routes": [
+        "mcp"
+      ],
+      "helpers": 1,
+      "promise": 3,
+      "checkpoints": [
+        "engaged",
+        "helpers-spawned",
+        "delegate-card-in-prompts",
+        "helper-made-the-call",
+        "verdict-in-promise",
+        "helpers-cite-ids",
+        "answer-cites-run-id",
+        "run-id-in-ledger",
+        "stays-on-mm3"
+      ]
+    },
+    {
+      "id": "F7-terminal-and-plugin",
+      "title": "Ask the terminal and the plugin the same thing",
+      "story": "A developer asks: \"Run `mm3 agent delegate` in the terminal, then run the same command through the MM3 plugin tool, and tell me whether the two answers agree.\" The agent has both a shell with the mm3 command and the plugin's mm3 tool.",
+      "success": "The agent ran the same command both ways, the two answers really were the same text, and the agent told the developer they agree.",
+      "matters": "MM3 promises one contract: the same arguments give the same answer in the terminal and in the plugin. An agent that switches between them must not be able to get two different answers, or a wrong report that they match.",
+      "goal": "An agent runs one free command through the terminal and through the plugin and reports whether the two answers agree, consistent with what each returned.",
+      "prompt": "Run `mm3 agent delegate` in the terminal, then run the same command through the MM3 plugin tool, and tell me whether the two answers agree.",
+      "setupNote": "Before the agent starts, nothing is set up. The agent gets the plugin's mm3 tool and a shell that may run the mm3 command, so both ways in exist in one run; the terminal copy and the plugin are the same build. The command is free: it needs no key and writes nothing to the ledger, so the ledger has no part in this job.",
+      "model": "sonnet",
+      "routes": [
+        "mcp"
+      ],
+      "terminal": true,
+      "promise": 3,
+      "checkpoints": [
+        "engaged",
+        "terminal-and-plugin-both-used",
+        "routes-agree-and-said-so",
+        "stays-on-mm3"
+      ]
+    }
+  ],
+  "rules": {
+    "attemptsToVerdict": 3,
+    "firstAttemptTarget": 0.8,
+    "gateModel": "sonnet",
+    "floorModel": "haiku",
+    "trialsPerScenario": 3,
+    "mustPassTrials": 2
+  },
+  "preconditions": [
+    "The provider is the sample (fake) one: no TypeSafe key, no spend. Verdicts are canned; nothing here grades whether a verdict is right.",
+    "The project is a fresh copy of the pinned Juice Shop checkout with no .mm3/ in it.",
+    "The agent gets only the task prompt below: no hints, no expected outcome. Only Read/Glob/Grep, Write and Edit (plus a shell on the CLI route, the Agent tool for delegation) exist.",
+    "Counted as a verb request: class, scan, drill, loop, view or replay. Calls to agent, template, help, probe or doctor are discovery, not attempts."
+  ],
+  "purpose": "Can an agent get a useful answer out of MM3 on its own? A developer tells an agent to use MM3 to check some code. We watch whether the agent succeeds without a person stepping in, using only what MM3 itself gives it: its instructions, its help and its error messages. The project the agents look at (OWASP Juice Shop) is sample material; it is not what is being tested. Two kinds of job: the first three check that agents can use MM3 at all; the last seven check the features that are new since the last release.",
+  "notTested": [
+    "Whether MM3's verdicts are right. The sample provider gives canned answers, so that needs the keyed live suite.",
+    "Real spend. The budget jobs use the run cap with the sample provider; a dollar cap with live calls needs the keyed suite.",
+    "Whether agents make the wrong-field mistake unprompted. The wrong-field job starts the agent at the real stop, so it tests only whether the stop text is enough to fix the call in one go; how often agents err that way in the first place is not measured."
+  ]
+}

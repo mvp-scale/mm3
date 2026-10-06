@@ -108,7 +108,7 @@ describe('[C-227] a section with every child commented out means no overrides', 
   });
 
   it('a scalar where a mapping belongs is still a stop', () => {
-    expect(validateConfig({ sweep: 5 }).stops[0]?.text).toBe('✖ config.sweep: is not a mapping → write maxItems: and/or maxQuestionsPerCall: under sweep:');
+    expect(validateConfig({ sweep: 5 }).stops[0]?.text).toBe('✖ config.sweep: is not a mapping → write maxItems:, maxQuestionsPerCall: and/or itemsPerLayer: under sweep:');
   });
 });
 

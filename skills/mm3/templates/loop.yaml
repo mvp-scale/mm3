@@ -2,7 +2,7 @@
 mak:
   goal: The checkout redesign is sound        # required
   # verb: loop                                # optional — must match the command you run, or the request is sent back
-  depth: quick                                # required — sets the concerns count on the finest layer (story) below; also caps items per layer (10/20/30)
+  depth: quick                                # required — sets the concerns count on the finest layer (story) below; also caps items per layer (10/20/30 by default)
   where: [src/checkout/]                      # optional — context only (folder that will hold this); loop reads no files
   over:                                       # required
     part:                           # part and story are SIBLINGS here, both under over: — not one nested in the other
