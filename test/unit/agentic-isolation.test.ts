@@ -10,7 +10,7 @@ import { clearAgentScratch } from '../../scripts/agentic/run.ts';
 import { isolatedEnv, strayServers } from '../../scripts/agentic/claude.ts';
 
 describe('agent runs are isolated from the account [C-273]', () => {
-  it('[C-273] every run switches the claude.ai connectors off, and a caller's extra environment cannot switch them back on', () => {
+  it('[C-273] every run switches the claude.ai connectors off, and no extra environment from a caller can switch them back on', () => {
     expect(isolatedEnv().ENABLE_CLAUDEAI_MCP_SERVERS).toBe('false');
     expect(isolatedEnv({ MM3_PROVIDER: 'fake' })).toMatchObject({ ENABLE_CLAUDEAI_MCP_SERVERS: 'false', MM3_PROVIDER: 'fake' });
     expect(isolatedEnv({ ENABLE_CLAUDEAI_MCP_SERVERS: 'true' }).ENABLE_CLAUDEAI_MCP_SERVERS).toBe('false'); // not even a caller's own value turns them back on
