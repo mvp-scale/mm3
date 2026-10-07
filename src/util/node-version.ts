@@ -8,13 +8,13 @@
  * an answer out) so it's trivial to unit-test with an injected version instead of the machine's own Node.
  */
 
+import { LINKS } from '../help/links.ts';
+
 const MIN_NODE_MAJOR = 22;
 const MIN_NODE_MINOR = 13;
 export const MIN_NODE_LABEL = `${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}`;
 
-/** Where the stop line and doctor send a person to fix an old or missing Node: per-project pin recipes, so
- *  nobody has to change their whole machine. Lives in docs/ (shipped to main with each release). */
-export const NODE_DOC_URL = 'https://github.com/mvp-scale/mm3/blob/main/docs/node-version.md';
+// The link in the stop line and in doctor comes from help/links.ts, so it can change without touching this wording.
 // TODO: once a standalone (no-Node) build has a public release, add it to docs/node-version.md and mention
 // it here. Until then nothing user-visible promises it.
 
@@ -40,13 +40,13 @@ export function nodeVersionOk(v: string): boolean {
  *  `if (stop) ...` without calling `nodeVersionOk` a second time. */
 export function nodeVersionStop(v: string): string | undefined {
   if (nodeVersionOk(v)) return undefined;
-  return `✖ node: ${v} is too old → pin Node ${MIN_NODE_LABEL}+ for this project (nvm, fnm or Volta; no machine-wide change); see ${NODE_DOC_URL}`;
+  return `✖ node: ${v} is too old → pin Node ${MIN_NODE_LABEL}+ for this project (nvm, fnm or Volta; no machine-wide change); see ${LINKS.nodeVersion}`;
 }
 
 /** doctor's own `node:` field value: the plain version when it's fine, or the same fact in the compact shape
  *  that fits a YAML value (doctor keeps running and reporting instead of stopping outright). */
 export function doctorNodeValue(v: string): string {
-  return nodeVersionOk(v) ? v : `${v} ✖ too old → pin Node ${MIN_NODE_LABEL}+ for this project; see ${NODE_DOC_URL}`;
+  return nodeVersionOk(v) ? v : `${v} ✖ too old → pin Node ${MIN_NODE_LABEL}+ for this project; see ${LINKS.nodeVersion}`;
 }
 
 /** doctor's own `index:` field value on too old a Node — the `node:sqlite`-vs-fallback choice never even

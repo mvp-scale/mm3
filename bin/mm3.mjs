@@ -8627,11 +8627,17 @@ function latestOutcome(records, id) {
   return found;
 }
 
+// src/help/links.ts
+var REPO_URL = "https://github.com/mvp-scale/mm3";
+var LINKS = {
+  /** Node older than 22.13, or missing: how to pin a supported Node for one project (docs/node-version.md in the repo). */
+  nodeVersion: REPO_URL
+};
+
 // src/util/node-version.ts
 var MIN_NODE_MAJOR = 22;
 var MIN_NODE_MINOR = 13;
 var MIN_NODE_LABEL = `${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}`;
-var NODE_DOC_URL = "https://github.com/mvp-scale/mm3/blob/main/docs/node-version.md";
 function parseNodeVersion(v) {
   const m2 = /^v?(\d+)\.(\d+)/u.exec(v.trim());
   if (!m2) return void 0;
@@ -8645,10 +8651,10 @@ function nodeVersionOk(v) {
 }
 function nodeVersionStop(v) {
   if (nodeVersionOk(v)) return void 0;
-  return `\u2716 node: ${v} is too old \u2192 pin Node ${MIN_NODE_LABEL}+ for this project (nvm, fnm or Volta; no machine-wide change); see ${NODE_DOC_URL}`;
+  return `\u2716 node: ${v} is too old \u2192 pin Node ${MIN_NODE_LABEL}+ for this project (nvm, fnm or Volta; no machine-wide change); see ${LINKS.nodeVersion}`;
 }
 function doctorNodeValue(v) {
-  return nodeVersionOk(v) ? v : `${v} \u2716 too old \u2192 pin Node ${MIN_NODE_LABEL}+ for this project; see ${NODE_DOC_URL}`;
+  return nodeVersionOk(v) ? v : `${v} \u2716 too old \u2192 pin Node ${MIN_NODE_LABEL}+ for this project; see ${LINKS.nodeVersion}`;
 }
 var DOCTOR_INDEX_TOO_OLD = `none (needs Node ${MIN_NODE_LABEL}+)`;
 
@@ -9530,7 +9536,7 @@ function withIndex(paths, fn, opts = {}) {
 function budgetRollup(paths, sinceIso, opts = {}) {
   return withIndex(paths, (handle) => handle.budgetRollup(sinceIso), { readOnly: opts.readOnly ?? false });
 }
-var NODE_TOO_OLD_LEDGER_MESSAGE = `\u2716 ledger: node:sqlite is unavailable \u2192 pin Node ${MIN_NODE_LABEL}+ for this project; see ${NODE_DOC_URL}`;
+var NODE_TOO_OLD_LEDGER_MESSAGE = `\u2716 ledger: node:sqlite is unavailable \u2192 pin Node ${MIN_NODE_LABEL}+ for this project; see ${LINKS.nodeVersion}`;
 function runSqlite(paths, fn, opts) {
   if (__testOnly.forceFallback) return fn(buildMemoryHandle(paths));
   try {

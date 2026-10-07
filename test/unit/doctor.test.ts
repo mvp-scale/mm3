@@ -131,7 +131,7 @@ describe('doctor (P5)', () => {
       const r = runDoctor({}, undefined, 'v20.11.0');
       expect(r.exit).toBe(2);
       expect(r.text).toContain('doctor:'); // the full doc still renders — never just a bare ✖ line
-      expect(r.text).toContain('node: v20.11.0 ✖ too old → pin Node 22.13+ for this project; see https://github.com/mvp-scale/mm3/blob/main/docs/node-version.md');
+      expect(r.text).toContain('node: v20.11.0 ✖ too old → pin Node 22.13+ for this project; see https://github.com/mvp-scale/mm3');
       expect(r.text).toContain('index: none (needs Node 22.13+)');
     });
 
