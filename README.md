@@ -21,7 +21,7 @@ Pick **project** scope. Claude asks for a TypeSafe API key (masked, optional): p
 
 The plugin carries its own copy of MM3 and gives Claude the `mm3` tool, so Claude can run every command (`mm3 config --load` included) without anything else installed. It is updated through Claude Code, like any plugin.
 
-In your own terminal (optional, needs Node 22.13+). Run it without installing anything:
+In your own terminal (optional, needs Node 22.13+; [how to pin it for one project](docs/node-version.md)). Run it without installing anything:
 
 ```bash
 npx @mvpscale/mm3 config

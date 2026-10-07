@@ -1499,8 +1499,8 @@ The Claude Code skill's own "Run this first" guidance sends a cold agent to `mm3
 
 **On an older Node:**
 
-- Every command exits 2 with exactly `✖ node: v<version> is too old → install Node 22.13 or newer (it powers the ledger index); https://nodejs.org`, then the pointer line (`→ see: mm3 agent <command>` from the CLI, `→ see: mm3 agent` from the plugin). [C-106]
-- The exception is `doctor`. It still runs, free and with no call. It shows `node: v<version> ✖ too old → install Node 22.13+` and `index: none (needs Node 22.13+)` in its own output. Then it too exits 2 rather than 0. [C-106]
+- Every command exits 2 with exactly `✖ node: v<version> is too old → pin Node 22.13+ for this project (nvm, fnm or Volta; no machine-wide change); see https://github.com/mvp-scale/mm3/blob/main/docs/node-version.md`, then the pointer line (`→ see: mm3 agent <command>` from the CLI, `→ see: mm3 agent` from the plugin). [C-106]
+- The exception is `doctor`. It still runs, free and with no call. It shows `node: v<version> ✖ too old → pin Node 22.13+ for this project; see https://github.com/mvp-scale/mm3/blob/main/docs/node-version.md` and `index: none (needs Node 22.13+)` in its own output. Then it too exits 2 rather than 0. [C-106]
 - `mm3 mcp` still answers `initialize` and `tools/list`, so a client's handshake never hangs. [C-106]
 - Every `tools/call` comes back `isError: true` with that same line and the overview pointer, whatever command was actually asked for, `doctor` included. The guard runs before the requested command ever does. [C-106]
 

@@ -200,7 +200,14 @@ function projectLine(root: string, deps: { runner?: Runner }): string {
  *  one, same `✖ config.<path>: problem → fix` shape `mm3 config`/`doctor <file>` use. Reads and hashes config.yaml;
  *  writes nothing. */
 function configField(paths: Mm3Paths | undefined): Value {
-  const status = configStatus(paths);
+  // On a Node with no node:sqlite the receipt lookup throws (the ledger backstop); doctor is the command a person on
+  // old Node runs to find out why, so it must still render, with the file's own checks and no receipt [C-106].
+  let status;
+  try {
+    status = configStatus(paths);
+  } catch {
+    status = configStatus(undefined);
+  }
   const line = statusLine(status);
   if (status.fileStops.length) return [...status.fileStops.map((s) => s.text), ...(line ? [line] : [])];
   if (status.kind === 'defaults') return '✔ config: defaults';

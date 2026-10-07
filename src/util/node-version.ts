@@ -12,6 +12,12 @@ const MIN_NODE_MAJOR = 22;
 const MIN_NODE_MINOR = 13;
 export const MIN_NODE_LABEL = `${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}`;
 
+/** Where the stop line and doctor send a person to fix an old or missing Node: per-project pin recipes, so
+ *  nobody has to change their whole machine. Lives in docs/ (shipped to main with each release). */
+export const NODE_DOC_URL = 'https://github.com/mvp-scale/mm3/blob/main/docs/node-version.md';
+// TODO: once a standalone (no-Node) build has a public release, add it to docs/node-version.md and mention
+// it here. Until then nothing user-visible promises it.
+
 /** Parses a `process.version`-shaped string ("v22.13.0", "20.11.0", ...) into {major, minor}, or undefined
  *  when it doesn't even look like one — never thrown, since an unparseable string is just treated as "too
  *  old" by `nodeVersionOk` below, not a crash. */
@@ -34,13 +40,13 @@ export function nodeVersionOk(v: string): boolean {
  *  `if (stop) ...` without calling `nodeVersionOk` a second time. */
 export function nodeVersionStop(v: string): string | undefined {
   if (nodeVersionOk(v)) return undefined;
-  return `✖ node: ${v} is too old → install Node 22.13 or newer (it powers the ledger index); https://nodejs.org`;
+  return `✖ node: ${v} is too old → pin Node ${MIN_NODE_LABEL}+ for this project (nvm, fnm or Volta; no machine-wide change); see ${NODE_DOC_URL}`;
 }
 
 /** doctor's own `node:` field value: the plain version when it's fine, or the same fact in the compact shape
  *  that fits a YAML value (doctor keeps running and reporting instead of stopping outright). */
 export function doctorNodeValue(v: string): string {
-  return nodeVersionOk(v) ? v : `${v} ✖ too old → install Node ${MIN_NODE_LABEL}+`;
+  return nodeVersionOk(v) ? v : `${v} ✖ too old → pin Node ${MIN_NODE_LABEL}+ for this project; see ${NODE_DOC_URL}`;
 }
 
 /** doctor's own `index:` field value on too old a Node — the `node:sqlite`-vs-fallback choice never even

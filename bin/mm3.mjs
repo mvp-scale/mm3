@@ -8631,6 +8631,7 @@ function latestOutcome(records, id) {
 var MIN_NODE_MAJOR = 22;
 var MIN_NODE_MINOR = 13;
 var MIN_NODE_LABEL = `${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}`;
+var NODE_DOC_URL = "https://github.com/mvp-scale/mm3/blob/main/docs/node-version.md";
 function parseNodeVersion(v) {
   const m2 = /^v?(\d+)\.(\d+)/u.exec(v.trim());
   if (!m2) return void 0;
@@ -8644,10 +8645,10 @@ function nodeVersionOk(v) {
 }
 function nodeVersionStop(v) {
   if (nodeVersionOk(v)) return void 0;
-  return `\u2716 node: ${v} is too old \u2192 install Node 22.13 or newer (it powers the ledger index); https://nodejs.org`;
+  return `\u2716 node: ${v} is too old \u2192 pin Node ${MIN_NODE_LABEL}+ for this project (nvm, fnm or Volta; no machine-wide change); see ${NODE_DOC_URL}`;
 }
 function doctorNodeValue(v) {
-  return nodeVersionOk(v) ? v : `${v} \u2716 too old \u2192 install Node ${MIN_NODE_LABEL}+`;
+  return nodeVersionOk(v) ? v : `${v} \u2716 too old \u2192 pin Node ${MIN_NODE_LABEL}+ for this project; see ${NODE_DOC_URL}`;
 }
 var DOCTOR_INDEX_TOO_OLD = `none (needs Node ${MIN_NODE_LABEL}+)`;
 
@@ -9529,7 +9530,7 @@ function withIndex(paths, fn, opts = {}) {
 function budgetRollup(paths, sinceIso, opts = {}) {
   return withIndex(paths, (handle) => handle.budgetRollup(sinceIso), { readOnly: opts.readOnly ?? false });
 }
-var NODE_TOO_OLD_LEDGER_MESSAGE = `\u2716 ledger: node:sqlite is unavailable \u2192 install Node ${MIN_NODE_LABEL} or newer (it powers the ledger index); https://nodejs.org`;
+var NODE_TOO_OLD_LEDGER_MESSAGE = `\u2716 ledger: node:sqlite is unavailable \u2192 pin Node ${MIN_NODE_LABEL}+ for this project; see ${NODE_DOC_URL}`;
 function runSqlite(paths, fn, opts) {
   if (__testOnly.forceFallback) return fn(buildMemoryHandle(paths));
   try {
@@ -12848,7 +12849,12 @@ function projectLine(root, deps) {
   return `${root} \xB7 plugin enabled here: ${enabled ? "yes" : "no"}`;
 }
 function configField(paths) {
-  const status = configStatus(paths);
+  let status;
+  try {
+    status = configStatus(paths);
+  } catch {
+    status = configStatus(void 0);
+  }
   const line3 = statusLine(status);
   if (status.fileStops.length) return [...status.fileStops.map((s) => s.text), ...line3 ? [line3] : []];
   if (status.kind === "defaults") return "\u2714 config: defaults";

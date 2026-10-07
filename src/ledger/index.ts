@@ -54,7 +54,7 @@ import { normalizeMdl } from '../contract/mdl-fields.ts';
 import { isContractRun, isRecord, LedgerError, notARecord, shownLog, type ConfigRecord, type ContractRun, type FailedRecord, type LedgerRecord, type OutcomeRecord, type RunRecord } from './log.ts';
 import { isAbsent, withLock } from './lock.ts';
 import { ensureDir, type Mm3Paths } from './paths.ts';
-import { MIN_NODE_LABEL } from '../util/node-version.ts';
+import { MIN_NODE_LABEL, NODE_DOC_URL } from '../util/node-version.ts';
 
 const whoKey = (who: { adapter: string; model: string }): string => `${who.adapter}|${who.model}`;
 
@@ -1517,7 +1517,7 @@ export function budgetRollup(paths: Mm3Paths, sinceIso: string, opts: { readOnly
 // since the test hook forces this path on a perfectly good Node too; the fact reported is "sqlite is
 // unavailable," which is true either way, not "your Node happens to be old" (cli.ts's own nodeVersionStop
 // already covers that half for the real CLI/MCP paths, which stop long before ever reaching here). [C-107]
-const NODE_TOO_OLD_LEDGER_MESSAGE = `✖ ledger: node:sqlite is unavailable → install Node ${MIN_NODE_LABEL} or newer (it powers the ledger index); https://nodejs.org`;
+const NODE_TOO_OLD_LEDGER_MESSAGE = `✖ ledger: node:sqlite is unavailable → pin Node ${MIN_NODE_LABEL}+ for this project; see ${NODE_DOC_URL}`;
 
 function runSqlite<T>(paths: Mm3Paths, fn: (h: IndexHandle) => T, opts: { forceRebuild: boolean; readOnly: boolean }): T {
   // __testOnly.forceFallback: the one intentional, silent fallback left — proving the two engines agree
