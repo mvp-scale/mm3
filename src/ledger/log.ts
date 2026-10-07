@@ -16,7 +16,7 @@ import { formatRunId, ulid } from './ids.ts';
 // A deliberate two-way import with index.ts: log.ts calls withIndex/readRecordAt (only inside function bodies,
 // never at module load time), and index.ts calls back into isRecord/LedgerError/shownLog the same way. Safe in
 // ESM as long as neither side touches the other's exports before both modules finish loading, which holds here.
-import { normalizeRecordMdl, readRecordAt, withIndex } from './index.ts';
+import { catchUpAfterAppend, normalizeRecordMdl, readRecordAt, withIndex } from './index.ts';
 import { isAbsent, onStore, withLock } from './lock.ts';
 import { ensureDir, type Mm3Paths } from './paths.ts';
 import { redact, redactDeep, redactSecrets } from './redact.ts';
@@ -454,6 +454,7 @@ function appendLine(paths: Mm3Paths, record: LedgerRecord): void {
     ensureDir(paths);
     const needsBreak = !logEndsCleanly(paths.log);
     appendFileSync(paths.log, `${needsBreak ? '\n' : ''}${JSON.stringify(record)}\n`);
+    catchUpAfterAppend(paths); // keep a current index current, so read-only readers never fall back to a full scan
   });
 }
 

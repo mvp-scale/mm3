@@ -1302,6 +1302,34 @@ function ensureFreshDb(paths: Mm3Paths, Db: DatabaseSyncCtor, opts: { forceRebui
 // ---------------------------------------------------------------------------------------------------------------
 
 /**
+ * Called by log.ts's appendLine, under the ledger lock, right after it appended a line: if an on-disk index.db
+ * existed and passes the normal open check (schema, size, fingerprint of the last indexed line) but is merely
+ * behind the log by pure growth, catch it up over just the new bytes, in place — exactly what the next writer
+ * would do under the same lock, done one append earlier. Without this every read-only reader (view, report,
+ * findRun, reuse) finds the index one line behind and — by design — never writes it, so it falls back to a full
+ * in-memory scan of the whole log (7 to 10 s and ~150 MB extra at 100k runs) on every call after any append,
+ * including the lookup line `view` itself appends. Never creates, rebuilds or heals anything (a missing, stale
+ * or suspect index is left for the next writer's own self-heal), and never throws: the index is disposable and
+ * the append it follows has already succeeded.
+ */
+export function catchUpAfterAppend(paths: Mm3Paths): void {
+  if (__testOnly.forceFallback || !existsSync(paths.index)) return;
+  let db: SqliteDb | undefined;
+  try {
+    const Db = getSqliteCtor();
+    if (!Db) return;
+    const check = tryOpenAndCheck(paths, Db);
+    db = check.db;
+    if (!check.ok || check.fresh) return;
+    catchUpInPlace(check.db, paths);
+  } catch {
+    /* disposable index: the next writer's self-heal covers it */
+  } finally {
+    if (db) safeClose(db);
+  }
+}
+
+/**
  * Opens (self-healing) the index, calls `fn` with an IndexHandle, closes it, and returns fn's result. A project
  * with no ledger yet (log.jsonl missing or empty) never touches disk: `fn` sees a handle over an empty in-memory
  * index — dry runs, view, and any command before the first write create nothing. Otherwise tries node:sqlite

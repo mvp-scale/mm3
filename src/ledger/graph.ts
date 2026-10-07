@@ -51,7 +51,7 @@
  * fallback for this tier (deliberately out of scope: "foundational only", and the hot tier's own fallback is a
  * different, already-solved problem for a different tier).
  */
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs';
 import type { MdlFieldOverride } from '../config/defaults.ts';
 import { resolveConfig } from '../config/load.ts';
 import type { Category } from '../contract/types.ts';
@@ -424,8 +424,23 @@ function catchUpGraph(paths: Mm3Paths, env: Record<string, string | undefined>):
     const upto = Number(getMeta(db, 'graph_upto') ?? '0');
     const size = existsSync(paths.log) ? statSync(paths.log).size : 0;
     if (upto >= size) return; // another process already caught this up while we waited for the lock
-    const buf = readFileSync(paths.log);
-    const { consumed, lines } = scanCompleteLines(buf, upto, size);
+    // Only the unread tail [upto, size), never the whole log: a one-line catch-up must not pull a 100k-run
+    // ledger (hundreds of MB) into memory.
+    const buf = Buffer.alloc(size - upto);
+    const fd = openSync(paths.log, 'r');
+    let got = 0;
+    try {
+      while (got < buf.length) {
+        const n = readSync(fd, buf, got, buf.length - got, upto + got);
+        if (n === 0) break;
+        got += n;
+      }
+    } finally {
+      closeSync(fd);
+    }
+    const tail = scanCompleteLines(buf, 0, got);
+    const consumed = upto + tail.consumed;
+    const lines = tail.lines;
     const mdlConfig = resolveConfig(paths, env).config.mdl;
     db.exec('BEGIN');
     try {
