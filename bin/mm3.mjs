@@ -11920,7 +11920,7 @@ function removeStoredKey(runner, platform, env) {
 }
 
 // src/setup/init.ts
-import { existsSync as existsSync13, mkdirSync as mkdirSync7, readFileSync as readFileSync18, realpathSync as realpathSync2, writeFileSync as writeFileSync8 } from "node:fs";
+import { existsSync as existsSync13, lstatSync as lstatSync2, mkdirSync as mkdirSync7, readFileSync as readFileSync18, readlinkSync, realpathSync as realpathSync2, writeFileSync as writeFileSync8 } from "node:fs";
 import path15 from "node:path";
 
 // src/verbs/doctor.ts
@@ -12896,7 +12896,7 @@ async function confirm(promptText, defaultYes, io) {
 }
 
 // src/setup/standalone.ts
-import { chmodSync as chmodSync2, copyFileSync, existsSync as existsSync12, mkdirSync as mkdirSync6, readdirSync as readdirSync2, readFileSync as readFileSync17, renameSync as renameSync3, rmSync as rmSync5, rmdirSync, writeFileSync as writeFileSync7 } from "node:fs";
+import { chmodSync as chmodSync2, copyFileSync, existsSync as existsSync12, lstatSync, mkdirSync as mkdirSync6, readdirSync as readdirSync2, readFileSync as readFileSync17, renameSync as renameSync3, rmSync as rmSync5, rmdirSync, writeFileSync as writeFileSync7 } from "node:fs";
 import { createHash as createHash3 } from "node:crypto";
 import path14 from "node:path";
 
@@ -13009,9 +13009,17 @@ function installPluginDir(dir, binPath) {
     return { status: "problem", text: `could not write the plugin folder ${dir} \u2192 ${e.message}` };
   }
 }
+var isLink = (file) => {
+  try {
+    return lstatSync(file).isSymbolicLink();
+  } catch {
+    return false;
+  }
+};
 function removeStandalone(binPath, pluginDir) {
   const left = [];
   for (const target of [binPath, pluginDir]) {
+    if (target === binPath && isLink(target)) continue;
     try {
       rmSync5(target, { recursive: true, force: true });
     } catch {
@@ -13059,7 +13067,34 @@ function defaultMode(cwd, prefixWritable) {
 function isNpxCache(binPath) {
   return binPath.split(path15.sep).includes("_npx");
 }
+function npmCopy(ctx) {
+  const bin = standaloneBinPath(ctx.homeDir, ctx.platform);
+  try {
+    if (lstatSync2(bin).isSymbolicLink()) return `${bin} -> ${readlinkSync(bin)}`;
+  } catch {
+  }
+  const onPath = findOnPath("mm3", ctx.env, ctx.platform);
+  if (onPath && !isNpxCache(onPath) && isPackageBin(onPath, ctx.pkg.name)) return onPath;
+  const record2 = readInstallRecord(ctx.env);
+  if (record2?.mode === "local" && record2.projectDir && existsSync13(path15.join(record2.projectDir, "node_modules", ".bin", "mm3"))) return `npx mm3 in ${record2.projectDir}`;
+  return void 0;
+}
+function standaloneCopy(ctx) {
+  const bin = standaloneBinPath(ctx.homeDir, ctx.platform);
+  const record2 = readInstallRecord(ctx.env);
+  if (record2?.mode === "standalone" && existsSync13(record2.binPath ?? bin)) return record2.binPath ?? bin;
+  try {
+    if (lstatSync2(bin).isFile() && !isPackageBin(bin, ctx.pkg.name)) return bin;
+  } catch {
+  }
+  return void 0;
+}
 function stepCliStandalone(flags, ctx) {
+  const npm = npmCopy(ctx);
+  if (npm) return { lines: [line("already", "cli", `mm3 is already installed from npm (${npm}) \u2192 kept, not replaced; to switch to the standalone run "mm3 uninstall --all", then this file's init`)], deferred: true };
+  return { lines: placeStandalone(flags, ctx), deferred: false };
+}
+function placeStandalone(flags, ctx) {
   if (flags.mode && flags.mode !== "user") {
     return [line("problem", "cli", `the standalone installs per user, into ~/.local/bin \u2192 drop --${flags.mode}, or run "mm3 init --user"`)];
   }
@@ -13080,6 +13115,11 @@ function stepCliStandalone(flags, ctx) {
 }
 async function stepCli(flags, ctx) {
   if (isStandalone()) return stepCliStandalone(flags, ctx);
+  const standalone = standaloneCopy(ctx);
+  if (standalone) return { lines: [line("already", "cli", `mm3 is already installed as the standalone (${standalone}) \u2192 kept, not replaced; to switch to npm run "mm3 uninstall --all", then init again`)], deferred: true };
+  return { lines: await stepCliNpm(flags, ctx), deferred: false };
+}
+async function stepCliNpm(flags, ctx) {
   const onPath = findOnPath("mm3", ctx.env, ctx.platform);
   if (onPath && !isNpxCache(onPath) && isPackageBin(onPath, ctx.pkg.name) && !flags.mode) {
     return [line("already", "cli", `already reachable as ${onPath}`)];
@@ -13142,12 +13182,13 @@ async function stepKey(flags, ctx) {
   const stored = storeKey(ctx.runner, ctx.platform, ctx.env, provider, secret);
   return [line("done", "key", `stored in ${stored.detail} \u2014 checked on first real call`)];
 }
-async function stepPlugin(flags, ctx) {
+async function stepPlugin(flags, ctx, deferred) {
   if (flags.claude === false) return [line("skipped", "plugin", "skipped (--no-claude)")];
   const claudeOnPath = findOnPath("claude", ctx.env, ctx.platform) !== void 0;
   if (flags.claude !== true && !claudeOnPath) return [line("skipped", "plugin", "skipped (claude not found on PATH)")];
   const lines = [];
   if (!marketplaceExists(ctx.runner)) {
+    if (deferred) return [line("skipped", "plugin", 'skipped (the plugin folder belongs to the other install: run its "mm3 init" to register it)')];
     const r2 = addMarketplace(ctx.runner, isStandalone() ? standalonePluginDir(ctx.homeDir) : ctx.packageDir);
     lines.push(r2.status === 0 ? line("done", "plugin", "added the mvp-scale marketplace") : line("problem", "plugin", `could not add the mvp-scale marketplace \u2192 ${firstLine(r2.stderr)}`));
   } else {
@@ -13204,11 +13245,12 @@ async function runInit(flags, ctx) {
 ` };
   }
   const lines = [];
-  lines.push(...await stepCli(flags, ctx));
+  const cli = await stepCli(flags, ctx);
+  lines.push(...cli.lines);
   lines.push(...await stepKey(flags, ctx));
   const inProject = insideGitProject(ctx.cwd);
   if (inProject) {
-    lines.push(...await stepPlugin(flags, ctx));
+    lines.push(...await stepPlugin(flags, ctx, cli.deferred));
     lines.push(...stepProject(ctx));
   } else {
     lines.push(NOT_A_PROJECT);

@@ -13,6 +13,13 @@
  * and B, and the tree before and after within each channel where nothing should change. A difference is
  * EXPECTED (a rule below names it and why) or MUST FIX, as in scripts/parity.ts; exit is non-zero only on MUST
  * FIX. The stub is only a recorder: a real `claude` is the one thing this cannot exercise.
+ * Last come the TRANSITION stages (T-a..T-f), run in the same two containers with HOME reset between them, for the
+ * time the two channels share a machine (both write ~/.local/bin/mm3 and ~/.config/mm3/install.json; the first to
+ * run init owns the install and the second says so in one `·` line and changes nothing): T-a npm then standalone
+ * init, T-b standalone then npm init, T-c a box with no Node (init needs the standalone, npm cannot run), T-d the
+ * Node box with both present (what wins the path, what each init prints, npm installed over the file by hand),
+ * T-e uninstall after each leaves nothing behind and the other channel's files alone, T-f the standalone on a box
+ * that HAS Node against the same on a box with none (output, trees, verbs, mcp, hook must match).
  * Needs: Docker, ubuntu:24.04 cached locally, `npm run build:binary -- --target linux-x64` done once (it
  * also caches the Node archive), and the npm cache holding yaml (a copy of ~/.npm is used, never written).
  */
@@ -87,7 +94,7 @@ interface Outcome {
 }
 
 interface Channel {
-  label: 'A' | 'B';
+  label: string;
   name: string;
   work: string;
   ledgerBefore: number;
@@ -101,7 +108,7 @@ function exec(c: Channel, argv: string[], o: { stdin?: string; cwd?: string; tim
 }
 const sh = (c: Channel, script: string, o: { stdin?: string; cwd?: string } = {}): Outcome => exec(c, ['sh', '-c', script], o);
 
-function startChannel(label: 'A' | 'B', work: string, nodeDir: string | undefined): Channel {
+function startChannel(label: string, work: string, nodeDir: string | undefined): Channel {
   const name = `mm3-ab-${label.toLowerCase()}-${process.pid}`;
   const args = ['run', '-d', '--rm', '--network', 'none', '--user', '1000:1000', '--cpus', '2', '--memory', '2g', '--name', name,
     '-e', `HOME=${HOME}`, '-e', `PATH=${BASE_PATH}${nodeDir ? ':/opt/node/bin' : ''}`, '-e', 'MM3_PROVIDER=fake', '-e', 'MM3_ACTOR=e2e-agent',
@@ -189,7 +196,7 @@ function compareTrees(stage: string, ta: string, tb: string): void {
 
 /** Nothing should have changed within one channel between two snapshots. The one allowance is the npm channel's
  *  install.json after a re-run through `npm exec`, which reinstalls and stamps a new installedAt (npm's behaviour). */
-function expectUnchanged(stage: string, label: 'A' | 'B', before: string, after: string): void {
+function expectUnchanged(stage: string, label: string, before: string, after: string): void {
   stageCount += 1;
   const isRecord = (l: string): boolean => l.endsWith(' ./.config/mm3/install.json');
   const keep = (t: string): string => (label === 'A' ? t.split('\n').filter((l) => !isRecord(l)).join('\n') : t);
@@ -350,6 +357,123 @@ function hookStages(stage: string, a: Channel, b: Channel): void {
   }
 }
 
+// ---- transition stages: both channels on one machine ----------------------------------------------------------
+
+/** Wipes everything a channel put under HOME (and the project's ledger) so the next combination starts clean. */
+const resetHome = (c: Channel): void => {
+  sh(c, `rm -rf ${HOME}/.local ${HOME}/.config ${HOME}/.claude ${PROJ}/.mm3`, { cwd: '/' });
+};
+const must = (stage: string, ok: boolean, detail: string): void => {
+  stageCount += 1;
+  if (!ok) note(stage, 'stdout', 'must-fix', detail);
+};
+const fact = (stage: string, detail: string, reason: string): void => note(stage, 'stdout', 'expected', clipText(detail, 400), reason);
+const cliLines = (text: string): string => text.split('\n').filter((l) => /^[✔·–✖] (cli|plugin):/.test(l)).join(' / ');
+/** What is left under HOME after an uninstall: not the project, not Claude's own cache, not bare directories. */
+const leftovers = (t: string): string[] => t.split('\n').filter((l) => !/^d /.test(l) && !/ \.\/proj(\/|$)/.test(l) && !/ \.\/\.claude\/plugins\/(cache|installed)/.test(l));
+
+async function transitionStages(a: Channel, b: Channel, tgz: string, bin: string, ctxs: { A: Ctx; B: Ctx }): Promise<void> {
+  const npmInit = (c: Channel): Outcome => exec(c, ['npm', 'exec', '--yes', `--package=/work/${tgz}`, '--', 'mm3', 'init', '--yes', '--no-key']);
+  const saInit = (c: Channel): Outcome => exec(c, [`/work/${bin}`, 'init', '--yes', '--no-key']);
+  const shaOf = (c: Channel, file: string): string => sh(c, `sha256sum < ${file}`, { cwd: HOME }).stdout.trim();
+  const binState = (c: Channel): string => sh(c, `if [ -L ${HOME}/.local/bin/mm3 ]; then echo "link -> $(readlink ${HOME}/.local/bin/mm3)"; elif [ -f ${HOME}/.local/bin/mm3 ]; then echo file; else echo none; fi`, { cwd: HOME }).stdout.trim();
+  const recordMode = (c: Channel): string => /"mode": "(\w+)"/.exec(sh(c, 'cat ~/.config/mm3/install.json', { cwd: HOME }).stdout)?.[1] ?? 'none';
+  const uninstallCheck = (stage: string, c: Channel): void => {
+    const x = exec(c, ['mm3', 'uninstall', '--all', '--yes']);
+    must(`${stage}: uninstall --all exits 0`, x.exit === 0, `exit ${x.exit}: ${clipText(x.stderr || x.stdout)}`);
+    const left = leftovers(tree(c));
+    must(`${stage}: nothing orphaned in HOME after uninstall`, left.length === 0, left.join(' | '));
+    const w = sh(c, 'command -v mm3; true', { cwd: HOME });
+    must(`${stage}: mm3 gone from PATH after uninstall`, w.stdout.trim() === '', w.stdout);
+  };
+
+  // T-a  npm channel first, then the standalone's init on top
+  resetHome(a);
+  const a1 = npmInit(a);
+  must('T-a: npm init', a1.exit === 0, clipText(a1.stderr || a1.stdout));
+  const a1tree = tree(a);
+  const a1bin = binState(a);
+  const a2 = saInit(a);
+  fact('T-a: standalone init on top of npm: prints', cliLines(a2.stdout), 'one · line names the npm install and says it was kept; the plugin lines follow from the marketplace npm registered');
+  must('T-a: standalone init on top of npm exits 0 and says npm owns it', a2.exit === 0 && /^· cli: mm3 is already installed from npm \(.*\) → kept, not replaced/m.test(a2.stdout), clipText(a2.stdout));
+  const a2tree = tree(a);
+  must('T-a: the tree of HOME is byte-for-byte unchanged by the standalone init', a1tree === a2tree, [...a1tree.split('\n').filter((l) => !a2tree.includes(l)).map((l) => `was: ${l}`), ...a2tree.split('\n').filter((l) => !a1tree.includes(l)).map((l) => `now: ${l}`)].join(' | '));
+  must('T-a: ~/.local/bin/mm3 is still npm\'s link and the record still says npm', binState(a) === a1bin && a1bin.startsWith('link') && recordMode(a) === 'user', `${binState(a)} / record ${recordMode(a)}`);
+  const standaloneSha = shaOf(a, `/work/${bin}`);
+  uninstallCheck('T-a', a);
+  must('T-a: the downloaded standalone file was not touched by npm\'s uninstall', shaOf(a, `/work/${bin}`) === standaloneSha, 'its hash changed or it is gone');
+
+  // T-b  standalone first, then npm's init on top; this standalone-only state on a Node box is also T-f's left side
+  resetHome(a);
+  const fa = saInit(a);
+  must('T-b: standalone init on a box that has Node', fa.exit === 0, clipText(fa.stderr || fa.stdout));
+  const b1tree = tree(a);
+  const b1bin = binState(a);
+  const fb = (() => {
+    resetHome(b);
+    return saInit(b);
+  })();
+  // T-f  the same standalone on a box that has Node and on a box with none: output, trees, verbs, mcp, hook
+  compareOutcome('T-f: standalone init, Node box vs no-Node box', fa, fb);
+  compareTrees('T-f: standalone init', b1tree, tree(b));
+  runSteps('T-f verbs', a, b, STEPS, ctxs);
+  await mcpStages('T-f', a, b);
+  hookStages('T-f', a, b);
+  const vTree = [tree(a), tree(b)] as const;
+  compareTrees('T-f after verbs, mcp and hook', vTree[0], vTree[1]);
+  must('T-f: the Node box really has Node on PATH while mm3 resolves to the standalone', /\/opt\/node\/bin\/node/.test(sh(a, 'command -v node', { cwd: HOME }).stdout) && sh(a, 'command -v mm3', { cwd: HOME }).stdout.trim() === `${HOME}/.local/bin/mm3`, 'PATH layout is not as the stage assumes');
+
+  const preB2 = tree(a);
+  const b2 = npmInit(a);
+  fact('T-b: npm init on top of the standalone: prints', cliLines(b2.stdout), 'one · line names the standalone file and says it was kept; npm installs nothing');
+  must('T-b: npm init on top of the standalone exits 0 and says the standalone owns it', b2.exit === 0 && /^· cli: mm3 is already installed as the standalone \(.*\) → kept, not replaced/m.test(b2.stdout), clipText(b2.stdout));
+  must('T-b: the tree of HOME is byte-for-byte unchanged by the npm init', preB2 === tree(a), 'trees differ');
+  must('T-b: ~/.local/bin/mm3 is still the standalone file and the record still says standalone', binState(a) === b1bin && b1bin === 'file' && recordMode(a) === 'standalone', `${binState(a)} / record ${recordMode(a)}`);
+  const npmSha = shaOf(a, `/work/${tgz}`);
+  uninstallCheck('T-b', a);
+  must('T-b: the npm tarball was not touched by the standalone\'s uninstall', shaOf(a, `/work/${tgz}`) === npmSha, 'its hash changed or it is gone');
+
+  // T-c  no Node at all: init needs the standalone, npm cannot run
+  resetHome(b);
+  const c0 = exec(b, ['npm', 'exec', '--yes', `--package=/work/${tgz}`, '--', 'mm3', 'init', '--yes', '--no-key']);
+  must('T-c: the npm route cannot run without Node', c0.exit !== 0, 'npm exec succeeded on a box that should have no npm');
+  fact('T-c: npm route on the no-Node box', c0.stderr || c0.stdout, 'there is no npm to run, so on a box with no Node the standalone is the only route');
+  const c1 = saInit(b);
+  must('T-c: the standalone init needs no Node and exits 0', c1.exit === 0 && /^✔ cli: installed \(/m.test(c1.stdout) && recordMode(b) === 'standalone' && binState(b) === 'file', clipText(c1.stderr || c1.stdout));
+  const c1tree = tree(b);
+  const c2 = saInit(b);
+  must('T-c: its re-run says already and changes nothing', c2.exit === 0 && /^· cli: already installed/m.test(c2.stdout) && tree(b) === c1tree, clipText(c2.stdout));
+  uninstallCheck('T-c', b);
+
+  // T-d  the Node box with the standalone also present: which one wins, what each init prints, npm installed over the file by hand
+  resetHome(a);
+  saInit(a);
+  fact('T-d: standalone first: who answers `mm3`', `${binState(a)} · ${sh(a, 'command -v mm3', { cwd: HOME }).stdout.trim()} · ${exec(a, ['mm3', '--version']).stdout.trim()}`, 'the first channel to run init owns ~/.local/bin/mm3');
+  const d1 = exec(a, ['mm3', 'init', '--yes', '--no-key']);
+  fact('T-d: the installed standalone\'s own init, Node present', cliLines(d1.stdout), 'its own re-run: already installed');
+  const d2 = exec(a, ['npm', 'install', '-g', '--prefix', `${HOME}/.local`, `/work/${tgz}`]);
+  fact('T-d: `npm install -g --prefix ~/.local` run by hand over the standalone', `exit ${d2.exit}; ${clipText(d2.stderr || d2.stdout, 200)}; bin is now: ${binState(a)}`, 'init never does this; this records what npm itself does with a file already at the link path');
+  must('T-d: a hand-run npm install over the standalone either refuses or leaves a file that runs', d2.exit !== 0 || exec(a, ['mm3', '--version']).exit === 0, 'mm3 is broken after the hand-run npm install');
+  resetHome(a);
+  npmInit(a);
+  fact('T-d: npm first: who answers `mm3`', `${binState(a)} · ${sh(a, 'command -v mm3', { cwd: HOME }).stdout.trim()}`, 'npm\'s link owns the path; the standalone\'s init then keeps it (T-a)');
+  uninstallCheck('T-d npm cleanup', a);
+
+  // T-e  the one forced mix, as T-d leaves it: the standalone's record, npm's link at its path (npm installed over the file with --force)
+  resetHome(a);
+  saInit(a);
+  const e1 = exec(a, ['npm', 'install', '-g', '--force', '--prefix', `${HOME}/.local`, `/work/${tgz}`]);
+  fact('T-e: npm --force installed over the standalone', `exit ${e1.exit}; bin is now: ${binState(a)}; record: ${recordMode(a)}`, 'a forced mix, not a path init takes');
+  if (e1.exit === 0) {
+    const pkgBefore = sh(a, `ls ${HOME}/.local/lib/node_modules/@mvpscale/mm3 | wc -l`, { cwd: HOME }).stdout.trim();
+    const e2 = exec(a, ['mm3', 'uninstall', '--all', '--yes']);
+    fact('T-e: uninstall run in the forced mix: prints', e2.stdout.split('\n').filter((l) => /^[✔·–✖] cli:/.test(l)).join(' / '), 'the standalone\'s record removes its own files; the link at its path is npm\'s and is left, with a ✖ line saying a second copy still resolves');
+    must('T-e: npm\'s package folder is untouched by the standalone\'s uninstall', sh(a, `ls ${HOME}/.local/lib/node_modules/@mvpscale/mm3 | wc -l`, { cwd: HOME }).stdout.trim() === pkgBefore, 'npm package files were removed');
+    must('T-e: npm\'s link is untouched by the standalone\'s uninstall', binState(a).startsWith('link'), binState(a));
+  }
+  resetHome(a);
+}
+
 // ---- the run ----------------------------------------------------------------------------------------------
 
 function newestMs(dir: string): number {
@@ -413,6 +537,7 @@ export async function runInstallParity(): Promise<{ rows: Row[]; stages: number 
     cpSync(npmCache, path.join(workA, 'npm-cache', '_cacache'), { recursive: true });
     cpSync(tgz, path.join(workA, path.basename(tgz)));
     cpSync(tgzNext, path.join(workA, path.basename(tgzNext)));
+    cpSync(bin, path.join(workA, path.basename(bin)));
     cpSync(bin, path.join(workB, path.basename(bin)));
     cpSync(binNext, path.join(workB, path.basename(binNext)));
 
@@ -507,6 +632,7 @@ export async function runInstallParity(): Promise<{ rows: Row[]; stages: number 
       const w = sh(c, 'command -v mm3; true', { cwd: HOME });
       if (w.stdout.trim()) note(`6 uninstall: ${label} mm3 still on PATH`, 'stdout', 'must-fix', w.stdout);
     }
+    await transitionStages(a, b, path.basename(tgz), path.basename(bin), ctxs);
     return { rows, stages: stageCount };
   } finally {
     for (const c of [a, b]) if (c) docker(['rm', '-f', c.name]);

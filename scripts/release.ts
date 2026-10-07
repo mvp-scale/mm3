@@ -5,9 +5,10 @@
 // already done, so a stage can be run again. nightly: everything merged to nightly since the last nightly release is published to npm as the plain
 // version. main: reviews that all of it was tested (CI, trials, a passed ceremony on the published build, an intact ledger), then squeezes the
 // tested commit down to the allow-list in release.json into one clean commit for main; the owner merges it, tags and publishes. Main is never worked in.
+// The one release asset step: promote verifies and attaches the standalone files .github/workflows/standalone.yml built from nightly's commit (attachStandalone).
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline/promises';
@@ -473,6 +474,31 @@ async function main(m: Manifest, io: Io, yes: boolean): Promise<number> {
   return promote(m, io, steps);
 }
 
+/** The attach point for the standalone files: the artifact `standalone-<version>` that .github/workflows/standalone.yml built from the commit npm's
+ *  nightly was built from (main's clean commit holds no scripts, so nightly's commit is the one the files can be proven to come from), each file's
+ *  build-provenance attestation verified first, then uploaded to the release `promote` just created. Returns one line; a file that does not verify is
+ *  never attached, and nothing here stops the release (the npm package and the tag are already done). */
+function attachStandalone(m: Manifest, io: Io, v: string): string {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'mm3-standalone-'));
+  try {
+    const built = io.npmHead(m.version);
+    if (!built) return `✖ standalone files: not attached (npm records no commit for ${m.version}) → run "gh release upload ${v} <files> --clobber" once they are built`;
+    const run = (JSON.parse(io.gh(['run', 'list', '--workflow', 'standalone.yml', '--branch', 'nightly', '--commit', built, '--status', 'success', '--limit', '1', '--json', 'databaseId'])) as Array<{ databaseId: number }>)[0]?.databaseId;
+    if (run === undefined) return `✖ standalone files: not attached (no green standalone run on ${built.slice(0, 7)}) → run the standalone workflow on nightly, then "gh release upload ${v} <files> --clobber"`;
+    io.gh(['run', 'download', String(run), '--name', `standalone-${m.version}`, '--dir', dir]);
+    const repo = io.gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']).trim();
+    const files = readdirSync(dir).sort().map((f) => path.join(dir, f));
+    if (files.length === 0) return `✖ standalone files: run ${run} left no files under standalone-${m.version}`;
+    for (const f of files) io.gh(['attestation', 'verify', f, '--repo', repo, '--signer-workflow', `${repo}/.github/workflows/standalone.yml`]);
+    io.gh(['release', 'upload', v, ...files, '--clobber']);
+    return `✔ standalone files: ${files.map((f) => path.basename(f)).join(', ')} attached, each verified as built by the standalone workflow (run ${run}) from ${built.slice(0, 7)}`;
+  } catch (e) {
+    return `✖ standalone files: not attached (${(e as Error).message.split('\n')[0]}) → fix that, then "gh release upload ${v} <files> --clobber"`;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 /** main holds the clean copy: promote the package nightly published (npm takes a version once) to latest, and move the release candidate's one GitHub release and tag onto main's commit. Reads npm, the tag and main back before saying released. */
 async function promote(m: Manifest, io: Io, steps: Step[]): Promise<number> {
   const v = `v${m.version}`;
@@ -486,6 +512,7 @@ async function promote(m: Manifest, io: Io, steps: Step[]): Promise<number> {
     if (targetOf() !== '') io.gh(['release', 'delete', v, '--cleanup-tag', '--yes']); // the candidate nightly left is the same release, moved: a tag cannot be re-pointed
     io.gh(['release', 'create', v, '--target', headMain, '--title', m.version, '--notes', releaseNotes(show(io, 'origin/main', 'CHANGELOG.md') ?? '', m.version) || m.title]);
   }
+  console.log(attachStandalone(m, io, v));
   const rel = releases(io).find((r) => r.tagName === v);
   const latest = io.npmTags().latest ?? '';
   const checks: Check[] = [

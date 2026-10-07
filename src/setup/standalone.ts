@@ -15,7 +15,7 @@
  * Everything is idempotent: a file whose bytes already match is left alone, and an upgrade is the same call
  * made by a newer file. No `claude` or `npm` is run here (init's plugin step does that, unchanged).
  */
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, rmdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, rmdirSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { embeddedUnder } from '../util/embedded.ts';
@@ -113,10 +113,20 @@ export function installPluginDir(dir: string, binPath: string): StandaloneResult
   }
 }
 
+const isLink = (file: string): boolean => {
+  try {
+    return lstatSync(file).isSymbolicLink();
+  } catch {
+    return false;
+  }
+};
+
 /** uninstall: removes the file and the plugin folder (and the now-empty `share/mm3`). Returns what is still there. */
 export function removeStandalone(binPath: string, pluginDir: string): string[] {
   const left: string[] = [];
   for (const target of [binPath, pluginDir]) {
+    // A link at the standalone's path is npm's (installed over it since): the other channel's file, never ours to delete.
+    if (target === binPath && isLink(target)) continue;
     try {
       rmSync(target, { recursive: true, force: true });
     } catch {

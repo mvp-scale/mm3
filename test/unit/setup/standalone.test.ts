@@ -1,7 +1,7 @@
 // What the standalone's init/uninstall place and remove (src/setup/standalone.ts): the single file, the plugin folder
 // with the MCP command naming that file, idempotence, upgrade in place, and removal. The embedded map is faked on
 // globalThis the way scripts/build-binary.ts defines it at build time; the real end-to-end run is `npm run parity:install`.
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -75,5 +75,20 @@ describe('the single file', () => {
     expect(removeStandalone(target, dir)).toEqual([]);
     expect(existsSync(target)).toBe(false);
     expect(existsSync(path.dirname(dir))).toBe(false);
+  });
+});
+
+describe('removal next to the other channel', () => {
+  it('leaves a link at the standalone\'s path alone (npm installed over it): that file is npm\'s, not ours', () => {
+    const target = standaloneBinPath(home, 'linux');
+    const npmFile = path.join(home, 'npm-cli.js');
+    writeFileSync(npmFile, '// npm');
+    mkdirSync(path.dirname(target), { recursive: true });
+    symlinkSync(npmFile, target);
+    const dir = standalonePluginDir(home);
+    installPluginDir(dir, target);
+    expect(removeStandalone(target, dir)).toEqual([]);
+    expect(lstatSync(target).isSymbolicLink()).toBe(true);
+    expect(existsSync(dir)).toBe(false);
   });
 });
