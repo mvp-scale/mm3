@@ -2,10 +2,10 @@
 // yet, read GitHub's Releases and Tags back before saying "RELEASED", and let main be built only from a tested, certified, clean copy.
 import { describe, expect, it } from 'vitest';
 import type { LedgerRecord } from '../../scripts/agentic/ledger.ts';
-import { briefLines, cleanLines, deadLinks, featuresSince, parseManifest, rollupProblem, statusLines, survey, surveyMain, unreleasedNotes, verify, type Io, type Manifest } from '../../scripts/release.ts';
+import { briefLines, ceremonyCost, ceremonyStands, cleanLines, deadLinks, featuresSince, parseManifest, releaseNotes, rollupProblem, statusLines, stepLine, survey, surveyMain, unreleasedNotes, verify, versionProblem, type Io, type Manifest } from '../../scripts/release.ts';
 
 const HEAD = 'fe932dcabcdef0123456789abcdef0123456789a';
-const NPM = '0.1.3-nightly.20261006.1827.gfe932dc';
+const NPM = '0.1.3';
 const M: Manifest = { version: '0.1.3', title: 'Agents get a verdict more reliably', accept: [], include: ['README.md', 'AGENTS.md', 'package.json', 'src', 'docs'], tested: ['src'] };
 const FILES: Record<string, string> = {
   'package.json': JSON.stringify({ version: '0.1.3' }),
@@ -18,6 +18,7 @@ interface World {
   files?: Record<string, string>;
   refs?: Record<string, Record<string, string>>;
   tag?: string;
+  built?: string; // the commit npm recorded for the nightly version
   latest?: string;
   releases?: Array<{ tagName: string; isLatest?: boolean }>;
   tagTarget?: string;
@@ -32,7 +33,7 @@ function fakeIo(w: World = {}): Io {
   const files = (ref: string): Record<string, string> => w.refs?.[ref] ?? w.files ?? FILES;
   return {
     gh: (a) => {
-      if (a[0] === 'release') return JSON.stringify(w.releases ?? [{ tagName: `v${w.tag ?? NPM}`, isLatest: true }]);
+      if (a[0] === 'release') return JSON.stringify(w.releases ?? [{ tagName: 'v0.1.2', isLatest: true }]);
       if (a[0] === 'pr' && a[1] === 'list') return JSON.stringify((w.openPrs ?? []).map((p) => ({ title: 'a feature', isDraft: false, statusCheckRollup: [{ name: 'test', status: 'COMPLETED', conclusion: 'SUCCESS' }], ...p })));
       if (a[0] === 'api' && a[1]!.includes('/git/ref/tags/')) {
         if (w.tagTarget === '') throw new Error('not found');
@@ -59,6 +60,8 @@ function fakeIo(w: World = {}): Io {
       return '';
     },
     npmTags: () => ({ latest: w.latest ?? '0.1.2', nightly: w.tag ?? NPM }),
+    npmHead: (v) => (v === (w.tag ?? NPM) ? (w.built ?? HEAD) : ''),
+    npm: () => '',
     sleep: async () => {},
   };
 }
@@ -89,14 +92,29 @@ describe('the release manifest [C-277]', () => {
 });
 
 describe('the nightly stage shows every step before it runs [C-277]', () => {
-  it('[C-277] all done: nothing left to do, and the release for the build is named', () => {
+  it('[C-277] all done: nothing left to do, and the plain version npm built from this head is named', () => {
     const { steps } = survey(M, fakeIo(), [trial('F'), ...ceremony()], 'F', undefined);
     expect(steps.filter((s) => s.state === 'todo')).toEqual([]);
-    expect(states(steps, /GitHub release/u)).toBe('done');
+    expect(steps.find((s) => /npm nightly is/u.test(s.id))!.detail).toBe('0.1.3, built from fe932dc');
   });
-  it('[C-277] npm behind the head and no GitHub release are the two steps the stage will do', () => {
-    const { steps } = survey(M, fakeIo({ tag: '0.1.3-nightly.20261006.1743.geb41121', releases: [] }), [], 'F', undefined);
-    expect(steps.filter((s) => s.state === 'todo').map((s) => s.id)).toEqual(['npm nightly built from fe932dc', 'GitHub release for it (Releases and Tags)', 'formal ceremony on this build']);
+  it('[C-277] a version npm does not have yet is the step the stage will do: it publishes exactly that number', () => {
+    const { steps } = survey(M, fakeIo({ tag: '0.1.2' }), [], 'F', undefined);
+    expect(steps.filter((s) => s.state === 'todo').map((s) => s.id)).toEqual(['npm nightly is 0.1.3, built from fe932dc', 'formal ceremony on this release']);
+    expect(steps.find((s) => /npm nightly is/u.test(s.id))!.detail).toBe("will publish exactly 0.1.3 to npm's nightly tag");
+  });
+  it('[C-277] a version already on npm from another commit cannot be released again: the step says to bump it', () => {
+    const { steps } = survey(M, fakeIo({ built: 'beefbee00000000000000000000000000000000' }), [], 'F', undefined);
+    const npm = steps.find((s) => /npm nightly is/u.test(s.id))!;
+    expect(npm.state).toBe('missing');
+    expect(npm.detail).toContain('0.1.3 is already on npm from beefbee');
+    expect(npm.detail).toContain('bump the version in a PR');
+  });
+  it('[C-277] a release.json version with a date, commit or label on it is refused before anything runs', () => {
+    expect(versionProblem('0.1.3', 'x')).toBeUndefined();
+    expect(versionProblem('0.1.3-nightly.20261006.2210.g918365d', 'npm nightly')).toContain('is not a plain x.y.z version');
+    expect(versionProblem('v0.1.3', 'x')).toContain('plain x.y.z');
+    const { steps } = survey({ ...M, version: '0.1.3-rc1' }, fakeIo({ tag: '0.1.2' }), [], 'F', undefined);
+    expect(steps.find((s) => /npm nightly is/u.test(s.id))!.state).toBe('missing');
   });
   it('[C-277] trials not done yet are shown as not done with the command; the ceremony is a step the stage will run last, and says how long it takes', () => {
     const { steps } = survey(M, fakeIo(), [], 'F', undefined);
@@ -115,10 +133,10 @@ describe('the nightly stage shows every step before it runs [C-277]', () => {
     expect(running.open).toEqual([]);
     expect(survey(M, fakeIo(), [], 'F', undefined).open).toEqual([]);
   });
-  it('[C-277] while a PR is still to be merged, publishing and the GitHub release are will-do, even if npm holds a build of the old head', () => {
+  it('[C-277] a PR still to merge for a version npm already has is not releasable: bump the version in it', () => {
     const { steps } = survey(M, fakeIo({ openPrs: [{ number: 36 }] }), [], 'F', undefined);
-    expect(states(steps, /npm nightly built/u)).toBe('todo');
-    expect(states(steps, /GitHub release/u)).toBe('todo');
+    expect(states(steps, /npm nightly is/u)).toBe('missing');
+    expect(steps.find((s) => /npm nightly is/u.test(s.id))!.detail).toContain('bump the version');
   });
   it('[C-277] an open PR that does not say the release version, in package.json, the CHANGELOG heading and the README badge, is not merged', () => {
     const old = { ...FILES, 'package.json': JSON.stringify({ version: '0.1.2' }) };
@@ -133,7 +151,19 @@ describe('the nightly stage shows every step before it runs [C-277]', () => {
     const failed = survey(M, fakeIo(), [trial('F'), ...ceremony({ passed: false })], 'F', undefined).steps;
     expect(states(failed, /formal ceremony/u)).toBe('missing');
     expect(failed.find((s) => /formal ceremony/u.test(s.id))!.detail).toContain('evidence prints under STATUS');
-    expect(states(survey(M, fakeIo({ openPrs: [{ number: 37 }] }), [trial('F'), ...ceremony()], 'F', undefined).steps, /formal ceremony/u)).toBe('todo');
+    const changed = { fe932dc: FILES, [HEAD]: { ...FILES, 'src/a.ts': 'changed' } };
+    expect(states(survey(M, fakeIo({ refs: changed, openPrs: [{ number: 37 }] }), [trial('F'), ...ceremony()], 'F', undefined).steps, /formal ceremony/u)).toBe('todo'); // the PR changes what the ceremony tested
+    expect(states(survey(M, fakeIo({ openPrs: [{ number: 37 }] }), [trial('F'), ...ceremony()], 'F', undefined).steps, /formal ceremony/u)).toBe('done'); // it changes only a version, docs or scripts
+  });
+  it('[C-277] a passed ceremony stands while the code and agent-read text it tested are unchanged: a version number, docs or scripts do not repeat half an hour of agents', () => {
+    const same = ceremonyStands(M, fakeIo(), ceremony(), HEAD);
+    expect(same).toEqual({ id: 'CER-0001', version: NPM, commit: 'fe932dc' });
+    const base = { ...FILES };
+    expect(ceremonyStands(M, fakeIo({ refs: { fe932dc: base, [HEAD]: { ...base, 'docs/guide.md': 'new words', 'scripts/s.ts': 'x', 'package.json': JSON.stringify({ version: '0.1.3' }) } } }), ceremony(), HEAD)).toBeDefined();
+    expect(ceremonyStands(M, fakeIo({ refs: { fe932dc: base, [HEAD]: { ...base, 'src/a.ts': 'changed' } } }), ceremony(), HEAD)).toBeUndefined();
+    expect(ceremonyStands(M, fakeIo(), ceremony({ passed: false }), HEAD)).toBeUndefined();
+    expect(ceremonyStands(M, fakeIo(), ceremony({ version: '0.1.2-nightly.old' }), HEAD)).toBeUndefined();
+    expect(ceremonyStands(M, fakeIo(), ceremony({ version: '0.1.3-nightly.20261006.2210.g918365d' }), HEAD)).toBeDefined(); // built before the plain number was cut: same release
   });
   it('[C-277] checks still running, or failed, are named; skipped ones pass', () => {
     expect(rollupProblem([{ name: 'a', status: 'COMPLETED', conclusion: 'SUCCESS' }, { name: 'b', status: 'COMPLETED', conclusion: 'SKIPPED' }])).toBeUndefined();
@@ -143,9 +173,25 @@ describe('the nightly stage shows every step before it runs [C-277]', () => {
   });
 });
 
+describe('every step says what it costs [C-277]', () => {
+  it('[C-277] only the ceremony spends anything: no TypeSafe dollars, Claude quota sized from the last run', () => {
+    const { steps } = survey(M, fakeIo(), [], 'F', undefined);
+    const costs = Object.fromEntries(steps.map((s) => [s.id, s.cost]));
+    expect(costs['ledger chain']).toBe('free');
+    expect(costs['npm nightly is 0.1.3, built from fe932dc']).toBe('free: GitHub Actions on a public repo');
+    expect(costs['formal ceremony on this release']).toBe('$0 TypeSafe; Claude quota, about 5M tokens');
+    expect(costs['agent trials on the current guidance']).toContain('$0 TypeSafe unless you pass --paid');
+  });
+  it('[C-277] the last ceremony\'s own usage is quoted, and the cost shows in brackets on the step line', () => {
+    const done = { kind: 'ceremony', phase: 'finished', startedId: 'CER-0001', usage: { inputTokens: 1_000_000, cacheReadTokens: 4_000_000, cacheCreationTokens: 329_861, outputTokens: 143_737, turns: 311, claudeRuns: 66, mm3Calls: 280 } } as unknown as LedgerRecord;
+    expect(ceremonyCost([done])).toBe('$0 TypeSafe; Claude quota, last run 5.3M tokens in, 0.1M out, 66 agent runs');
+    expect(stepLine({ id: 'x', state: 'todo', detail: 'y', cost: 'free' })).toBe('  ▶ will do   x  [free] — y');
+  });
+});
+
 describe('every nightly run ends with the state in three lines [C-277]', () => {
   it('[C-277] released but never certified: the ceremony says NOT RUN and that nothing is running, and main is blocked', () => {
-    expect(statusLines(M, [], NPM, true)).toEqual(['STATUS', `  nightly   RELEASED  v${NPM}`, '  ceremony  NOT RUN  (nothing is running)', '  main      BLOCKED  needs a passed ceremony on this build']);
+    expect(statusLines(M, [], NPM, true)).toEqual(['STATUS', `  nightly   RELEASED  ${NPM}`, '  ceremony  NOT RUN  (nothing is running)', '  main      BLOCKED  needs a passed ceremony on this build']);
   });
   it('[C-277] a passed ceremony on this build makes main READY; a failed one says so and what to do', () => {
     expect(statusLines(M, ceremony(), NPM, true).slice(2)).toEqual(['  ceremony  PASSED  CER-0001', '  main      READY  → npm run release -- main']);
@@ -166,16 +212,26 @@ describe('what a failed ceremony prints under STATUS [C-277] [C-278]', () => {
   });
 });
 
-describe('"RELEASED" is only said when GitHub and npm show it [C-277]', () => {
-  it('[C-277] Releases, Tags, the branch version, npm and CI all agree', () => {
+describe('"RELEASED" is only said when the branch, npm and CI show it [C-277]', () => {
+  it('[C-277] a plain version, on npm and the branch, built from the head, with green CI', () => {
     expect(verify(M, fakeIo()).filter((c) => !c.ok)).toEqual([]);
   });
-  it('[C-277] no release on GitHub, a tag off the head, npm one build behind, or red CI is each named', () => {
+  it('[C-277] a labelled version, a different number, a build from another commit, or red CI is each named', () => {
     const bad = (w: World) => verify(M, fakeIo(w)).filter((c) => !c.ok).map((c) => c.id);
-    expect(bad({ releases: [] })).toEqual(['GitHub Releases lists it']);
-    expect(bad({ tagTarget: 'deadbeef' })).toEqual(["GitHub Tags has it, on nightly's head"]);
-    expect(bad({ tag: '0.1.3-nightly.20261006.1743.geb41121', releases: [{ tagName: 'v0.1.3-nightly.20261006.1743.geb41121' }], tagTarget: HEAD })).toEqual(['npm nightly is built from that head']);
+    expect(bad({ tag: '0.1.3-nightly.20261006.2210.g918365d' })).toEqual(['npm nightly is a plain x.y.z version', 'npm nightly is 0.1.3']);
+    expect(bad({ tag: '0.1.2' })).toEqual(['npm nightly is 0.1.3']);
+    expect(bad({ built: 'deadbeef00000000000000000000000000000000' })).toEqual(["npm built it from nightly's head"]);
     expect(bad({ ci: [{ name: 'test', status: 'completed', conclusion: 'failure' }] })).toEqual(['CI is green on that head']);
+    expect(bad({ files: { ...FILES, 'package.json': JSON.stringify({ version: '0.1.4' }) } })).toEqual(["nightly's package.json says the same"]);
+  });
+  it("[C-277] the changelog heading main rewrites does not make a clean copy look different, and the release notes are that version's section", () => {
+    const nightlyLog = "# What's new\n\n## Unreleased: 0.1.3, on the nightly build\n\n- a line\n\n## v0.1.2\n\n- old\n";
+    const mainLog = "# What's new\n\n## v0.1.3, 2026-10-07\n\n- a line\n\n## v0.1.2\n\n- old\n";
+    const n = cleanLines(fakeIo({ files: { ...FILES, 'CHANGELOG.md': nightlyLog } }), 'origin/nightly', ['CHANGELOG.md']);
+    const m = cleanLines(fakeIo({ files: { ...FILES, 'CHANGELOG.md': mainLog } }), 'origin/main', ['CHANGELOG.md']);
+    expect(n).toEqual(m);
+    expect(cleanLines(fakeIo({ files: { ...FILES, 'CHANGELOG.md': mainLog.replace('- a line', '- another line') } }), 'origin/main', ['CHANGELOG.md'])).not.toEqual(n);
+    expect(releaseNotes(mainLog, '0.1.3')).toBe('- a line');
   });
 });
 
@@ -208,7 +264,7 @@ describe('the main stage: tested, certified, then one clean copy [C-277]', () =>
   });
   it('[C-277] without trials on the current guidance, or an unreleased nightly, main is not ready', () => {
     expect(states(ok({}, ceremony()).steps, /agent trials/u)).toBe('missing');
-    expect(states(ok({ releases: [] }).steps, /nightly is released/u)).toBe('missing');
+    expect(states(ok({ tag: '0.1.2' }).steps, /nightly is released/u)).toBe('missing');
   });
   it('[C-277] when main already holds exactly the clean copy, there is nothing to build', () => {
     const clean = Object.fromEntries(Object.entries(FILES).filter(([p]) => ['README.md', 'AGENTS.md', 'package.json', 'src/a.ts', 'docs/guide.md'].includes(p)));
