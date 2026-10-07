@@ -62,6 +62,7 @@ function fakeIo(w: World = {}): Io {
     npmTags: () => ({ latest: w.latest ?? '0.1.2', nightly: w.tag ?? NPM }),
     npmHead: (v) => (v === (w.tag ?? NPM) ? (w.built ?? HEAD) : ''),
     npm: () => '',
+    npmTty: () => true,
     sleep: async () => {},
   };
 }
