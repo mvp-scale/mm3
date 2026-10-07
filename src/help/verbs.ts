@@ -91,7 +91,7 @@ const WHEN: Record<Verb, string> = {
  * human reading `help` can't be told a different story about the same verb. [C-189]
  */
 export const VERB_LINE: Record<Verb, string> = {
-  view: "free; what's already known, before any paid call",
+  view: "free; what's already known for a request you wrote (mm3 view <request-file>), before any paid call",
   class: 'one decision on one thing (merge, choose, triage, check a fix)',
   replay: "re-check a run's questions across two git refs: after a fix, or what changed between releases or commits",
   scan: "sweep many files when the problem's location is unknown",

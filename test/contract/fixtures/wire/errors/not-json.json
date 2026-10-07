@@ -1,7 +1,0 @@
-{
-  "name": "html error page",
-  "response": {
-    "status": 502,
-    "body": "<html>bad gateway</html>"
-  }
-}

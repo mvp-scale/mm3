@@ -86,6 +86,15 @@ function sourceLine(lines: readonly string[], line: number): { no: number; text:
   return { no: line, text: '' };
 }
 
+/** A `key: value` line whose value starts with a backtick or an `@`, which a plain YAML value cannot. Plain string work, no backtracking pattern over the text. */
+function startsValueWithIndicator(text: string): boolean {
+  const colon = text.indexOf(':');
+  if (colon < 1) return false;
+  const key = text.slice(0, colon);
+  if (key.includes('#') || key.trim() === '') return false;
+  return /^\s+[`@]/u.test(text.slice(colon + 1));
+}
+
 export function describeParseError(lines: readonly string[], code: string, line: number): string {
   if (code === 'MULTIPLE_DOCS') return '✖ yaml: more than one document (---) → send one request per run';
   const at = sourceLine(lines, line);
@@ -99,6 +108,7 @@ export function describeParseError(lines: readonly string[], code: string, line:
   if (/[{}]/u.test(at.text)) return `✖ yaml: line ${at.no} puts a category or question in { } → use the indented form`;
   const q = QUESTION_LINE.exec(at.text);
   if (q && /:(\s|$)/u.test(q[2] ?? '')) return `✖ question ${q[1]} has ": " → put it in quotes`;
+  if (startsValueWithIndicator(at.text)) return `✖ yaml: line ${at.no} starts a value with ${at.text.includes(": @") ? "an @" : "a backtick"} → put the whole value in "quotes"`;
   return `✖ yaml: line ${at.no} does not parse → use the indented form, and put any question with ": " or " #" in quotes`;
 }
 

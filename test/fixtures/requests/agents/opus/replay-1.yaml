@@ -1,9 +1,0 @@
-mak:
-  goal: the fix from MM3-0042 works on HEAD compared to main
-  parent: MM3-0042
-  compare:
-    before: main
-    after: HEAD
-mdl:
-  why: validate
-  parent: MM3-0042
