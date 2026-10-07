@@ -122,6 +122,7 @@ export function tellRun(records: LedgerRecord[], id: string | undefined, rowKey:
     `${started.kind === 'trial' ? 'AGENTIC FEATURE TRIAL REPORT' : 'AGENTIC RELEASE REPORT'} · ${started.id} · MM3 ${started.version}`,
     `RESULT  ${status}${started.formal ? '' : started.kind === 'trial' ? ' · a TRIAL of one job on a local build: recorded, and it never counts toward the release gate' : ' · a REHEARSAL: recorded, but it does not count toward the release gate'}${started.mode === 'paid' ? ` · PAID run: $${end?.spentUsd ?? 0} of an approved $${started.paid?.approvedUsd ?? '?'} real TypeSafe spend` : ''}`,
     `DECISION  ${decision.headline}  (reasoning at the end)`,
+    ...(started.artifact?.standalone ? [`BUILD  the standalone file ${started.artifact.standalone.file} (version ${started.artifact.standalone.version}, sha256 ${started.artifact.standalone.sha256}), run directly: no npm package, no Node on the agent's PATH`] : []),
     ...(started.carry ? [`CARRIED  ${started.carry.jobs.length} job(s) were not re-run here; their rows are copied unchanged from ${started.carry.from} (marked "carried" below): ${started.carry.jobs.join(', ')}.${started.carry.note ? ` Note: ${started.carry.note}` : ''}`] : []),
     '',
     'WHAT THIS TESTS',

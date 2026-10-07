@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { mm3Command } from '../../helpers/cli.ts';
 import { tempProject } from '../../helpers/project.ts';
 
 function quickstartCommands(): string[] {
@@ -17,8 +18,8 @@ function quickstartCommands(): string[] {
 /** A `mm3` shim on PATH that execs the built binary, so README's literal commands run unmodified. */
 function shimBin(): string {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'mm3-bin-'));
-  const cli = path.resolve('dist/cli.js');
-  writeFileSync(path.join(dir, 'mm3'), `#!/bin/sh\nexec "${process.execPath}" "${cli}" "$@"\n`);
+  const [cmd, argv] = mm3Command([]);
+  writeFileSync(path.join(dir, 'mm3'), `#!/bin/sh\nexec "${cmd}"${argv.map((a) => ` "${a}"`).join('')} "$@"\n`);
   chmodSync(path.join(dir, 'mm3'), 0o755);
   return dir;
 }

@@ -29,7 +29,8 @@ Facts about the code (**tested** or read): 17,479 lines of TypeScript, one runti
 ## 3. Decided and proposed
 
 **Decided by the owner:**
-- Build the single-file binary as the next feature, run it through the existing tests.
+- Name: **standalone** (2026-10-07). "Single-file binary" is only the build method. What people see is one line: "One file. No Node, no npm. Download it and run it." The standalone is the product; npm (for people who already have Node) and the plugin (text only, pointing at the standalone) are other ways to get the same engine.
+- Build the standalone as the next feature, run it through the existing tests.
 - Distribution costs nothing: no paid certificates or accounts.
 - Follow the ripgrep-style release practice, Windows included.
 - Research stays out of main.

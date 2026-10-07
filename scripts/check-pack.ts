@@ -10,7 +10,7 @@ import pkg from '../package.json' with { type: 'json' };
 export interface PackEntry { path: string; size: number }
 
 export const ALLOWED_PREFIXES = ['dist/', 'skills/', '.claude-plugin/', 'hooks/'] as const;
-export const ALLOWED_FILES = ['README.md', 'LICENSE', 'package.json'] as const; // npm always includes these regardless of "files"
+export const ALLOWED_FILES = ['README.md', 'LICENSE', 'package.json', 'bin/mm3.mjs'] as const; // the first three npm always includes regardless of "files"; bin/mm3.mjs is the plugin bundle .claude-plugin/plugin.json launches
 
 function entryPointPaths(): string[] {
   const bin = typeof pkg.bin === 'string' ? [pkg.bin] : Object.values(pkg.bin as Record<string, string>);
@@ -26,6 +26,7 @@ export const REQUIRED: readonly string[] = [
   '.claude-plugin/marketplace.json',
   'hooks/hooks.json',
   'hooks/nudge.mjs',
+  'bin/mm3.mjs', // .claude-plugin/plugin.json launches `node ${CLAUDE_PLUGIN_ROOT}/bin/mm3.mjs mcp`: without it the plugin npm's init registers cannot start its MCP server
   'README.md',
   'LICENSE',
 ];

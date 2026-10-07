@@ -15,3 +15,4 @@ coverage/
 CLAUDE.local.md
 site/dist/
 .superpowers/
+dist-binary/

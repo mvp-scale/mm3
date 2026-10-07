@@ -48,6 +48,8 @@ import { agentFrontDoorLines } from './help/card.ts';
 import { HELP_EXTRAS, HELP_TOPICS, runHelp } from './help/index.ts';
 import { VERBS } from './contract/types.ts';
 import { resolveMcpActor } from './mcp/actor.ts';
+import { isStandalone } from './util/embedded.ts';
+import { isHookLaunch, runEmbeddedHook } from './setup/standalone-hook.ts';
 import { nodeVersionStop } from './util/node-version.ts';
 import { pluginCommit, pluginInstallInfo } from './util/plugin-build.ts';
 import { clip, hasControlChars } from './util/text.ts';
@@ -699,6 +701,9 @@ function realCtx(): CliCtx {
 /** The real file behind `process.argv[1]`: npm installs `mm3` as a symlink (global bin, node_modules/.bin), so
  *  argv[1] is the link, not this file. Unresolvable (no argv[1], a vanished path) reads as "not us". */
 function isEntrypoint(): boolean {
+  // The standalone is only ever run as itself, and a launch through PATH (`mm3 ...`) leaves argv[1] a bare name that
+  // resolves against the cwd instead of the file, so the path comparison below would wrongly say "not us".
+  if (isStandalone()) return true;
   const invoked = process.argv[1];
   if (!invoked) return false;
   try {
@@ -711,7 +716,10 @@ function isEntrypoint(): boolean {
 // Only run for real when this file is the process's own entrypoint (`node dist/cli.js ...`, `node
 // bin/mm3.mjs ...`, or either through npm's `mm3` symlink) — not when something (a test, src/mcp/*) imports
 // `runCli` from it as a module, which must never also kick off a real run as a side effect of the import.
-if (isEntrypoint()) {
+if (isEntrypoint() && isHookLaunch(process.argv)) {
+  // The standalone's plugin hook (not a command; see setup/standalone-hook.ts): the same nudge script the npm plugin runs with node.
+  runEmbeddedHook();
+} else if (isEntrypoint()) {
   runCli(process.argv.slice(2), realCtx())
     .then((r) => {
       if (r.text) (r.exit === 0 ? process.stdout : process.stderr).write(r.text);

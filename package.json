@@ -33,6 +33,7 @@
   },
   "files": [
     "dist",
+    "bin/mm3.mjs",
     "skills",
     ".claude-plugin",
     "hooks",
@@ -46,6 +47,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "build:plugin": "tsx scripts/build-plugin.ts",
+    "build:binary": "tsx scripts/build-binary.ts",
+    "parity": "tsx scripts/parity.ts",
+    "parity:install": "tsx scripts/parity-install.ts",
     "build:site": "tsx scripts/build-site.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --project unit --project contract --project golden",

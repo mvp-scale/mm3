@@ -13,19 +13,32 @@ set -u
 cd "$(dirname "$0")/.."
 CLI="$(pwd)/dist/cli.js"
 
-if [ ! -f "$CLI" ]; then
+# MM3_BIN=<path>: tour the standalone binary (npm run build:binary) instead of node dist/cli.js.
+if [ -n "${MM3_BIN:-}" ]; then
+  MM3_BIN="$(cd "$(dirname "$MM3_BIN")" && pwd)/$(basename "$MM3_BIN")"
+  if [ ! -x "$MM3_BIN" ]; then
+    echo "✖ flows: MM3_BIN $MM3_BIN is not an executable file → run \"npm run build:binary -- --target linux-x64\" first"
+    exit 1
+  fi
+  CLI="$MM3_BIN"
+elif [ ! -f "$CLI" ]; then
   echo "✖ flows: dist/cli.js is missing → run \"npm run build\" first"
   exit 1
 fi
+
+# mm3x <args...>: the one place that decides how MM3 is launched.
+mm3x() {
+  if [ -n "${MM3_BIN:-}" ]; then "$MM3_BIN" "$@"; else node "$CLI" "$@"; fi
+}
 
 KNOWN_BUGS=""
 
 now_ms() { date +%s%3N; }
 TOTAL_START=$(now_ms)
 
-# run <mm3 args...>: node "$CLI" "$@" under the current env, stdout+stderr merged into $OUT, code into $CODE.
+# run <mm3 args...>: mm3x "$@" (node "$CLI", or $MM3_BIN) under the current env, stdout+stderr merged into $OUT, code into $CODE.
 run() {
-  OUT=$(node "$CLI" "$@" 2>&1)
+  OUT=$(mm3x "$@" 2>&1)
   CODE=$?
 }
 
@@ -33,7 +46,7 @@ run() {
 runenv() {
   envstr=$1
   shift
-  OUT=$(env $envstr node "$CLI" "$@" 2>&1)
+  if [ -n "${MM3_BIN:-}" ]; then OUT=$(env $envstr "$MM3_BIN" "$@" 2>&1); else OUT=$(env $envstr node "$CLI" "$@" 2>&1); fi
   CODE=$?
 }
 
@@ -148,7 +161,7 @@ pass "03-class" "first paid call: MM3-0001, budget file created, fake labeled no
 flow_done "03-class"
 
 # The budget line says runs LEFT ("485 of 493 runs left"); runs used is the cap minus that.
-runs_used() { node "$CLI" budget | head -1 | sed -E 's/.*\· ([0-9]+) of ([0-9]+) runs.*/\2 \1/' | awk '{print $1 - $2}'; }
+runs_used() { mm3x budget | head -1 | sed -E 's/.*\· ([0-9]+) of ([0-9]+) runs.*/\2 \1/' | awk '{print $1 - $2}'; }
 
 # ---- 4. class again, identical -> exact reuse ---------------------------------------------------------------
 flow_start

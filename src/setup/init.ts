@@ -20,12 +20,14 @@ import { ensureDir, pathsFor } from '../ledger/paths.ts';
 import { runDoctor } from '../verbs/doctor.ts';
 import type { VerbResult } from '../verbs/types.ts';
 import { planAgents } from './agents-file.ts';
-import { writeInstallRecord, type InstallMode } from './install-record.ts';
+import { readInstallRecord, writeInstallRecord, type InstallMode } from './install-record.ts';
 import { resolveStoredKey, storeKey } from './keystore.ts';
 import { detectSelfSpec, findOnPath, isWritableDir, npmGlobalPrefix } from './npm-info.ts';
 import { addMarketplace, installPlugin, marketplaceExists, pluginStatus, type PluginScope } from './plugin.ts';
 import { confirm, readHidden, readLine, readOneLine, type PromptIO } from './prompt.ts';
 import type { Runner } from './runner.ts';
+import { installBinary, installPluginDir, standaloneBinPath, standalonePluginDir } from './standalone.ts';
+import { isStandalone } from '../util/embedded.ts';
 
 export interface InitFlags {
   mode?: InstallMode;
@@ -102,7 +104,31 @@ function isNpxCache(binPath: string): boolean {
   return binPath.split(path.sep).includes('_npx');
 }
 
+/** The standalone's version of the install step: the same end state npm's gives (a file on PATH, the plugin
+ *  folder the marketplace registers, install.json), with the running file standing in for the package. Run
+ *  again it changes nothing; run from a newer file it replaces the installed one in place. */
+function stepCliStandalone(flags: InitFlags, ctx: InitCtx): string[] {
+  if (flags.mode && flags.mode !== 'user') {
+    return [line('problem', 'cli', `the standalone installs per user, into ~/.local/bin → drop --${flags.mode}, or run "mm3 init --user"`)];
+  }
+  const binPath = standaloneBinPath(ctx.homeDir, ctx.platform);
+  const pluginDir = standalonePluginDir(ctx.homeDir);
+  const record = readInstallRecord(ctx.env);
+  const placed = installBinary(process.execPath, binPath, record?.mode === 'standalone' ? record.version : undefined, ctx.pkg.version);
+  if (placed.status === 'problem') return [line('problem', 'cli', placed.text)];
+  const folder = installPluginDir(pluginDir, binPath);
+  if (folder.status === 'problem') return [line('done', 'cli', placed.text), line('problem', 'cli', folder.text)];
+  const lines = [line(placed.status, 'cli', placed.text), line(folder.status, 'cli', folder.text)];
+  if (record?.mode !== 'standalone' || record.binPath !== binPath || record.version !== ctx.pkg.version) {
+    writeInstallRecord(ctx.env, { mode: 'standalone', binPath, pluginDir, version: ctx.pkg.version, installedAt: nowIso(ctx) });
+  }
+  const bin = path.dirname(binPath);
+  if (!(ctx.env.PATH ?? '').split(path.delimiter).includes(bin)) lines.push(line('problem', 'cli', `${bin} is not on PATH → add this to your shell profile: export PATH="${bin}:$PATH"`));
+  return lines;
+}
+
 async function stepCli(flags: InitFlags, ctx: InitCtx): Promise<string[]> {
+  if (isStandalone()) return stepCliStandalone(flags, ctx);
   const onPath = findOnPath('mm3', ctx.env, ctx.platform);
   if (onPath && !isNpxCache(onPath) && isPackageBin(onPath, ctx.pkg.name) && !flags.mode) {
     return [line('already', 'cli', `already reachable as ${onPath}`)];
@@ -183,7 +209,7 @@ async function stepPlugin(flags: InitFlags, ctx: InitCtx): Promise<string[]> {
 
   const lines: string[] = [];
   if (!marketplaceExists(ctx.runner)) {
-    const r = addMarketplace(ctx.runner, ctx.packageDir);
+    const r = addMarketplace(ctx.runner, isStandalone() ? standalonePluginDir(ctx.homeDir) : ctx.packageDir);
     lines.push(r.status === 0 ? line('done', 'plugin', 'added the mvp-scale marketplace') : line('problem', 'plugin', `could not add the mvp-scale marketplace → ${firstLine(r.stderr)}`));
   } else {
     lines.push(line('already', 'plugin', 'mvp-scale marketplace already added'));

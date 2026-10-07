@@ -160,6 +160,7 @@ function cliLine(env: Record<string, string | undefined>, platform: NodeJS.Platf
   if (!resolved && !record) return 'not on PATH → run "mm3 init" to install it';
   const shown = resolved ?? '(not currently on PATH)';
   if (!record) return `${shown} · on PATH${mismatch}`;
+  if (record.mode === 'standalone') return `${shown} · installed standalone (file ${record.binPath ?? '?'}, ${record.version ?? 'unknown version'})${mismatch}`;
   const flag = record.mode === 'global' ? '--global' : record.mode === 'user' ? '--user' : '--local';
   const detail = record.mode === 'local' ? `project ${record.projectDir ?? '?'}` : `npm prefix ${record.npmPrefix ?? '?'}`;
   return `${shown} · installed ${flag} (${detail})${mismatch}`;

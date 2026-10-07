@@ -4,9 +4,11 @@
 // (test/agentic/scenarios/baseline.json, scripts/agentic/checkpoints.ts); a run passes when every checkpoint does, and a
 // red checkpoint says where to look. The gate model runs several trials and must pass most of them; the floor model runs
 // once and is reported, not gated. The sample provider is used throughout, so no checkpoint depends on a key.
+// The tool under test can also be the standalone file (`--bin` / MM3_BIN): the agent's `mm3` then runs that file and its PATH holds
+// system tools only, no Node, and each row says which build it tested (kind, version, sha256, whether Node was on the PATH).
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { addUsage, attemptsByAgent, noUsage, runClaude, strayServers, type ClaudeRun, type Usage } from './claude.ts';
@@ -23,8 +25,17 @@ export interface FullScenario {
   promise: number;
   setup?: 'config-runs-1' | 'plugin-record-mismatch'; // what the project (or the environment) is set up with before the agent starts
   shell?: 'mm3-only'; // the agent's shell may run only mm3: for a job about asking MM3 itself, so it cannot read the machine around it
+  build?: 'standalone'; // the job is about the standalone file: it runs only when one is given (--bin / MM3_BIN), on the CLI route, and is skipped otherwise
   terminal?: boolean; // on the MCP route, the agent also gets a shell with the `mm3` command: for a job that compares the terminal with the plugin
   checkpoints: string[];
+}
+
+/** Which build a row tested, so a standalone run and an npm-package run compare like for like. `nodeOnPath` is read from the agent's own PATH before it starts. */
+export interface BuildTested {
+  kind: 'standalone' | 'npm-package';
+  version: string;
+  sha256?: string; // standalone: the digest of the file that ran
+  nodeOnPath: boolean;
 }
 
 export interface FullRow {
@@ -32,6 +43,7 @@ export interface FullRow {
   route: 'cli' | 'mcp';
   model: string;
   resolvedModel: string | null;
+  build?: BuildTested;
   trial: number;
   pass: boolean;
   checks: Array<{ id: string; text: string; means: string; pass: boolean }>;
@@ -118,9 +130,52 @@ export function installPackage(version: string): string {
 /** For the install-health job on the CLI route: Claude Code uses CLAUDE_CONFIG_DIR for its own login, so the fake plugin record cannot be set for the whole session.
  *  A small `mm3` on the path sets it for MM3 alone and runs the real one. Returns the folder to put first on PATH. */
 export function shimMm3(realBin: string, claudeDir: string): string {
+  return shimExec(path.join(realBin, 'mm3'), claudeDir);
+}
+
+/** A folder holding one `mm3` that runs `target` (an npm bin or the standalone file), optionally with a Claude config folder for MM3 alone. */
+export function shimExec(target: string, claudeDir?: string): string {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'mm3-agentic-shim-'));
-  writeFileSync(path.join(dir, 'mm3'), `#!/bin/sh\nCLAUDE_CONFIG_DIR=${JSON.stringify(claudeDir)} exec ${JSON.stringify(path.join(realBin, 'mm3'))} "$@"\n`, { mode: 0o755 });
+  writeFileSync(path.join(dir, 'mm3'), `#!/bin/sh\n${claudeDir ? `CLAUDE_CONFIG_DIR=${JSON.stringify(claudeDir)} ` : ''}exec ${JSON.stringify(target)} "$@"\n`, { mode: 0o755 });
   return dir;
+}
+
+/** The standalone file under test: what it is, so the record can say. */
+export interface Standalone {
+  file: string; // absolute path
+  sha256: string;
+  size: number;
+  version: string; // what the file itself prints for --version
+}
+
+export function describeStandalone(file: string): Standalone {
+  const abs = path.resolve(file);
+  if (!existsSync(abs) || !statSync(abs).isFile()) throw new Error(`✖ standalone: ${file} is not a file → build one with "npm run build:binary -- --target linux-x64" and pass its path with --bin (or MM3_BIN)`);
+  const v = spawnSync(abs, ['--version'], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } });
+  if (v.status !== 0) throw new Error(`✖ standalone: ${file} did not run (--version exited ${v.status ?? 'without a status'}) → it needs to be an executable MM3 standalone for this OS`);
+  return { file: abs, sha256: createHash('sha256').update(readFileSync(abs)).digest('hex'), size: statSync(abs).size, version: v.stdout.trim() };
+}
+
+/** The system programs an agent's shell and a request-writing job use. Nothing here is a JavaScript runtime. */
+const SYSTEM_TOOLS = ['sh', 'bash', 'cat', 'ls', 'grep', 'find', 'head', 'tail', 'echo', 'printf', 'which', 'env', 'dirname', 'basename', 'mkdir', 'cp', 'mv', 'rm', 'sed', 'awk', 'sort', 'wc', 'tr', 'cut', 'tee', 'touch', 'chmod', 'diff', 'xargs', 'readlink', 'realpath', 'uname', 'date', 'true', 'false', 'test', 'sleep'];
+
+/** A folder of links to those programs, from /usr/bin and /bin only. Without Node on the agent's PATH, this is the whole PATH after the `mm3` shim. */
+export function systemToolsDir(from: string[] = ['/usr/bin', '/bin']): string {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'mm3-agentic-tools-'));
+  for (const name of SYSTEM_TOOLS) {
+    const real = from.map((d) => path.join(d, name)).find((f) => existsSync(f));
+    if (real) symlinkSync(real, path.join(dir, name));
+  }
+  return dir;
+}
+
+/** Environment variables that would hand an agent the harness's own Node (npm and node set them for the process that runs this script): blanked for a Node-free run. */
+export const nodeLeaks = (env: NodeJS.ProcessEnv = process.env): Record<string, string> => Object.fromEntries(Object.keys(env).filter((k) => /^(npm_|NODE$|NODE_|INIT_CWD$|_$|MM3_BIN$)/iu.test(k)).map((k) => [k, '']));
+
+/** Where `name` resolves with exactly this PATH (`command -v` in a plain shell), or null. The agent's own PATH is what is asked, not the harness's. */
+export function resolveOnPath(name: string, searchPath: string): string | null {
+  const r = spawnSync('/bin/sh', ['-c', 'command -v "$1"', 'sh', name], { encoding: 'utf8', env: { PATH: searchPath } });
+  return r.status === 0 && r.stdout.trim() ? r.stdout.trim() : null;
 }
 
 /** The state a job starts from, written before the agent runs. Returns any extra environment it needs. Plain files, nothing hidden from the agent. */
@@ -206,16 +261,20 @@ export interface RunOptions {
   models?: Array<'haiku' | 'sonnet'>; // run exactly these models, `trials` times each, and no floor (a trial picks its model)
   trials?: number;
   paid?: { approvedUsd: number }; // use the live classifier within this many real dollars; the free path is the default
+  standalone?: Standalone; // test the standalone file instead of the npm package: the agent's `mm3` runs it and its PATH has no Node (CLI route only)
 }
 
 /** Gate rows (the gate model, several trials) and floor rows (the other model, once); or, with `models`, exactly those. */
 export function runFull(scenarios: FullScenario[], version: string, rules: Rules, log: (s: string) => void = () => undefined, trialsOverride?: number, opts: RunOptions = {}): FullRow[] {
   const commit = commitOf(version);
   const rows: FullRow[] = [];
-  const bin = opts.build?.bin ?? (scenarios.some((s) => s.routes.includes('cli') || s.terminal) ? installPackage(version) : '');
-  const plugin = opts.build?.plugin ?? (scenarios.some((s) => s.routes.includes('mcp')) ? (commit ? checkoutPlugin(commit) : (() => { throw new Error(`cannot find the commit in version ${version}; the MCP route needs it`); })()) : '');
+  if (opts.standalone && opts.build?.bin) throw new Error('✖ run: a build and a standalone were both given → test one tool at a time');
+  const bin = opts.standalone ? '' : opts.build?.bin ?? (scenarios.some((s) => s.routes.includes('cli') || s.terminal) ? installPackage(version) : '');
+  const plugin = opts.standalone ? '' : opts.build?.plugin ?? (scenarios.some((s) => s.routes.includes('mcp')) ? (commit ? checkoutPlugin(commit) : (() => { throw new Error(`cannot find the commit in version ${version}; the MCP route needs it`); })()) : '');
   const trials = opts.trials ?? trialsOverride ?? rules.trialsPerScenario;
-  const plan = scenarios.flatMap((s) => s.routes.flatMap((route) => opts.models
+  const wanted = scenarios.filter((s) => opts.standalone || s.build !== 'standalone');
+  for (const s of scenarios) if (!wanted.includes(s)) log(`  ◦ ${s.id} skipped: it tests the standalone file → give one with --bin <file> (or MM3_BIN)`);
+  const plan = wanted.flatMap((s) => s.routes.filter((route) => !opts.standalone || route === 'cli').flatMap((route) => opts.models
     ? opts.models.flatMap((model) => Array.from({ length: trials }, (_, i) => ({ s, route, model, trial: i + 1 })))
     : [...Array.from({ length: trials }, (_, i) => ({ s, route, model: rules.gateModel, trial: i + 1 })), { s, route, model: rules.floorModel, trial: 1 }]));
   let spent = 0;
@@ -237,12 +296,24 @@ export function runFull(scenarios: FullScenario[], version: string, rules: Rules
     const shell = opts.paid || s.shell === 'mm3-only' ? ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)', 'Bash(which *)', 'Bash(head *)', 'Bash(tail *)', 'Bash(echo *)'] : ['Bash(mm3 *)', 'Bash(*/.bin/mm3 *)', 'Bash(command -v *)', 'Bash(which *)', 'Bash(cat *)', 'Bash(echo *)', 'Bash(printf *)', 'Bash(ls *)', 'Bash(pwd)', 'Bash(grep *)', 'Bash(find *)'];
     // the fake plugin record must reach MM3 only: Claude Code itself reads CLAUDE_CONFIG_DIR for its login
     const claudeDir = env.CLAUDE_CONFIG_DIR;
-    const shim = route === 'cli' && claudeDir ? shimMm3(bin, claudeDir) : undefined;
+    // the standalone: `mm3` is a shim that runs the file, and the PATH is that shim plus system tools, so there is no Node to find
+    const shim = route === 'cli' && opts.standalone ? shimExec(opts.standalone.file, claudeDir) : route === 'cli' && claudeDir ? shimMm3(bin, claudeDir) : undefined;
     if (shim) delete env.CLAUDE_CONFIG_DIR;
+    const agentPath = route === 'cli' ? (opts.standalone ? `${shim}:${systemToolsDir()}` : `${shim ? `${shim}:` : ''}${bin}:${process.env.PATH}`) : '';
+    if (opts.standalone) Object.assign(env, nodeLeaks());
+    // before the agent starts: what its own PATH resolves, read from a plain shell with exactly that PATH. A Node-free run that can find Node is not a result.
+    const build: BuildTested | undefined = route === 'cli'
+      ? { kind: opts.standalone ? 'standalone' : 'npm-package', version: opts.standalone ? opts.standalone.version : version, ...(opts.standalone ? { sha256: opts.standalone.sha256 } : {}), nodeOnPath: resolveOnPath('node', agentPath) !== null }
+      : undefined;
+    if (opts.standalone && build) {
+      const found = resolveOnPath('mm3', agentPath);
+      if (build.nodeOnPath || found !== path.join(shim!, 'mm3')) throw new Error(`✖ standalone: the agent's PATH is wrong (node ${build.nodeOnPath ? 'is found' : 'is not found'}, mm3 resolves to ${found ?? 'nothing'}) → nothing was run`);
+    }
     const run = route === 'cli'
-      ? runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Edit', 'Bash'], allowedTools: [...base, 'Write', 'Edit', ...shell], env: { ...env, PATH: `${shim ? `${shim}:` : ''}${bin}:${process.env.PATH}` }, budgetUsd: 2, strict })
+      ? runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Edit', 'Bash'], allowedTools: [...base, 'Write', 'Edit', ...shell], env: { ...env, PATH: agentPath }, budgetUsd: 2, strict })
       : runClaude({ prompt: s.prompt, model, cwd: project, tools: [...base, 'Write', 'Edit', 'Agent', ...(s.terminal ? ['Bash'] : [])], allowedTools: [...base, 'Write', 'Edit', 'Agent', ...(s.terminal ? shell : []), 'mcp__plugin_mm3_mm3__mm3'], pluginDir: plugin, env: s.terminal ? { ...env, PATH: `${bin}:${process.env.PATH}` } : env, budgetUsd: 2, strict }); // both routes get the file tools a Claude Code user has: some jobs change a setting in the project's own files
     const row = grade(s, run, project, route, model, trial);
+    if (build) row.build = build;
     const logFile = path.join(project, '.mm3', 'log.jsonl');
     const ledgerText = existsSync(logFile) ? readFileSync(logFile, 'utf8') : '';
     row.adapters = adapters(ledgerText);
