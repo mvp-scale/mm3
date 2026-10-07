@@ -8792,37 +8792,52 @@ function openLog(logPath) {
     throw e;
   }
 }
-function readRecordAt(logPath, offset) {
-  if (offset < 0) return void 0;
+function openRecordReader(logPath) {
   let fd;
+  let size = 0;
   try {
     fd = openSync3(logPath, "r");
+    size = fstatSync3(fd).size;
   } catch {
-    return void 0;
+    if (fd !== void 0) closeSync3(fd);
+    fd = void 0;
   }
-  try {
-    const size = fstatSync3(fd).size;
-    if (offset >= size) return void 0;
-    let chunkSize = Math.min(4096, size - offset);
-    for (; ; ) {
-      const buf = Buffer.alloc(chunkSize);
-      const got = readSync2(fd, buf, 0, chunkSize, offset);
-      if (got <= 0) return void 0;
-      const nl = buf.subarray(0, got).indexOf(10);
-      const complete = nl !== -1 ? buf.toString("utf8", 0, nl) : offset + got >= size ? buf.toString("utf8", 0, got) : null;
-      if (complete !== null) {
-        try {
-          return normalizeRecordMdl(JSON.parse(complete));
-        } catch {
-          return void 0;
+  return {
+    read(offset) {
+      if (fd === void 0 || offset < 0 || offset >= size) return void 0;
+      try {
+        let chunkSize = Math.min(4096, size - offset);
+        for (; ; ) {
+          const buf = Buffer.alloc(chunkSize);
+          const got = readSync2(fd, buf, 0, chunkSize, offset);
+          if (got <= 0) return void 0;
+          const nl = buf.subarray(0, got).indexOf(10);
+          const complete = nl !== -1 ? buf.toString("utf8", 0, nl) : offset + got >= size ? buf.toString("utf8", 0, got) : null;
+          if (complete !== null) {
+            try {
+              return normalizeRecordMdl(JSON.parse(complete));
+            } catch {
+              return void 0;
+            }
+          }
+          chunkSize = Math.min(chunkSize * 2, size - offset);
         }
+      } catch {
+        return void 0;
       }
-      chunkSize = Math.min(chunkSize * 2, size - offset);
+    },
+    close() {
+      if (fd !== void 0) closeSync3(fd);
+      fd = void 0;
     }
-  } catch {
-    return void 0;
+  };
+}
+function readRecordAt(logPath, offset) {
+  const reader = openRecordReader(logPath);
+  try {
+    return reader.read(offset);
   } finally {
-    closeSync3(fd);
+    reader.close();
   }
 }
 function emptyMemoryState() {
@@ -8834,7 +8849,7 @@ function memorySink(state) {
       state.runCount += 1;
       if (countsTowardBudget(rec)) state.spend.set(rec.id, { ts: rec.ts, cost: rec.costUsd ?? 0 });
       state.runOffset.set(rec.id, offset);
-      state.allRuns.push({ id: rec.id, offset, verb: rec.verb, gate: isContractRun(rec) ? rec.gate : null, pattern: patternFingerprint(rec) });
+      state.allRuns.push({ id: rec.id, offset, verb: rec.verb, gate: isContractRun(rec) ? rec.gate : null, pattern: patternFingerprint(rec), adapter: rec.adapter });
       const parent = rec.parent ?? null;
       if (parent) {
         if (!state.childrenByParent.has(parent)) state.childrenByParent.set(parent, []);
@@ -8868,6 +8883,15 @@ function memorySink(state) {
     }
   };
 }
+function memoryPlaceCandidates(state, place) {
+  const prefix = `${place}/`;
+  const ids = /* @__PURE__ */ new Set();
+  for (const p of state.places) {
+    const hit = p.kind === "tag" ? p.val === place : p.val === place || p.val.startsWith(prefix);
+    if (hit) ids.add(p.runId);
+  }
+  return [...ids].map((id) => ({ id, offset: state.runOffset.get(id) })).filter((c) => c.offset !== void 0).sort((a, b) => a.offset - b.offset);
+}
 function handleFromMemory(state) {
   return {
     findOffset: (id) => state.runOffset.get(id),
@@ -8882,14 +8906,41 @@ function handleFromMemory(state) {
       return offset === void 0 ? void 0 : { ...hit, offset, blocked: state.blocked.has(hit.runId) };
     },
     candidates: (adapter, model) => (state.candidatesByWho.get(whoKey({ adapter, model })) ?? []).filter((c) => !state.blocked.has(c.id)),
-    placeCandidates: (place) => {
-      const prefix = `${place}/`;
-      const ids = /* @__PURE__ */ new Set();
+    placeCandidates: (place) => memoryPlaceCandidates(state, place),
+    newestPerWherePlace: () => {
+      const wherePlaces = /* @__PURE__ */ new Set();
+      for (const p of state.places) if (p.kind === "where") wherePlaces.add(p.val);
+      const newest = /* @__PURE__ */ new Map();
+      const credit = (place, runId) => {
+        if (!wherePlaces.has(place)) return;
+        const offset = state.runOffset.get(runId);
+        if (offset === void 0) return;
+        const cur = newest.get(place);
+        if (!cur || offset > cur.offset) newest.set(place, { id: runId, offset });
+      };
       for (const p of state.places) {
-        const hit = p.kind === "tag" ? p.val === place : p.val === place || p.val.startsWith(prefix);
-        if (hit) ids.add(p.runId);
+        if (p.kind === "tag") {
+          credit(p.val, p.runId);
+          continue;
+        }
+        credit(p.val, p.runId);
+        for (let i = p.val.indexOf("/"); i !== -1; i = p.val.indexOf("/", i + 1)) credit(p.val.slice(0, i), p.runId);
       }
-      return [...ids].map((id) => ({ id, offset: state.runOffset.get(id) })).filter((c) => c.offset !== void 0).sort((a, b) => a.offset - b.offset);
+      return [...newest.entries()].map(([place, n]) => ({ place, id: n.id, offset: n.offset }));
+    },
+    placeRunStats: (place, limit) => {
+      const adapterOf = new Map(state.allRuns.map((r) => [r.id, r.adapter]));
+      const cands = place === null ? state.allRuns.map((r) => ({ id: r.id, offset: r.offset })) : memoryPlaceCandidates(state, place);
+      const byKey = /* @__PURE__ */ new Map();
+      for (const c of cands) {
+        const adapter = adapterOf.get(c.id) ?? "";
+        const outcome = state.outcomes.get(c.id)?.outcome ?? null;
+        const key2 = `${adapter}\0${outcome ?? ""}`;
+        const cur = byKey.get(key2);
+        if (cur) cur.n += 1;
+        else byKey.set(key2, { adapter, outcome, n: 1 });
+      }
+      return { total: cands.length, breakdown: [...byKey.values()], newest: cands.slice(-limit).reverse() };
     },
     childrenOf: (parentId) => state.childrenByParent.get(parentId) ?? [],
     outcomesFor: (ids) => {
@@ -9167,9 +9218,12 @@ function writeMetaStateCatchUp(db, logPath, before, result) {
   setMeta(db, "fp_start", String(result.lastLineStart));
   setMeta(db, "fingerprint", fingerprintNow(logPath, result.lastLineStart, result.upto));
 }
-function escapeLike(s) {
-  return s.replace(/[\\%_]/gu, (c) => `\\${c}`);
-}
+var PLACE_SQL = {
+  candidates: `SELECT r.id AS id, r.offset AS offset FROM places p JOIN runs r ON r.id = p.run_id WHERE p.kind = 'where' AND p.val = ? UNION SELECT r.id, r.offset FROM places p JOIN runs r ON r.id = p.run_id WHERE p.kind = 'where' AND p.val >= ? AND p.val < ? UNION SELECT r.id, r.offset FROM places p JOIN runs r ON r.id = p.run_id WHERE p.kind = 'tag' AND p.val = ? ORDER BY offset ASC`,
+  newest: `WITH dp AS (SELECT DISTINCT val FROM places WHERE kind = 'where'), hit(place, rid) AS (SELECT val, MAX(rowid) FROM places WHERE kind = 'where' GROUP BY val UNION ALL SELECT dp.val, (SELECT MAX(p.rowid) FROM places p WHERE p.kind = 'where' AND p.val >= dp.val || '/' AND p.val < dp.val || '0') FROM dp UNION ALL SELECT dp.val, (SELECT MAX(p.rowid) FROM places p WHERE p.kind = 'tag' AND p.val = dp.val) FROM dp), newest(place, rid) AS (SELECT place, MAX(rid) FROM hit GROUP BY place) SELECT n.place AS place, r.id AS id, r.offset AS offset, json_array_length(json_extract(r.mdl, '$.categories')) AS keyCount, c.name AS cname, c.gate AS cgate FROM newest n JOIN places p ON p.rowid = n.rid JOIN runs r ON r.id = p.run_id LEFT JOIN categories c ON c.run_id = r.id AND c.gate IS NOT NULL`,
+  breakdown: `WITH hit(run_id) AS (SELECT run_id FROM places WHERE kind = 'where' AND val = ? UNION SELECT run_id FROM places WHERE kind = 'where' AND val >= ? AND val < ? UNION SELECT run_id FROM places WHERE kind = 'tag' AND val = ?) SELECT r.adapter AS adapter, o.outcome AS outcome, COUNT(*) AS n FROM hit h JOIN runs r ON r.id = h.run_id LEFT JOIN outcomes o ON o.run_id = r.id GROUP BY r.adapter, o.outcome`,
+  spanNewest: `WITH hit(run_id) AS (SELECT run_id FROM places WHERE kind = 'where' AND val = ? UNION SELECT run_id FROM places WHERE kind = 'where' AND val >= ? AND val < ? UNION SELECT run_id FROM places WHERE kind = 'tag' AND val = ?) SELECT r.id AS id, r.offset AS offset FROM hit h JOIN runs r ON r.id = h.run_id ORDER BY r.offset DESC LIMIT ?`
+};
 function handleFromSql(db) {
   const stFindOffset = db.prepare("SELECT offset FROM runs WHERE id = ?");
   const stIsBlocked = db.prepare("SELECT blocked FROM runs WHERE id = ?");
@@ -9177,9 +9231,14 @@ function handleFromSql(db) {
     "SELECT ak.run_id AS runId, ak.qid AS qid, r.offset AS offset, r.blocked AS blocked FROM answer_keys ak JOIN runs r ON r.id = ak.run_id WHERE ak.adapter = ? AND ak.model = ? AND ak.key = ?"
   );
   const stCandidates = db.prepare("SELECT id, offset FROM runs WHERE adapter = ? AND model = ? AND blocked = 0 ORDER BY rowid DESC");
-  const stPlaces = db.prepare(
-    `SELECT DISTINCT r.id AS id, r.offset AS offset FROM places p JOIN runs r ON r.id = p.run_id WHERE (p.kind = 'where' AND (p.val = ? OR p.val LIKE ? ESCAPE '\\')) OR (p.kind = 'tag' AND p.val = ?) ORDER BY r.offset ASC`
+  const stPlaces = db.prepare(PLACE_SQL.candidates);
+  const stNewestPlaces = db.prepare(PLACE_SQL.newest);
+  const stPlaceBreakdown = db.prepare(PLACE_SQL.breakdown);
+  const stPlaceNewest = db.prepare(PLACE_SQL.spanNewest);
+  const stAllBreakdown = db.prepare(
+    "SELECT r.adapter AS adapter, o.outcome AS outcome, COUNT(*) AS n FROM runs r LEFT JOIN outcomes o ON o.run_id = r.id GROUP BY r.adapter, o.outcome"
   );
+  const stAllNewest = db.prepare("SELECT id, offset FROM runs ORDER BY offset DESC LIMIT ?");
   const stEverHeld = db.prepare("SELECT 1 FROM answer_keys WHERE adapter = ? AND model = ? AND key = ?");
   const stLatestOutcome = db.prepare("SELECT outcome, uid, ts, by FROM outcomes WHERE run_id = ?");
   const stChildren = db.prepare("SELECT id, offset FROM runs WHERE parent = ? ORDER BY offset ASC");
@@ -9225,7 +9284,26 @@ function handleFromSql(db) {
       }
       return stCandidates.all(adapter, model).map((r) => ({ id: String(r.id), offset: Number(r.offset) }));
     },
-    placeCandidates: (place) => stPlaces.all(place, `${escapeLike(place)}/%`, place).map((r) => ({ id: String(r.id), offset: Number(r.offset) })),
+    placeCandidates: (place) => stPlaces.all(place, `${place}/`, `${place}0`, place).map((r) => ({ id: String(r.id), offset: Number(r.offset) })),
+    newestPerWherePlace: () => {
+      const byPlace2 = /* @__PURE__ */ new Map();
+      for (const r of stNewestPlaces.all()) {
+        const place = String(r.place);
+        let cur = byPlace2.get(place);
+        if (!cur) {
+          cur = { place, id: String(r.id), offset: Number(r.offset), keyCount: r.keyCount === null ? -1 : Number(r.keyCount), rows: [] };
+          byPlace2.set(place, cur);
+        }
+        if (r.cname !== null) cur.rows.push({ name: String(r.cname), gate: String(r.cgate) });
+      }
+      return [...byPlace2.values()].map(({ keyCount, rows, ...n }) => rows.length > 0 && rows.length === keyCount ? { ...n, categories: rows } : n);
+    },
+    placeRunStats: (place, limit) => {
+      const rows = place === null ? stAllBreakdown.all() : stPlaceBreakdown.all(place, `${place}/`, `${place}0`, place);
+      const breakdown = rows.map((r) => ({ adapter: String(r.adapter), outcome: r.outcome === null ? null : String(r.outcome), n: Number(r.n) }));
+      const newest = (place === null ? stAllNewest.all(limit) : stPlaceNewest.all(place, `${place}/`, `${place}0`, place, limit)).map((r) => ({ id: String(r.id), offset: Number(r.offset) }));
+      return { total: breakdown.reduce((sum, b) => sum + b.n, 0), breakdown, newest };
+    },
     childrenOf: (parentId) => stChildren.all(parentId).map((r) => ({ id: String(r.id), offset: Number(r.offset) })),
     outcomesFor: (ids) => {
       const out = /* @__PURE__ */ new Map();
@@ -17123,25 +17201,50 @@ function isStale3(root, rec, categoryName) {
   return rec.keys[q.id] !== key2;
 }
 var GATE_RANK2 = { fail: 0, unsure: 1, pass: 2 };
+var compareHits = (a, b) => GATE_RANK2[a.gate] - GATE_RANK2[b.gate] || a.place.localeCompare(b.place) || a.category.localeCompare(b.category);
+function smallest(rows, k, cmp) {
+  const top = [];
+  for (const row of rows) {
+    if (top.length >= k && cmp(row, top[top.length - 1]) >= 0) continue;
+    let lo = 0;
+    let hi = top.length;
+    while (lo < hi) {
+      const mid = lo + hi >> 1;
+      if (cmp(row, top[mid]) < 0) hi = mid;
+      else lo = mid + 1;
+    }
+    top.splice(lo, 0, row);
+    if (top.length > k) top.pop();
+  }
+  return top;
+}
 function reportHits(paths) {
-  const rows = withIndex(
+  const reader = openRecordReader(paths.log);
+  const recAt = /* @__PURE__ */ new Map();
+  const readOnce = (offset) => {
+    if (!recAt.has(offset)) recAt.set(offset, reader.read(offset));
+    return recAt.get(offset);
+  };
+  const collect = (vouch) => withIndex(
     paths,
     (handle) => {
       const out = [];
-      const places = handle.distinctPlaces().filter((p) => p.kind === "where");
-      for (const { val: place } of places) {
-        const newest = handle.placeCandidates(place).at(-1);
-        if (!newest) continue;
-        const rec = readRecordAt(paths.log, newest.offset);
+      for (const n of handle.newestPerWherePlace()) {
+        const { place } = n;
+        if (vouch && n.categories) {
+          for (const { name, gate } of n.categories) out.push({ place, category: name, gate, runId: n.id, offset: n.offset });
+          continue;
+        }
+        const rec = readOnce(n.offset);
         if (!rec || !isContractRun(rec)) continue;
         if (rec.items === null) {
           for (const [category, gate] of Object.entries(rec.categories)) {
-            out.push({ place, category, gate, runId: rec.id, goal: rec.goal, rec });
+            out.push({ place, category, gate, runId: rec.id, offset: n.offset, goal: rec.goal, rec });
           }
         } else {
           for (const item of Object.values(rec.items)) {
             if (item.unit?.path !== place) continue;
-            for (const [category, gate] of Object.entries(item.categories)) out.push({ place, category, gate, runId: rec.id, goal: rec.goal });
+            for (const [category, gate] of Object.entries(item.categories)) out.push({ place, category, gate, runId: rec.id, offset: n.offset, goal: rec.goal });
           }
         }
       }
@@ -17149,14 +17252,39 @@ function reportHits(paths) {
     },
     { readOnly: true }
   );
-  if (!rows.length) return { exit: 0, text: 'mm3 report hits \xB7 no runs yet \u2192 "mm3 class <request>" starts one' };
-  rows.sort((a, b) => GATE_RANK2[a.gate] - GATE_RANK2[b.gate] || a.place.localeCompare(b.place) || a.category.localeCompare(b.category));
-  const shown2 = rows.slice(0, ROW_LIMIT);
-  const lines = shown2.map((r) => {
-    const stale = r.rec ? isStale3(paths.root, r.rec, r.category) : false;
-    return `${clip(r.place, 50)} \xB7 ${r.category} ${r.gate} \xB7 ${r.runId} "${clip(r.goal, 40)}"${stale ? " \xB7 stale" : ""}`;
-  });
-  return { exit: 0, text: [heading("hits", rows.length, "row"), ...withCap(lines, rows.length)].join("\n") };
+  const render = (rows) => {
+    let total = rows.length;
+    const lines = [];
+    for (const r of smallest(rows, ROW_LIMIT, compareHits)) {
+      let { rec, goal } = r;
+      if (goal === void 0) {
+        const read3 = readOnce(r.offset);
+        if (!read3 || !isContractRun(read3)) {
+          total -= 1;
+          continue;
+        }
+        if (read3.items !== null) return void 0;
+        rec = read3;
+        goal = read3.goal;
+      }
+      const stale = rec ? isStale3(paths.root, rec, r.category) : false;
+      lines.push(`${clip(r.place, 50)} \xB7 ${r.category} ${r.gate} \xB7 ${r.runId} "${clip(goal, 40)}"${stale ? " \xB7 stale" : ""}`);
+    }
+    return [heading("hits", total, "row"), ...withCap(lines, total)];
+  };
+  try {
+    let rows = collect(true);
+    if (!rows.length) return { exit: 0, text: 'mm3 report hits \xB7 no runs yet \u2192 "mm3 class <request>" starts one' };
+    let text = render(rows);
+    if (!text) {
+      rows = collect(false);
+      if (!rows.length) return { exit: 0, text: 'mm3 report hits \xB7 no runs yet \u2192 "mm3 class <request>" starts one' };
+      text = render(rows);
+    }
+    return { exit: 0, text: text.join("\n") };
+  } finally {
+    reader.close();
+  }
 }
 function reportPatterns(paths) {
   const rows = withIndex(paths, (h) => h.patternCounts(), { readOnly: true });
@@ -17614,21 +17742,23 @@ function toPlace(target, root) {
   }
   return { place: rel.split(path25.sep).join("/") || "." };
 }
+function formatPlace(place, total, counts, rehearsal, shown2, outcomeOf) {
+  if (!total) return { exit: 0, text: `mm3 view ${clip(place, 60)} \xB7 no runs yet \u2192 "mm3 class <request>" starts one` };
+  const head = `mm3 view ${clip(place, 60)} \xB7 ${total} run${total === 1 ? "" : "s"} \xB7 held ${counts.held} \xB7 overruled ${counts.overruled} \xB7 failed ${counts.failed} \xB7 open ${counts.open}${rehearsal ? ` \xB7 rehearsal ${rehearsal}` : ""}`;
+  const older = total - shown2.length;
+  return {
+    exit: 0,
+    text: [head, ...shown2.map((r) => runLine(r, outcomeOf(r.id) ?? "open")), ...older ? [`\u2026 ${older} older \u2192 raise the level to see more`] : []].join("\n")
+  };
+}
 function renderPlace(place, hits, outcomeOf, limit) {
-  if (!hits.length) return { exit: 0, text: `mm3 view ${clip(place, 60)} \xB7 no runs yet \u2192 "mm3 class <request>" starts one` };
   const counts = { held: 0, overruled: 0, failed: 0, open: 0 };
   let rehearsal = 0;
   for (const r of hits) {
     if (isRehearsal(r.adapter)) rehearsal += 1;
     else counts[outcomeOf(r.id) ?? "open"] += 1;
   }
-  const head = `mm3 view ${clip(place, 60)} \xB7 ${hits.length} run${hits.length === 1 ? "" : "s"} \xB7 held ${counts.held} \xB7 overruled ${counts.overruled} \xB7 failed ${counts.failed} \xB7 open ${counts.open}${rehearsal ? ` \xB7 rehearsal ${rehearsal}` : ""}`;
-  const shown2 = hits.slice(-limit).reverse();
-  const older = hits.length - shown2.length;
-  return {
-    exit: 0,
-    text: [head, ...shown2.map((r) => runLine(r, outcomeOf(r.id) ?? "open")), ...older ? [`\u2026 ${older} older \u2192 raise the level to see more`] : []].join("\n")
-  };
+  return formatPlace(place, hits.length, counts, rehearsal, hits.slice(-limit).reverse(), outcomeOf);
 }
 var GATE_RANK3 = { fail: 0, unsure: 1, pass: 2 };
 function renderSummary(scope, hits) {
@@ -17655,6 +17785,30 @@ function byPlaceFullScan(place, paths, limit, summary) {
   if (summary) return renderSummary(place, hits);
   return renderPlace(place, hits, (id) => latestOutcome(records, id) ?? void 0, limit);
 }
+function byPlaceCounted(place, paths, limit) {
+  return withIndex(
+    paths,
+    (handle) => {
+      const stats = handle.placeRunStats(place === "." ? null : place, limit);
+      const shown2 = [];
+      for (const { offset } of stats.newest) {
+        const rec = readRecordAt(paths.log, offset);
+        const ok2 = rec && (isRun(rec) || isContractRun(rec)) && (place === "." || tagsMatch(rec, place) || whereMatches(rec, place));
+        if (!ok2) return void 0;
+        shown2.push(rec);
+      }
+      const counts = { held: 0, overruled: 0, failed: 0, open: 0 };
+      let rehearsal = 0;
+      for (const b of stats.breakdown) {
+        if (isRehearsal(b.adapter)) rehearsal += b.n;
+        else counts[b.outcome ?? "open"] += b.n;
+      }
+      const outcomes = handle.outcomesFor(shown2.map((r) => r.id));
+      return formatPlace(place, stats.total, counts, rehearsal, shown2, (id) => outcomes.get(id));
+    },
+    { readOnly: true }
+  );
+}
 function byPlaceIndexed(place, paths, limit, summary) {
   return withIndex(
     paths,
@@ -17672,7 +17826,7 @@ function byPlaceIndexed(place, paths, limit, summary) {
   );
 }
 function byPlace(place, paths, limit, summary) {
-  const result = place === "." ? byPlaceFullScan(place, paths, limit, summary) : byPlaceIndexed(place, paths, limit, summary);
+  const result = summary ? place === "." ? byPlaceFullScan(place, paths, limit, summary) : byPlaceIndexed(place, paths, limit, summary) : byPlaceCounted(place, paths, limit) ?? (place === "." ? byPlaceFullScan(place, paths, limit, summary) : byPlaceIndexed(place, paths, limit, summary));
   appendLookup(paths, { goal: place, where: [place], hit: false, reused: null });
   return result;
 }
