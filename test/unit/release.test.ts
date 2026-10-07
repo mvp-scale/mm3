@@ -1,5 +1,6 @@
 // The release script's checks, against a fake GitHub, git, npm and ledger [C-277]: the two stages show every step as done, will-do or not done
 // yet, read GitHub's Releases and Tags back before saying "RELEASED", and let main be built only from a tested, certified, clean copy.
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LedgerRecord } from '../../scripts/agentic/ledger.ts';
 import { briefLines, ceremonyCost, ceremonyStands, cleanLines, deadLinks, featuresSince, parseManifest, releaseNotes, rollupProblem, statusLines, stepLine, survey, surveyMain, unreleasedNotes, verify, versionProblem, type Io, type Manifest } from '../../scripts/release.ts';
@@ -242,6 +243,14 @@ describe('the main stage: tested, certified, then one clean copy [C-277]', () =>
     expect(cleanLines(fakeIo(), 'origin/nightly', M.include).map((l) => l.split(' ')[1]).sort()).toEqual(['AGENTS.md', 'README.md', 'docs/guide.md', 'package.json', 'src/a.ts']);
     expect(deadLinks(fakeIo(), 'origin/nightly', M.include)).toEqual([]);
     expect(deadLinks(fakeIo(), 'origin/nightly', ['README.md', 'src'])).toEqual(['README.md → docs/guide.md', 'README.md → AGENTS.md']);
+  });
+  it('[C-277] research published to nightly under lab/ never reaches main, and release.json never lists lab', () => {
+    const files = { ...FILES, 'lab/research/2026-10-07-x/README.md': 'notes', 'lab/research/2026-10-07-x/agent-reports/b.md': 'b' };
+    const kept = cleanLines(fakeIo({ files }), 'origin/nightly', M.include).map((l) => l.split(' ')[1]!);
+    expect(kept.filter((f) => f.startsWith('lab/'))).toEqual([]);
+    expect(kept).toContain('src/a.ts');
+    const real = JSON.parse(readFileSync('release.json', 'utf8')) as { include: string[] };
+    expect(real.include.filter((p) => p === 'lab' || p.startsWith('lab/'))).toEqual([]);
   });
   it('[C-277] everything done but the clean copy: the stage will build it, and says what it contains', () => {
     const r = ok();

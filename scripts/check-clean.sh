@@ -21,7 +21,9 @@ report() { echo "✖ check-clean: $1"; fail=1; }
 
 for f in $files; do
   case "$f" in
-    lab/*|lab) report "$f is local-only (lab/) → git rm --cached -r lab" ;;
+    # lab/ is private unless .gitignore lists the path as published (one research folder under lab/research/);
+    # --no-index asks the rules themselves, so a force-added private file is still caught.
+    lab/*|lab) if git check-ignore -q --no-index -- "$f"; then report "$f is local-only (lab/) → git rm --cached -r lab"; fi ;;
     .superpowers/*|.superpowers) report "$f is local-only (.superpowers/) → git rm --cached -r .superpowers" ;;
     .env|.env.*) [ "$f" = ".env.example" ] || report "$f holds environment secrets → git rm --cached $f" ;;
     *.pem|*.key|*.p12) report "$f looks like a key file → remove it from the commit" ;;
