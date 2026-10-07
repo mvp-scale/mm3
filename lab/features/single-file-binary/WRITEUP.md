@@ -135,3 +135,11 @@ Sources: sql.js README, FAQ and CONTRIBUTING; SQLite docs; `docs/evidence/ledger
 - **`better-sqlite3`** installs a prebuilt file for the user's platform and Node version; it cannot sit inside a single bundled file, and a marketplace plugin runs no install step, so it does not fit the plugin.
 - **Fit with the design already in the code.** The index is disposable and rebuilt from `log.jsonl`; two engines already share one line-interpretation (`applyLine`/`Sink`) and tests prove they agree, so a third engine slots in at the same seam. A fallback tier should build only what it needs in memory (core verbs on the existing linear path, the graph reports on demand), never persist a file, and say plainly which features are off.
 - **Roadmap alignment.** Full-text search, sidecar views, calibration and the graph pages are SQLite-powered; the standalone, which carries `node:sqlite`, is the route that gives all of them on a machine with no Node. Derived data (full-text index, roll-ups) belongs in its own side file, since a rebuild replaces `index.db` whole. Whether outside tools may read `index.db` directly or only a stable export is open; `schema_version` is 8 today.
+
+## 12. Decision: target Node 22.13 and newer, guide everyone else (2026-10-07)
+
+- **Target.** MM3 supports Node 22.13 and newer, about 85% of Node downloads in July 2026 (Node 24: 358.8M, Node 22: 283.9M, Node 20: 103.7M; NodeSource). Node 20 reached end-of-life on 2026-04-30 (endoflife.date). Download counts overstate real installs (CI, Docker, mirrors); no survey of installed versions was found.
+- **No SQLite fallback.** The `sql.js` fallback is dropped: its only purpose was Node 20, which is end-of-life, and it cannot hold a large index in memory (section 11).
+- **Older or missing Node.** MM3 says plainly what to change and points to `docs/node-version.md`: pin Node 22.13+ for the project with a version manager (nvm, fnm, Volta) and a per-project version file, or use the official installer. The same guide serves a person with no Node.
+- **The standalone** stays the self-contained route for people who do not want to manage Node, fetched late by the plugin once the launcher design (section 9 and the plugin research) is proven.
+- **Still to prove:** a launcher that works on Windows, macOS and Linux, since a plugin's command cannot branch by itself.
