@@ -104,7 +104,7 @@ export const PROBE_RULES: readonly ProbeRule[] = [
     cite: 'concepts/how-to-build-with-system-one.md',
   },
   {
-    text: "It's answerable from the code in where: — name the file in backticks when there's more than one, and send only the context the question needs.",
+    text: "It's answerable from the code in where: — name the file in backticks inside the sentence when there's more than one (a value that starts with a backtick must be in quotes), and send only the context the question needs.",
     cite: 'concepts/how-to-build-with-system-one.md',
   },
   {

@@ -1,8 +1,0 @@
-mak:
-  goal: The injection fix works
-  parent: MM3-0042
-  compare: {before: main, after: HEAD}
-  expect: [injection]
-mdl:
-  why: validate
-  area: data

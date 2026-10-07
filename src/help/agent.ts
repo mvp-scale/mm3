@@ -101,7 +101,7 @@ function noKeyRunLine(env: Record<string, string | undefined>, deps: { resolveSt
  *  had to fail once, `✖ mak.where: cannot read "app/routes/contributions.js"`, to learn `where:` resolves
  *  against `project`/`MM3_HOME`, not session cwd). [C-195] */
 const PROJECT_SCOPE_RULE =
-  "- where: resolves against the MCP `project` argument or `MM3_HOME` (CLI), never your session cwd — pass `project` (or set `MM3_HOME`) when you started elsewhere.";
+  '- where: resolves against the MCP `project` argument or, in a terminal, the project folder (the nearest .mm3 or .git above where you run mm3): run mm3 from inside the project; a session cwd outside it needs `project` (MCP) or MM3_HOME (CLI) set in the environment, never typed as a prefix on the command.';
 
 /** Plan 2b: the overview points at the probe-writing skill in its first lines (the first bullet under
  *  `rules:`, right after the verb/tool lists) — before an agent writes a single probe, not after it fails one. */
@@ -122,6 +122,12 @@ const EVIDENCE_RULES = [
   '- notes: budget: … left is headroom, not a limit: stop only at ⚠ or exit 3, then tell the owner.',
 ] as const;
 
+/** How a request reaches MM3 from a terminal: the trial that found this (B1, cli route) saw a lead agent chain `mkdir`, a heredoc write and
+ *  `mm3 class` into one shell command, which an `mm3 *` permission rule does not match, so it stopped and asked the human. One plain command
+ *  per step is what such a rule (and a person reading a permission prompt) can approve. [C-269] */
+const SEND_RULE =
+  '- sending a request: start from `mm3 template <verb>`, save it with your file-write tool (not a shell heredoc or a chain of commands), then run one plain `mm3 <verb> <file> --dry-run` and then `mm3 <verb> <file>`; through MCP the YAML goes in `stdin`.';
+
 function overview(env: Record<string, string | undefined>, deps: { resolveStored?: ResolveStored }): string {
   return renderCard(
     [
@@ -130,7 +136,7 @@ function overview(env: Record<string, string | undefined>, deps: { resolveStored
       'tools:',
       ...AGENT_TOOLS.map((t) => `- ${t}: ${TOOL_LINE[t]}`),
     ],
-    [PROBE_SKILL_RULE, ...ruleLines('card'), PROJECT_SCOPE_RULE, ...CHAIN_RULES, ...EVIDENCE_RULES],
+    [PROBE_SKILL_RULE, ...ruleLines('card'), PROJECT_SCOPE_RULE, SEND_RULE, ...CHAIN_RULES, ...EVIDENCE_RULES],
     [],
     [
       'run: mm3 agent <verb|tool> — before writing that request',

@@ -2,6 +2,23 @@
 
 Newest first. Each entry says what you can now do, and the number is the pull request that shipped it. Releases are tagged; the top section is what the `nightly` build on npm already has.
 
+## v0.1.3, 2026-10-07
+
+**Agents get a verdict on the first real try more often, and every agent test now shows how the agent got there.**
+
+- **A plain question gets a verdict far more reliably.** In agent tests the plain "is this file safe to ship?" job went from about half passing to 8 of 8 on the plugin and terminal routes together, and the smaller Haiku model went from 0 of 2 to 5 of 6. (#33)
+- **Agents send a request as one plain command.** The `mm3 agent` card now says: start from `mm3 template <verb>`, save the request with your file tool, then run `mm3 <verb> <file> --dry-run` and `mm3 <verb> <file>`. A heredoc chained into the run is refused by an `mm3 *` permission rule and left agents asking a person for help. (#33)
+- **No more `export MM3_HOME=…;` prefixes.** The card says to run `mm3` from inside the project, and to set `MM3_HOME` (or the MCP `project`) in the environment only when you started elsewhere. (#33)
+- **`view` says what it needs.** The overview now reads `view … (mm3 view <request-file>)`. Agents were calling a bare `view` first, hitting "missing arguments" and spending an attempt. (#33)
+- **A value that starts with a backtick no longer trips agents.** The card said to name files in backticks, so agents wrote `goal: \`routes/login.ts\` is safe`, which YAML cannot read. The advice now says to keep a backtick inside the sentence or quote the value, and the stop for it says so too. (#33)
+- **A request with no `decisions:` section is sent to the template.** The stop says to copy that section from `mm3 template class`. Before, agents wrote decisions out of their own yes/no questions in 3 of 5 trials; with the new text that was 1 of 5, and none of the misses was that. (#33)
+- **The dollar cap is proven on a live call.** A real request is allowed, the next new question stops at exit 3 before spending anything, and raising `budget.usd` in the file lets the next one through. (#33)
+- **A new agent test: finds MM3 without being told.** The task never names MM3; the agent must reach for it from the plugin's own startup guidance and report its run id. 5 of 5 in the clean test room. (#33)
+- **A release is one number going up.** Nightly and main both go from 0.1.2 to 0.1.3 with nothing attached, and the release refuses a version with a date, commit or label on it. `npm run release -- nightly` publishes exactly that number to npm, reads the branch, npm and CI back, and runs the formal ceremony, unless a passed one still stands because the code and agent-read text are unchanged since; `npm run release -- main` checks it was all tested and certified, says "nothing new" if main already has it, builds one clean copy of nightly for main without the development files, and promotes the same package to `latest` with one GitHub release. Every step is shown as done, will do or not done yet, with its cost. (#38)
+- **A failed ceremony explains itself.** Under STATUS the release prints the score, which jobs blocked and which checks failed in them, whether it reads as one isolated check or agents not finishing, what changed since the last passing ceremony (Claude Code version, agent-read text), the impact and blast radius, and the exact commands to read it, re-run only those jobs, or accept it. (#37)
+- **Fixed a false failure in the helper tests.** Claude Code 2.1.292 stopped reporting a helper's own message in its output, which made six correct delegation runs fail the "helpers cite run ids" check. The check now reads that each helper got a verdict and the lead's answer carries its id. (#37)
+- **Agent tests are fairer and show their work.** Each test agent now has only MM3 (the account's mail, drive and calendar connectors were leaking in and changing what agents saw from one trial to the next); a request an agent checks first with `--dry-run` is not counted as a failed attempt, and one command that dry-runs and then runs for real counts as one good attempt; a stop followed by an edit to the request file counts as staying on MM3; leftover scratch files from one trial no longer break the next; and every run report prints the agent's own reason for each step and a one-line decision path. (#33)
+
 ## v0.1.2, 2026-10-06
 
 **One file for your settings, a spend cap you can trust, and agents that pick MM3 up without being told.**

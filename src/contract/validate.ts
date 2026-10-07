@@ -267,7 +267,7 @@ function contractIssues(categories: readonly Category[], depth: Depth | undefine
     }
   }
   if (decisions.length < DECISIONS_MIN || decisions.length > DECISIONS_MAX) {
-    out.push({ field: `${field}.decisions`, problem: `${decisions.length} categor${decisions.length === 1 ? 'y' : 'ies'}`, fix: `give ${DECISIONS_MIN}–${DECISIONS_MAX}` });
+    out.push({ field: `${field}.decisions`, problem: `${decisions.length} categor${decisions.length === 1 ? 'y' : 'ies'}`, fix: decisions.length === 0 ? `copy the decisions: section from mm3 template class (${DECISIONS_MIN}–${DECISIONS_MAX} categories, a scale and a choice)` : `give ${DECISIONS_MIN}–${DECISIONS_MAX}` });
   } else {
     const kinds = new Set(decisions.flatMap((c) => c.questions.map((q) => q.kind)));
     if (!kinds.has('scale')) out.push({ field: `${field}.decisions`, problem: 'no scale question', fix: 'add at least one scale: question' });

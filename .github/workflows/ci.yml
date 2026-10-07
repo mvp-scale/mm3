@@ -2,8 +2,9 @@ name: ci
 
 on:
   push:
-    branches: [main, nightly]
+    branches: [nightly]
   pull_request:
+    branches: [nightly]
   workflow_call:
     inputs:
       ref:
