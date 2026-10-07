@@ -4,7 +4,8 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { NODE_VERSION, shasumFor, TARGETS } from '../../scripts/build-binary.ts';
+import { NODE_VERSION, seaConfig, shasumFor, TARGETS } from '../../scripts/build-binary.ts';
+import { diffOffsets } from '../../scripts/check-binary-repro.ts';
 import { isStandalone, readPackageFile } from '../../src/util/embedded.ts';
 
 describe('standalone build pins', () => {
@@ -19,6 +20,21 @@ describe('standalone build pins', () => {
     const body = `${'a'.repeat(64)}  node-v1-linux-x64.tar.xz\n${'b'.repeat(64)}  node-v1-win-x64.zip\n`;
     expect(shasumFor(body, 'node-v1-win-x64.zip')).toBe('b'.repeat(64));
     expect(shasumFor(body, 'node-v1-darwin-x64.tar.gz')).toBeUndefined();
+  });
+});
+
+describe('reproducible build helpers', () => {
+  it('the SEA config names its files relative, so no machine or scratch path reaches the blob', () => {
+    const c = JSON.parse(seaConfig('mm3.cjs', 'sea.blob')) as { main: string; output: string };
+    expect(c.main).toBe('mm3.cjs');
+    expect(c.output).toBe('sea.blob');
+    expect(path.isAbsolute(c.main) || path.isAbsolute(c.output)).toBe(false);
+  });
+
+  it('diffOffsets reports where two files differ and counts a length mismatch', () => {
+    expect(diffOffsets(Buffer.from('abcd'), Buffer.from('abcd'))).toEqual({ count: 0, first: [] });
+    expect(diffOffsets(Buffer.from('abcd'), Buffer.from('aXcY'))).toEqual({ count: 2, first: [1, 3] });
+    expect(diffOffsets(Buffer.from('ab'), Buffer.from('abcd')).count).toBe(2);
   });
 });
 

@@ -36,6 +36,8 @@ jobs:
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - run: npm run build:binary -- --target linux-x64
       - run: npm run build:binary -- --target win-x64
+      - name: The build is reproducible (two more builds from this commit give the same sha256 for both files)
+        run: npm run check:binary-repro
       - name: The pinned Node archives match the release's own SHASUMS256.txt
         run: |
           cd dist-binary/cache

@@ -66,6 +66,7 @@
     "check:pack": "tsx scripts/check-pack.ts",
     "check:plugin": "tsx scripts/check-plugin.ts",
     "check:hygiene": "tsx scripts/check-hygiene.ts",
+    "check:binary-repro": "tsx scripts/check-binary-repro.ts",
     "check:readme": "npm run build && tsx scripts/check-readme.ts",
     "judge:readme": "node bin/mm3.mjs class scripts/readme-judgment.yaml",
     "gen:evidence-index": "tsx scripts/evidence-index.ts",

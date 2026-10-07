@@ -8,6 +8,7 @@
  * 22 or 24, so postject is the method. Output goes to dist-binary/ (gitignored) with a SHA256SUMS file.
  * Needs the network for the Node download (cached under dist-binary/cache/) and for postject, which is
  * installed alone into a scratch folder and is never a dependency of this repo. Unsigned; signing is separate.
+ * Reproducible: two builds from the same commit are byte-identical (`npm run check:binary-repro` proves it).
  */
 import { createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -41,6 +42,12 @@ export const TARGETS: Record<string, Target> = {
   'linux-x64': { archive: linuxArchive, sha256: 'fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6', member: `node-v${NODE_VERSION}-linux-x64/bin/node`, exe: '' },
   'win-x64': { archive: winArchive, sha256: '158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541', member: `node-v${NODE_VERSION}-win-x64/node.exe`, exe: '.exe' },
 };
+
+/** The SEA config with paths RELATIVE to the folder it is run in. Node writes `main` into the blob as given, so an absolute
+ *  path into the random scratch folder made every build differ (measured: the only differing bytes were that path). */
+export function seaConfig(main: string, output: string): string {
+  return JSON.stringify({ main, output, disableExperimentalSEAWarning: true });
+}
 
 const sha256 = (file: string): string => createHash('sha256').update(readFileSync(file)).digest('hex');
 
@@ -140,9 +147,9 @@ export async function buildBinary(targetName: string, outDir: string = OUT_DIR, 
     const bundleFile = path.join(scratch, 'mm3.cjs');
     const blob = path.join(scratch, 'sea.blob');
     await bundle(bundleFile, versionOverride);
-    const seaConfig = path.join(scratch, 'sea-config.json');
-    writeFileSync(seaConfig, JSON.stringify({ main: bundleFile, output: blob, disableExperimentalSEAWarning: true }));
-    execFileSync(linuxNode, ['--experimental-sea-config', seaConfig], { stdio: 'pipe' });
+    // Run from the scratch folder with relative names: the blob then carries "mm3.cjs", not the random scratch path (reproducible build).
+    writeFileSync(path.join(scratch, 'sea-config.json'), seaConfig(path.basename(bundleFile), path.basename(blob)));
+    execFileSync(linuxNode, ['--experimental-sea-config', 'sea-config.json'], { cwd: scratch, stdio: 'pipe' });
 
     mkdirSync(outDir, { recursive: true });
     const file = path.join(outDir, `mm3-${version}-${targetName}${target.exe}`);
