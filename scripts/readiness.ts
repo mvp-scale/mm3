@@ -14,7 +14,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, cpSync, createReadStream, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, createReadStream, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
@@ -99,11 +99,15 @@ export function readCell(out: string, route: Route, src: string, variant: 'prima
   return { node: get('@@node ') ?? '?', boots: booted ? 'ok' : 'fail', l1, l2, secondStart: again, firstError, agentVersion: boot.replace(/^\d+ /u, '').replace(/\(.*$/u, '').trim().slice(0, 40) };
 }
 
+/** The file's non-empty lines, read once: an absent file is an empty ledger (no exists-then-read gap). */
+function ledgerLines(file: string): string[] {
+  try { return readFileSync(file, 'utf8').split('\n').filter(Boolean); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return []; throw e; }
+}
 function readRows(file = LEDGER): Array<Record<string, unknown>> {
-  return existsSync(file) ? readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>) : [];
+  return ledgerLines(file).map((l) => JSON.parse(l) as Record<string, unknown>);
 }
 function append(row: Record<string, unknown>, file = LEDGER): void {
-  const lines = existsSync(file) ? readFileSync(file, 'utf8').split('\n').filter(Boolean) : [];
+  const lines = ledgerLines(file);
   appendFileSync(file, `${JSON.stringify({ ...row, schema: SCHEMA, prev: lines.length ? sha(lines[lines.length - 1]!) : 'genesis' })}\n`);
 }
 const nextRun = (rows: Array<Record<string, unknown>>): string => `RDY-${String(Math.max(0, ...rows.flatMap((r) => (typeof r.run === 'string' ? [Number(/\d+/u.exec(r.run)?.[0] ?? 0)] : []))) + 1).padStart(4, '0')}`;
@@ -200,7 +204,7 @@ function sh(cmd: string, args: string[], opts: { input?: string; cwd?: string } 
 /** The plugin folder as `npm pack` ships it (primary) and a copy with the launcher manifests and a pin for the built standalone (failover). */
 function prepare(tmp: string, version: string): { mkt: string; mktl: string; binary: string; commit: string } {
   const binary = path.resolve(`dist-binary/mm3-${version}-linux-x64`);
-  if (!existsSync(binary)) throw new Error(`✖ standalone: ${binary} is not built → run: npm run build:binary -- --target linux-x64`);
+  try { statSync(binary); } catch { throw new Error(`✖ standalone: ${binary} is not built → run: npm run build:binary -- --target linux-x64`); }
   const pk = sh('npm', ['pack', '--silent', '--pack-destination', tmp]);
   if (pk.code !== 0) throw new Error(`✖ npm pack failed: ${first(pk.out)}`);
   const tgz = path.join(tmp, pk.out.trim().split('\n').pop()!);
