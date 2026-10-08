@@ -14,11 +14,16 @@ type Env = Record<string, string | undefined>;
 export type InstallMode = 'global' | 'user' | 'local';
 
 export interface InstallRecord {
-  mode: InstallMode;
+  /** `standalone`: the single file `mm3 init` copied to `binPath` (setup/standalone.ts); the other three are npm installs. */
+  mode: InstallMode | 'standalone';
   /** The npm prefix used for --global/--user (e.g. /usr/local, ~/.local); absent for --local. */
   npmPrefix?: string;
   /** The project directory for --local (where `npm install -D <self>` ran); absent otherwise. */
   projectDir?: string;
+  /** The standalone file and the plugin folder next to it (only for mode `standalone`), and the version placed. */
+  binPath?: string;
+  pluginDir?: string;
+  version?: string;
   installedAt: string;
 }
 
@@ -29,7 +34,7 @@ export function installRecordPath(env: Env = process.env): string {
 function isInstallRecord(v: unknown): v is InstallRecord {
   if (!v || typeof v !== 'object') return false;
   const r = v as Record<string, unknown>;
-  return (r.mode === 'global' || r.mode === 'user' || r.mode === 'local') && typeof r.installedAt === 'string';
+  return (r.mode === 'global' || r.mode === 'user' || r.mode === 'local' || r.mode === 'standalone') && typeof r.installedAt === 'string';
 }
 
 /** undefined for "never ran init, or the record is unreadable/corrupt" — both read the same to every caller:

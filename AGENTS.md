@@ -30,6 +30,8 @@
 | Re-run only the jobs a fix touched and carry the other jobs' passing rows from an earlier formal ceremony (refused with one line unless nothing an agent runs or reads changed; `--only` alone is a not-formal partial run) | `npm run ceremony -- --version <exact version> --only <jobId,jobId> --carry CER-#### [--note "<text>"]` |
 | Read a ceremony run: the release report (plain words first, decision last), one trial call by call, the list, a comparison, repeated improvements | `npm run agentic:release-report -- CER-####` · `... --row <job>/<route>/<model>/<trial>` · `npm run agentic:runs` · `npm run agentic:compare -- CER-#### CER-####` · `npm run agentic:patterns` |
 | Manual sheet for one job, from the same definition the harness grades | `npm run agentic:sheet -- <version> <job> <cli\|mcp>` |
+| Pin the plugin launcher to a build: after `build:binary` for both targets on the release commit, writes `launcher/checksums.json` (version, the GitHub Release address, one sha256 per file; never edit it by hand). The build is byte-reproducible, so this works before the release is published; `launcher/` is not embedded in the standalone, so writing it does not change the hashes. CI re-checks it against its own build until the version has a GitHub Release | `npm run gen:checksums` then `npm run check:launcher -- --against dist-binary` |
+| Launcher pin file exists and names package.json's version (also in CI) | `npm run check:launcher` |
 | Release gate for the agentic stage (fails with no formal run, a failed, stale or incomplete one, or a broken ledger chain) | `npm run check:agentic` |
 | Take a change to any text an agent reads on purpose (snapshots under `test/golden/guidance/`), then re-run the ceremony | `npm run guidance:accept` |
 | Ship a release, two steps, each shown as a pipeline (done / will do / not done yet), checked from GitHub, npm and the ledger, and ending in a receipt: `nightly` publishes everything merged since the last nightly as the plain version; `main` reviews that it was all tested and certified, builds the clean copy and promotes the same package to `latest` (`release.json` holds the version, title and what main keeps; every step asks once, `--yes` skips the question) | `npm run release -- nightly` · `npm run release -- main` |
@@ -44,7 +46,7 @@
 6. **Secrets** go only in env vars (`TYPESAFE_API_KEY`, `AI_GATEWAY_API_KEY`), the OS keychain, or a 0600 user file. Never in the project, config, the ledger, fixtures or output.
 7. **Help first.** A validation stop has to say what to change (`✖ field: problem → fix`). Everything else is a note.
 8. **Match the surrounding code.** Give each module a short header comment saying why it exists. Keep runtime dependencies minimal.
-9. **Public repo.** Local notes go in `lab/`, which is gitignored and blocked by the pre-commit hook. Never commit machine paths, keys, or internal tracker IDs.
+9. **Public repo.** Raw notes, research and test binaries stay in `lab/`, which is gitignored and blocked by the pre-commit hook. The formal write-up of a feature lives in `lab/features/<feature>/` and is published to nightly (never main); it passes the same guard. Never commit machine paths, keys, or internal tracker IDs.
 10. **Trace new claims.** A new test for a claim in `docs/contract.md` carries its `[C-###]` tag (title or a comment above the assertion); `npm run check:trace` checks this, but it is not wired into the pre-commit hook (it scans the whole `test/` tree, which `check-clean.sh` intentionally keeps fast) — run it by hand before a PR that touches the contract.
 11. **Close out every PR.** The PR template's Scope, Done when and Evidence are filled in, and the PR adds its one-line "What's new" entry to `CHANGELOG.md` under Unreleased (value first, with the PR number). A merged branch is deleted (GitHub does it); the record stays in the PR. Before any other branch is deleted: its tip is an ancestor of `origin/nightly` (`git merge-base --is-ancestor`), or its PR is Closed and `refs/pull/<n>/head` equals the tip; the tip, PR, state and date are written to `lab/closeout.md` first; remote deletes wait for the owner. A branch with no PR and no such proof stays.
 
@@ -56,6 +58,7 @@
 | `BACKLOG.md` | what's next and what's parked; delete a line when it ships |
 | `docs/` | the public contract (`contract.md`), the numbers (`numbers.md`), generated evidence for its claims (`evidence/`, indexed by `evidence/README.md`) and the README's images (`assets/`) |
 | `skills/mm3/` | the Agent Skill (`SKILL.md` + references) |
+| `launcher/` | what the Claude Code plugin runs (`mm3-launch`, `mm3-launch.ps1`): Node 22.13+ runs MM3 as before, else it downloads the self-contained build and checks it against `checksums.json` (generated) |
 | `.claude-plugin/` | Claude Code plugin + marketplace manifests |
 | `test/{unit,contract,golden,e2e,live,gen}` | test tiers and mock-data generators |
 | `test/docker/` | clean-room test image + runner |

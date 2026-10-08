@@ -13,19 +13,21 @@
  * `io`/`keyStdin`, so a test drives the whole flow with no real process ever spawned and no real file outside a
  * temp dir ever touched.
  */
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { hasKey, resolveJevConfig } from '../classifier/typesafe/config.ts';
 import { ensureDir, pathsFor } from '../ledger/paths.ts';
 import { runDoctor } from '../verbs/doctor.ts';
 import type { VerbResult } from '../verbs/types.ts';
 import { planAgents } from './agents-file.ts';
-import { writeInstallRecord, type InstallMode } from './install-record.ts';
+import { readInstallRecord, writeInstallRecord, type InstallMode } from './install-record.ts';
 import { resolveStoredKey, storeKey } from './keystore.ts';
 import { detectSelfSpec, findOnPath, isWritableDir, npmGlobalPrefix } from './npm-info.ts';
 import { addMarketplace, installPlugin, marketplaceExists, pluginStatus, type PluginScope } from './plugin.ts';
 import { confirm, readHidden, readLine, readOneLine, type PromptIO } from './prompt.ts';
 import type { Runner } from './runner.ts';
+import { installBinary, installPluginDir, standaloneBinPath, standalonePluginDir } from './standalone.ts';
+import { isStandalone } from '../util/embedded.ts';
 
 export interface InitFlags {
   mode?: InstallMode;
@@ -102,7 +104,77 @@ function isNpxCache(binPath: string): boolean {
   return binPath.split(path.sep).includes('_npx');
 }
 
-async function stepCli(flags: InitFlags, ctx: InitCtx): Promise<string[]> {
+/** The npm channel's copy of mm3, described in a few words, or undefined when there is none: npm's link where the
+ *  standalone would go, the package's own bin on PATH, or a --local install the record points at. Both channels
+ *  write ~/.local/bin/mm3 (npm a link into its package, the standalone a real file) and one install.json, so the
+ *  second to run init must not replace the first. */
+function npmCopy(ctx: InitCtx): string | undefined {
+  const bin = standaloneBinPath(ctx.homeDir, ctx.platform);
+  try {
+    if (lstatSync(bin).isSymbolicLink()) return `${bin} -> ${readlinkSync(bin)}`;
+  } catch {
+    // nothing at the standalone's path: keep looking
+  }
+  const onPath = findOnPath('mm3', ctx.env, ctx.platform);
+  if (onPath && !isNpxCache(onPath) && isPackageBin(onPath, ctx.pkg.name)) return onPath;
+  const record = readInstallRecord(ctx.env);
+  if (record?.mode === 'local' && record.projectDir && existsSync(path.join(record.projectDir, 'node_modules', '.bin', 'mm3'))) return `npx mm3 in ${record.projectDir}`;
+  return undefined;
+}
+
+/** The standalone's copy of mm3 (the file `mm3 init` placed, or a real file already at its path), or undefined. */
+function standaloneCopy(ctx: InitCtx): string | undefined {
+  const bin = standaloneBinPath(ctx.homeDir, ctx.platform);
+  const record = readInstallRecord(ctx.env);
+  if (record?.mode === 'standalone' && existsSync(record.binPath ?? bin)) return record.binPath ?? bin;
+  try {
+    if (lstatSync(bin).isFile() && !isPackageBin(bin, ctx.pkg.name)) return bin;
+  } catch {
+    // nothing there
+  }
+  return undefined;
+}
+
+/** The standalone's version of the install step: the same end state npm's gives (a file on PATH, the plugin
+ *  folder the marketplace registers, install.json), with the running file standing in for the package. Run
+ *  again it changes nothing; run from a newer file it replaces the installed one in place. */
+function stepCliStandalone(flags: InitFlags, ctx: InitCtx): CliResult {
+  const npm = npmCopy(ctx);
+  if (npm) return { lines: [line('already', 'cli', `mm3 is already installed from npm (${npm}) → kept, not replaced; to switch to the standalone run "mm3 uninstall --all", then this file's init`)], deferred: true };
+  return { lines: placeStandalone(flags, ctx), deferred: false };
+}
+
+function placeStandalone(flags: InitFlags, ctx: InitCtx): string[] {
+  if (flags.mode && flags.mode !== 'user') {
+    return [line('problem', 'cli', `the standalone installs per user, into ~/.local/bin → drop --${flags.mode}, or run "mm3 init --user"`)];
+  }
+  const binPath = standaloneBinPath(ctx.homeDir, ctx.platform);
+  const pluginDir = standalonePluginDir(ctx.homeDir);
+  const record = readInstallRecord(ctx.env);
+  const placed = installBinary(process.execPath, binPath, record?.mode === 'standalone' ? record.version : undefined, ctx.pkg.version);
+  if (placed.status === 'problem') return [line('problem', 'cli', placed.text)];
+  const folder = installPluginDir(pluginDir, binPath);
+  if (folder.status === 'problem') return [line('done', 'cli', placed.text), line('problem', 'cli', folder.text)];
+  const lines = [line(placed.status, 'cli', placed.text), line(folder.status, 'cli', folder.text)];
+  if (record?.mode !== 'standalone' || record.binPath !== binPath || record.version !== ctx.pkg.version) {
+    writeInstallRecord(ctx.env, { mode: 'standalone', binPath, pluginDir, version: ctx.pkg.version, installedAt: nowIso(ctx) });
+  }
+  const bin = path.dirname(binPath);
+  if (!(ctx.env.PATH ?? '').split(path.delimiter).includes(bin)) lines.push(line('problem', 'cli', `${bin} is not on PATH → add this to your shell profile: export PATH="${bin}:$PATH"`));
+  return lines;
+}
+
+/** `deferred`: the other channel already owns the install, so init changed nothing and the plugin step must not point at a folder that is not there. */
+interface CliResult { lines: string[]; deferred: boolean }
+
+async function stepCli(flags: InitFlags, ctx: InitCtx): Promise<CliResult> {
+  if (isStandalone()) return stepCliStandalone(flags, ctx);
+  const standalone = standaloneCopy(ctx);
+  if (standalone) return { lines: [line('already', 'cli', `mm3 is already installed as the standalone (${standalone}) → kept, not replaced; to switch to npm run "mm3 uninstall --all", then init again`)], deferred: true };
+  return { lines: await stepCliNpm(flags, ctx), deferred: false };
+}
+
+async function stepCliNpm(flags: InitFlags, ctx: InitCtx): Promise<string[]> {
   const onPath = findOnPath('mm3', ctx.env, ctx.platform);
   if (onPath && !isNpxCache(onPath) && isPackageBin(onPath, ctx.pkg.name) && !flags.mode) {
     return [line('already', 'cli', `already reachable as ${onPath}`)];
@@ -176,14 +248,16 @@ async function stepKey(flags: InitFlags, ctx: InitCtx): Promise<string[]> {
   return [line('done', 'key', `stored in ${stored.detail} — checked on first real call`)];
 }
 
-async function stepPlugin(flags: InitFlags, ctx: InitCtx): Promise<string[]> {
+async function stepPlugin(flags: InitFlags, ctx: InitCtx, deferred: boolean): Promise<string[]> {
   if (flags.claude === false) return [line('skipped', 'plugin', 'skipped (--no-claude)')];
   const claudeOnPath = findOnPath('claude', ctx.env, ctx.platform) !== undefined;
   if (flags.claude !== true && !claudeOnPath) return [line('skipped', 'plugin', 'skipped (claude not found on PATH)')];
 
   const lines: string[] = [];
   if (!marketplaceExists(ctx.runner)) {
-    const r = addMarketplace(ctx.runner, ctx.packageDir);
+    // The other channel owns the install, so there is no plugin folder of ours to register: it registers its own.
+    if (deferred) return [line('skipped', 'plugin', 'skipped (the plugin folder belongs to the other install: run its "mm3 init" to register it)')];
+    const r = addMarketplace(ctx.runner, isStandalone() ? standalonePluginDir(ctx.homeDir) : ctx.packageDir);
     lines.push(r.status === 0 ? line('done', 'plugin', 'added the mvp-scale marketplace') : line('problem', 'plugin', `could not add the mvp-scale marketplace → ${firstLine(r.stderr)}`));
   } else {
     lines.push(line('already', 'plugin', 'mvp-scale marketplace already added'));
@@ -246,12 +320,13 @@ export async function runInit(flags: InitFlags, ctx: InitCtx): Promise<VerbResul
     return { exit: out.some((l) => l.startsWith(GLYPH.problem)) ? 1 : 0, text: `${out.join('\n')}\n` };
   }
   const lines: string[] = [];
-  lines.push(...(await stepCli(flags, ctx))); // per user
+  const cli = await stepCli(flags, ctx); // per user
+  lines.push(...cli.lines);
   lines.push(...(await stepKey(flags, ctx))); // per user
 
   const inProject = insideGitProject(ctx.cwd);
   if (inProject) {
-    lines.push(...(await stepPlugin(flags, ctx))); // per project (default scope)
+    lines.push(...(await stepPlugin(flags, ctx, cli.deferred))); // per project (default scope)
     lines.push(...stepProject(ctx)); // per project
   } else {
     lines.push(NOT_A_PROJECT);

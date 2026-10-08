@@ -81,23 +81,28 @@ function toPlace(target: string, root: string): { place: string } | { stop: stri
   return { place: rel.split(path.sep).join('/') || '.' };
 }
 
+/** The one formatter behind both renderings of a place: `total` runs touched it (`counts` split the non-rehearsal
+ *  ones by outcome, `rehearsal` counts the rest), `shown` is the newest few, newest first. */
+function formatPlace(place: string, total: number, counts: Record<Outcome | 'open', number>, rehearsal: number, shown: readonly AnyRun[], outcomeOf: (id: string) => Outcome | undefined): VerbResult {
+  if (!total) return { exit: 0, text: `mm3 view ${clip(place, 60)} · no runs yet → "mm3 class <request>" starts one` };
+  const head = `mm3 view ${clip(place, 60)} · ${total} run${total === 1 ? '' : 's'} · held ${counts.held} · overruled ${counts.overruled} · failed ${counts.failed} · open ${counts.open}${rehearsal ? ` · rehearsal ${rehearsal}` : ''}`;
+  const older = total - shown.length;
+  return {
+    exit: 0,
+    text: [head, ...shown.map((r) => runLine(r, outcomeOf(r.id) ?? 'open')), ...(older ? [`… ${older} older → raise the level to see more`] : [])].join('\n'),
+  };
+}
+
 /** Renders byPlace's response for `hits`, already in ledger append order (oldest first) — shared by the
  *  full-scan path ('.') and the index-backed path, which differ only in how `hits` and `outcomeOf` were built. */
 function renderPlace(place: string, hits: readonly AnyRun[], outcomeOf: (id: string) => Outcome | undefined, limit: number): VerbResult {
-  if (!hits.length) return { exit: 0, text: `mm3 view ${clip(place, 60)} · no runs yet → "mm3 class <request>" starts one` };
   const counts = { held: 0, overruled: 0, failed: 0, open: 0 };
   let rehearsal = 0;
   for (const r of hits) {
     if (isRehearsal(r.adapter)) rehearsal += 1;
     else counts[outcomeOf(r.id) ?? 'open'] += 1;
   }
-  const head = `mm3 view ${clip(place, 60)} · ${hits.length} run${hits.length === 1 ? '' : 's'} · held ${counts.held} · overruled ${counts.overruled} · failed ${counts.failed} · open ${counts.open}${rehearsal ? ` · rehearsal ${rehearsal}` : ''}`;
-  const shown = hits.slice(-limit).reverse();
-  const older = hits.length - shown.length;
-  return {
-    exit: 0,
-    text: [head, ...shown.map((r) => runLine(r, outcomeOf(r.id) ?? 'open')), ...(older ? [`… ${older} older → raise the level to see more`] : [])].join('\n'),
-  };
+  return formatPlace(place, hits.length, counts, rehearsal, hits.slice(-limit).reverse(), outcomeOf);
 }
 
 const GATE_RANK: Record<Gate, number> = { fail: 0, unsure: 1, pass: 2 };
@@ -127,8 +132,8 @@ function renderSummary(scope: string, hits: readonly AnyRun[]): VerbResult {
 }
 
 /** place mode, the full-scan way: every run in the ledger, filtered by whereMatches/tagsMatch. Used for '.'
- *  (every run — the index's place table has nothing narrower to offer there) and as byPlaceIndexed's own
- *  fallback if the index can't be used for some reason (paths.log missing is handled the same way either path). */
+ *  with --summary (one line per place needs every run's record) and as byPlaceCounted's own fallback if a shown
+ *  record fails its re-check (paths.log missing is handled the same way either path). */
 function byPlaceFullScan(place: string, paths: Mm3Paths, limit: number, summary: boolean): VerbResult {
   const records = readLedger(paths, { partialTail: true });
   const runs = records.filter((r): r is AnyRun => isRun(r) || isContractRun(r));
@@ -138,13 +143,47 @@ function byPlaceFullScan(place: string, paths: Mm3Paths, limit: number, summary:
 }
 
 /**
- * place mode, index-backed (place history is served via the index): `placeCandidates` narrows to the
- * ids whose where/tag entries could match `place` (oldest first, by offset), each pread by offset instead of
- * streaming the whole log. Every candidate is still re-checked against the real record with the EXACT same
- * whereMatches/tagsMatch predicate byPlaceFullScan uses — the index is a candidate generator, never the final
- * word — so a stale offset, a missed escape, or any other index quirk can only cost a wasted pread, never a
- * wrong answer. `outcomesFor` replaces the old per-hit `latestOutcome(records, id)` rescan (O(hits × records))
- * with one batched query over just the hit ids.
+ * place mode, index-backed and counted (place history is served via the index): the index COUNTS the runs that
+ * touched `place` ('.': every run) and splits them by adapter and latest outcome, in SQL, and names the newest
+ * `limit` of them; only those few records are read, and each is re-checked against the real record with the EXACT
+ * same predicate byPlaceFullScan uses, so a stale offset or any other index quirk shows up as a failed check on a
+ * run that is actually displayed. Then (and only then) the answer is recomputed the long way (byPlaceIndexed), so
+ * the index can cost time but never change what is shown. Memory and time no longer grow with the number of runs
+ * under the place: `view src` on a 100,000-run ledger used to read all 100,000 records.
+ */
+function byPlaceCounted(place: string, paths: Mm3Paths, limit: number): VerbResult | undefined {
+  return withIndex(
+    paths,
+    (handle) => {
+      const stats = handle.placeRunStats(place === '.' ? null : place, limit);
+      const shown: AnyRun[] = [];
+      for (const { offset } of stats.newest) {
+        const rec = readRecordAt(paths.log, offset);
+        const ok = rec && (isRun(rec) || isContractRun(rec)) && (place === '.' || tagsMatch(rec, place) || whereMatches(rec, place));
+        if (!ok) return undefined; // the index and the log disagree about a run on screen: recompute the long way
+        shown.push(rec);
+      }
+      const counts = { held: 0, overruled: 0, failed: 0, open: 0 };
+      let rehearsal = 0;
+      for (const b of stats.breakdown) {
+        if (isRehearsal(b.adapter)) rehearsal += b.n;
+        else counts[b.outcome ?? 'open'] += b.n;
+      }
+      const outcomes = handle.outcomesFor(shown.map((r) => r.id));
+      return formatPlace(place, stats.total, counts, rehearsal, shown, (id) => outcomes.get(id));
+    },
+    { readOnly: true },
+  );
+}
+
+/**
+ * place mode, index-backed, record by record (the long way, kept for --summary and as byPlaceCounted's fallback):
+ * `placeCandidates` narrows to the ids whose where/tag entries could match `place` (oldest first, by offset),
+ * each pread by offset instead of streaming the whole log. Every candidate is still re-checked against the real
+ * record with the EXACT same whereMatches/tagsMatch predicate byPlaceFullScan uses — the index is a candidate
+ * generator, never the final word — so a stale offset, a missed escape, or any other index quirk can only cost a
+ * wasted pread, never a wrong answer. `outcomesFor` replaces the old per-hit `latestOutcome(records, id)` rescan
+ * (O(hits × records)) with one batched query over just the hit ids.
  */
 function byPlaceIndexed(place: string, paths: Mm3Paths, limit: number, summary: boolean): VerbResult {
   // readOnly: view is free and read-only (dry runs and free reads write nothing) — it must
@@ -171,7 +210,11 @@ function byPlaceIndexed(place: string, paths: Mm3Paths, limit: number, summary: 
  *  concept only applies to a real draft check's own question set), so `hit`/`reused` are always false/null here
  *  — `goal` carries the place string itself, so the record still says WHAT was searched for. */
 function byPlace(place: string, paths: Mm3Paths, limit: number, summary: boolean): VerbResult {
-  const result = place === '.' ? byPlaceFullScan(place, paths, limit, summary) : byPlaceIndexed(place, paths, limit, summary);
+  const result = summary
+    ? place === '.'
+      ? byPlaceFullScan(place, paths, limit, summary)
+      : byPlaceIndexed(place, paths, limit, summary)
+    : (byPlaceCounted(place, paths, limit) ?? (place === '.' ? byPlaceFullScan(place, paths, limit, summary) : byPlaceIndexed(place, paths, limit, summary)));
   appendLookup(paths, { goal: place, where: [place], hit: false, reused: null });
   return result;
 }

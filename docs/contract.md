@@ -1499,8 +1499,8 @@ The Claude Code skill's own "Run this first" guidance sends a cold agent to `mm3
 
 **On an older Node:**
 
-- Every command exits 2 with exactly `✖ node: v<version> is too old → install Node 22.13 or newer (it powers the ledger index); https://nodejs.org`, then the pointer line (`→ see: mm3 agent <command>` from the CLI, `→ see: mm3 agent` from the plugin). [C-106]
-- The exception is `doctor`. It still runs, free and with no call. It shows `node: v<version> ✖ too old → install Node 22.13+` and `index: none (needs Node 22.13+)` in its own output. Then it too exits 2 rather than 0. [C-106]
+- Every command exits 2 with exactly `✖ node: v<version> is too old → pin Node 22.13+ for this project (nvm, fnm or Volta; no machine-wide change); see https://github.com/mvp-scale/mm3`, then the pointer line (`→ see: mm3 agent <command>` from the CLI, `→ see: mm3 agent` from the plugin). [C-106]
+- The exception is `doctor`. It still runs, free and with no call. It shows `node: v<version> ✖ too old → pin Node 22.13+ for this project; see https://github.com/mvp-scale/mm3` and `index: none (needs Node 22.13+)` in its own output. Then it too exits 2 rather than 0. [C-106]
 - `mm3 mcp` still answers `initialize` and `tools/list`, so a client's handshake never hangs. [C-106]
 - Every `tools/call` comes back `isError: true` with that same line and the overview pointer, whatever command was actually asked for, `doctor` included. The guard runs before the requested command ever does. [C-106]
 
@@ -1768,11 +1768,23 @@ The key's source (`env`, `keychain` or `file`) is carried alongside it. [C-097]
 
 **The plugin's nudge hook:**
 
-- The plugin ships one `PreToolUse` hook, declared in `hooks/hooks.json` (the documented plugin location, an event map under a top-level `"hooks"` key) and run by `node` from `${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs`. Enabling the plugin turns it on and disabling it turns it off. [C-268]
+- The plugin ships one `PreToolUse` hook, declared in `hooks/hooks.json` (the documented plugin location, an event map under a top-level `"hooks"` key) and runs `node ${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs` (the plugin launcher is not yet in the path: see the launcher section below). Enabling the plugin turns it on and disabling it turns it off. [C-268]
 - It fires before the `Agent` tool (and the older `Task` name), where a helper is about to be spawned, and before a `Bash` command that commits, merges, pushes or opens a PR (`git commit|merge|push`, `gh pr`). [C-268]
 - It nudges and never blocks: it prints one JSON object whose `additionalContext` is one line of at most 200 characters naming the next step (the helper moment points at `mm3 agent delegate`; the decision moment says to get a verdict, `view` then `class`, and to cite the `MM3-####` id), and it always exits 0. [C-268]
 - It speaks only when the project (the hook input's `cwd` or the project folder Claude Code names, or a folder above it) has `.mm3/`. It speaks once per agent per moment per session, kept by a marker file in a private folder (mode 0700, named for the user, checked to be a real folder the user owns) inside the temp folder. A marker that cannot be written, or a folder that is not safe to use, does not silence it. [C-268]
 - Garbage or empty input, another tool, another event, a command that decides nothing, or no `.mm3/` prints nothing and exits 0. [C-268]
+
+**The plugin launcher (a machine without Node 22.13+; shipped in the package and tested on every platform, but not yet wired into the plugin's manifests):**
+
+- The shipped manifests (`.claude-plugin/plugin.json`, `hooks/hooks.json`) still start MM3 with `node` (`node ${CLAUDE_PLUGIN_ROOT}/bin/mm3.mjs mcp`, `node ${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs`), exactly as before the launcher existed. The launcher-form manifests are kept as data in `launcher/manifests/` (`plugin.json`, `hooks.json`), are valid and name files that exist, and are what the launcher tests and the CI launcher jobs install. Switching the plugin over is a deliberate release step (copy them over the shipped files and flip `LAUNCHER_WIRED_INTO_PLUGIN` in `test/helpers/launcher.ts`); a test fails if the shipped manifests name the launcher without that flip. [C-288]
+- The claims below describe the launcher and its launcher-form manifests, which become the plugin's start commands at that switch. The plugin's MCP server and its hooks then start through one launcher, `launcher/mm3-launch` (a POSIX shell file; on Windows the MCP server starts through its twin `launcher/mm3-launch.cmd`, see below). With Node 22.13+ that can run MM3 it does exactly what the plugin did before: `node bin/mm3.mjs mcp` for the server and `node hooks/nudge.mjs` for the hook. It downloads nothing, writes nothing, and prints nothing on stderr. [C-280]
+- The MCP server's one command is the extensionless path `${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch` with the argument `mcp`, the same on every OS: macOS and Linux run that file directly (shebang, execute bit kept in git), and Windows, which starts the command through cmd, adds the extensions in `PATHEXT` and so runs `launcher/mm3-launch.cmd`, a CRLF batch file that needs no `sh`, Git or PowerShell when Node 22.13+ is usable and otherwise hands the download to `launcher/mm3-launch.ps1`. The hooks are shell-form commands that run the same extensionless path (Git Bash on Windows, `sh -c` elsewhere). No part of the plugin names `sh` as a program to find on `PATH`, which a default Git for Windows install does not put there. [C-287]
+- Without a usable Node (none, older than 22.13, or MM3 will not start on it) it downloads the self-contained MM3 for the machine's OS and CPU once, from the GitHub Release for the plugin's own version, and checks its sha256 against the value pinned in `launcher/checksums.json` before it installs anything. It says on stderr why it fell back, what it downloaded and from where, and that the check passed. [C-281]
+- A download whose hash differs from the pinned one, and a download that fails, install nothing and leave no partial file. It stops with one `✖` line that says what to do. [C-282]
+- The install is the same end state as `mm3 init` without a key (`~/.local/bin/mm3` and the config record), the downloaded file is made executable by the launcher itself, and every later start finds it and downloads nothing. [C-283]
+- A machine whose OS and CPU have no build listed in `launcher/checksums.json` (macOS on Apple silicon, today) downloads nothing and gets one `✖` line saying there is no self-contained build for it yet and to install Node.js 22.13 or newer. [C-284]
+- The Node floor the launcher checks is the same number as the one `mm3` itself enforces (C-106) and `package.json` `engines` states. A test fails when they differ. [C-285]
+- `launcher/checksums.json` is generated from the built files (`npm run gen:checksums`), never edited by hand. `npm run check:launcher` fails when it is missing, names a version other than `package.json`'s, points anywhere but this repository's GitHub Release for that version, or lists a file name the release does not use. [C-286]
 
 **Errors:**
 

@@ -38,7 +38,7 @@ import { configStatus, statusLine } from '../config/receipt.ts';
 import { nearMissNotes } from '../config/config.ts';
 import { validateConfig } from '../config/validate.ts';
 import { sqliteAvailable } from '../ledger/index.ts';
-import type { Mm3Paths } from '../ledger/paths.ts';
+import { relativeToCwd, type Mm3Paths } from '../ledger/paths.ts';
 import { envFilePath, looseFileModeWarning, readEnvFile } from '../setup/env-file.ts';
 import { agentsDoctorValue } from '../setup/agents-status.ts';
 import { readInstallRecord } from '../setup/install-record.ts';
@@ -105,7 +105,7 @@ function keyLine(env: Record<string, string | undefined>, config: JevConfig, dep
   if (config.keySource === 'file') {
     const file = envFilePath(env);
     const read = readEnvFile(file);
-    const mode = read?.mode ?? 0o600;
+    const mode = process.platform === 'win32' ? 0o600 : (read?.mode ?? 0o600); // Windows stat has no real mode bits
     const note = read
       ? (looseFileModeWarning(file, mode) ?? (read.ignoredLines > 0 ? `✖ credentials: ${file} has ${read.ignoredLines} line(s) mm3 ignored (not "export NAME='value'" for an allowed name) → fix or remove those lines` : undefined))
       : undefined;
@@ -160,6 +160,7 @@ function cliLine(env: Record<string, string | undefined>, platform: NodeJS.Platf
   if (!resolved && !record) return 'not on PATH → run "mm3 init" to install it';
   const shown = resolved ?? '(not currently on PATH)';
   if (!record) return `${shown} · on PATH${mismatch}`;
+  if (record.mode === 'standalone') return `${shown} · installed standalone (file ${record.binPath ?? '?'}, ${record.version ?? 'unknown version'})${mismatch}`;
   const flag = record.mode === 'global' ? '--global' : record.mode === 'user' ? '--user' : '--local';
   const detail = record.mode === 'local' ? `project ${record.projectDir ?? '?'}` : `npm prefix ${record.npmPrefix ?? '?'}`;
   return `${shown} · installed ${flag} (${detail})${mismatch}`;
@@ -199,7 +200,14 @@ function projectLine(root: string, deps: { runner?: Runner }): string {
  *  one, same `✖ config.<path>: problem → fix` shape `mm3 config`/`doctor <file>` use. Reads and hashes config.yaml;
  *  writes nothing. */
 function configField(paths: Mm3Paths | undefined): Value {
-  const status = configStatus(paths);
+  // On a Node with no node:sqlite the receipt lookup throws (the ledger backstop); doctor is the command a person on
+  // old Node runs to find out why, so it must still render, with the file's own checks and no receipt [C-106].
+  let status;
+  try {
+    status = configStatus(paths);
+  } catch {
+    status = configStatus(undefined);
+  }
   const line = statusLine(status);
   if (status.fileStops.length) return [...status.fileStops.map((s) => s.text), ...(line ? [line] : [])];
   if (status.kind === 'defaults') return '✔ config: defaults';
@@ -293,7 +301,7 @@ export function runDoctor(
   }
 
   const who = identityFor(env, config);
-  const project = paths ? projectLine(path.relative(process.cwd(), paths.root) || '.', deps) : 'none';
+  const project = paths ? projectLine(relativeToCwd(process.cwd(), paths.root) || '.', deps) : 'none';
   const { value: key, note: keyNote } = keyLine(env, config, deps);
   const notes = [
     'free: no call, no spend',

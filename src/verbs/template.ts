@@ -22,6 +22,7 @@ import { VERBS, type Verb } from '../contract/types.ts';
 import { findRun, isContractRun, type ContractRun } from '../ledger/log.ts';
 import { RUN_ID } from '../ledger/ids.ts';
 import type { Mm3Paths } from '../ledger/paths.ts';
+import { readPackageFile } from '../util/embedded.ts';
 import { clip } from '../util/text.ts';
 import { stopText } from './request.ts';
 import type { VerbResult } from './types.ts';
@@ -191,7 +192,7 @@ export function runTemplate(target: string, flags: TemplateFlags = {}, paths?: M
       };
     }
     const file = drillSampleFile(flags.parent, paths);
-    const raw = readFileSync(path.join(packageDir, 'skills', 'mm3', 'templates', file), 'utf8');
+    const raw = readPackageFile(packageDir, 'skills', 'mm3', 'templates', file);
     const doc = parseDocument(raw);
     doc.setIn(['mak', 'parent'], flags.parent);
     doc.setIn(['mak', 'from'], flags.from);
@@ -204,5 +205,5 @@ export function runTemplate(target: string, flags: TemplateFlags = {}, paths?: M
     return { exit: 2, text: stopText([`✖ template: --where/--goal need --from → mm3 template ${target} --from <request.yaml>`], 'template') };
   }
 
-  return { exit: 0, text: readFileSync(path.join(packageDir, 'skills', 'mm3', 'templates', `${target}.yaml`), 'utf8') };
+  return { exit: 0, text: readPackageFile(packageDir, 'skills', 'mm3', 'templates', `${target}.yaml`) };
 }
