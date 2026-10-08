@@ -16,7 +16,7 @@
     },
     {
       "agent": "codex",
-      "version": "codex-cli 0.161.0",
+      "version": "0.161.0",
       "status": "install-ready",
       "route": "plugin",
       "failover": "covered where the agent starts",
@@ -26,7 +26,7 @@
     },
     {
       "agent": "copilot",
-      "version": "GitHub Copilot CLI 1.0.93.",
+      "version": "1.0.93",
       "status": "install-ready",
       "route": "plugin",
       "failover": "covered where the agent starts",

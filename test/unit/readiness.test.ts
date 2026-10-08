@@ -45,7 +45,7 @@ describe('readiness', () => {
 });
 
 describe('readiness summary', () => {
-  const base = { kind: 'cell', run: 'RDY-0001', ts: '', agentVersion: '1.2.3', node: '', fetched: false, secondStart: false, firstError: '', how: [] as string[], ms: 0, variant: 'primary', route: 'plugin', boots: 'ok', l1: 'ok', l2: 'ok' } as const;
+  const base = { kind: 'cell', run: 'RDY-0001', ts: '', agentVersion: 'x-cli 1.2.3.', node: '', fetched: false, secondStart: false, firstError: '', how: [] as string[], ms: 0, variant: 'primary', route: 'plugin', boots: 'ok', l1: 'ok', l2: 'ok' } as const;
   const cell = (agent: string, variant: Cell['variant'], nodeId: string, over: Partial<Cell> = {}): Cell => ({ ...base, agent, variant, nodeId, ...over });
 
   it('calls an agent install-ready when 22.13 and 24 pass, and says where the failover is moot because the agent needs Node', async () => {

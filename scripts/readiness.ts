@@ -126,7 +126,7 @@ const OLD = ['none', 'stock', '20', '22.12']; // the Node states below MM3's flo
 export function summarize(cells: Cell[]): AgentSummary[] {
   return [...new Set(cells.map((c) => c.agent))].map((agent) => {
     const mine = cells.filter((c) => c.agent === agent);
-    const version = mine.find((c) => c.boots === 'ok' && c.agentVersion)?.agentVersion ?? '';
+    const version = /\d+(?:\.\d+)+[\w.-]*/u.exec(mine.find((c) => c.boots === 'ok' && c.agentVersion)?.agentVersion ?? '')?.[0]?.replace(/\.$/u, '') ?? ''; // the number, without the agent's own name around it
     if (mine.every((c) => c.route === 'none')) return { agent, version, status: 'no-surface' as const, route: '-', failover: 'not shown' as const, notes: [mine[0]?.firstError ?? ''] };
     const routes = [...new Set(mine.map((c) => c.route))].filter((r) => r !== 'none');
     const at = (route: string, variant: Cell['variant'], ids: string[]): Cell[] => mine.filter((c) => c.route === route && c.variant === variant && ids.includes(c.nodeId));
