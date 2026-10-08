@@ -14,7 +14,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, cpSync, createReadStream, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
@@ -199,9 +199,10 @@ export function evidenceMarkdown(cells: Cell[], meta: { run: string; ts: string;
 /** Serves the built standalone from 127.0.0.1. Each cell gets its own path prefix (`/<job>/file`), so the counts say which cell downloaded it. */
 function serve(file: string): Promise<{ url: string; hits: Map<string, number>; close: () => void }> {
   const hits = new Map<string, number>();
+  const body = readFileSync(file); // read once; the server answers from memory
   return new Promise((resolve) => {
     const s = createServer((req, res) => {
-      if (req.url?.endsWith(path.basename(file))) { const k = req.url.split('/')[1] ?? ''; hits.set(k, (hits.get(k) ?? 0) + 1); res.writeHead(200, { 'content-length': statSync(file).size }); createReadStream(file).pipe(res); } else { res.writeHead(404); res.end(); }
+      if (req.url?.endsWith(path.basename(file))) { const k = req.url.split('/')[1] ?? ''; hits.set(k, (hits.get(k) ?? 0) + 1); res.writeHead(200, { 'content-length': body.length }); res.end(body); } else { res.writeHead(404); res.end(); }
     }).listen(0, '127.0.0.1', () => resolve({ url: `http://127.0.0.1:${(s.address() as AddressInfo).port}`, hits, close: () => s.close() }));
   });
 }
@@ -212,9 +213,10 @@ function sh(cmd: string, args: string[], opts: { input?: string; cwd?: string } 
 }
 
 /** The plugin folder as `npm pack` ships it (primary) and a copy with the launcher manifests and a pin for the built standalone (failover). */
-function prepare(tmp: string, version: string): { mkt: string; mktl: string; binary: string; commit: string } {
+function prepare(tmp: string, version: string): { mkt: string; mktl: string; binary: string; sha256: string; commit: string } {
   const binary = path.resolve(`dist-binary/mm3-${version}-linux-x64`);
-  try { statSync(binary); } catch { throw new Error(`✖ standalone: ${binary} is not built → run: npm run build:binary -- --target linux-x64`); }
+  let bin: Buffer;
+  try { bin = readFileSync(binary); } catch { throw new Error(`✖ standalone: ${binary} is not built → run: npm run build:binary -- --target linux-x64`); }
   const pk = sh('npm', ['pack', '--silent', '--pack-destination', tmp]);
   if (pk.code !== 0) throw new Error(`✖ npm pack failed: ${first(pk.out)}`);
   const tgz = path.join(tmp, pk.out.trim().split('\n').pop()!);
@@ -227,9 +229,9 @@ function prepare(tmp: string, version: string): { mkt: string; mktl: string; bin
   cpSync('launcher/manifests/hooks.json', path.join(mktl, 'hooks/hooks.json'));
   const asset = path.basename(binary);
   // the launcher reads this file with sed, one asset per line, exactly as `npm run gen:checksums` writes it
-  writeFileSync(path.join(mktl, 'launcher/checksums.json'), `{\n  "version": "${version}",\n  "base": "http://127.0.0.1:0",\n  "assets": {\n    "linux-x64": { "file": "${asset}", "sha256": "${sha(readFileSync(binary))}", "bytes": ${statSync(binary).size} }\n  }\n}\n`);
+  writeFileSync(path.join(mktl, 'launcher/checksums.json'), `{\n  "version": "${version}",\n  "base": "http://127.0.0.1:0",\n  "assets": {\n    "linux-x64": { "file": "${asset}", "sha256": "${sha(bin)}", "bytes": ${bin.length} }\n  }\n}\n`);
   for (const d of [mkt, mktl]) { sh('git', ['init', '-q', '.'], { cwd: d }); sh('git', ['add', '-A'], { cwd: d }); sh('git', ['-c', 'user.email=r@r', '-c', 'user.name=readiness', 'commit', '-qm', 'readiness'], { cwd: d }); }
-  return { mkt, mktl, binary, commit: sh('git', ['rev-parse', 'HEAD']).out.trim() };
+  return { mkt, mktl, binary, sha256: sha(bin), commit: sh('git', ['rev-parse', 'HEAD']).out.trim() };
 }
 
 async function main(): Promise<void> {
@@ -271,7 +273,7 @@ async function main(): Promise<void> {
   const rows = readRows();
   const run = nextRun(rows);
   const record = !argv.includes('--no-ledger');
-  const defn = { agents: agents.map((a) => a.id), nodes: nodes.map((n) => n.id), image: sh('docker', ['image', 'inspect', '-f', '{{.Id}}', IMAGE]).out.trim(), os: 'ubuntu-24.04', commit: sh('git', ['rev-parse', 'HEAD']).out.trim(), mm3: version, standaloneSha256: sha(readFileSync(prep.binary)) };
+  const defn = { agents: agents.map((a) => a.id), nodes: nodes.map((n) => n.id), image: sh('docker', ['image', 'inspect', '-f', '{{.Id}}', IMAGE]).out.trim(), os: 'ubuntu-24.04', commit: sh('git', ['rev-parse', 'HEAD']).out.trim(), mm3: version, standaloneSha256: prep.sha256 };
   if (record) append({ kind: 'run', phase: 'started', run, ts: new Date().toISOString(), ...defn });
 
   const cells: Cell[] = [];
