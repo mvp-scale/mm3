@@ -13,6 +13,21 @@ import { renderChecksums } from '../../scripts/check-launcher.ts';
 export const LAUNCHER = path.resolve('launcher/mm3-launch');
 export const VERSION = '9.9.9';
 
+/** The one switch for the plugin flip. false: the shipped manifests (.claude-plugin/plugin.json, hooks/hooks.json) start MM3 with node, exactly as before the launcher
+ *  existed, and the launcher is shipped but dormant. The next release flips it by copying LAUNCHER_MANIFESTS over the shipped files and setting this to true
+ *  (test/unit/launcher-manifests.test.ts then requires the shipped files to be those copies). Nothing else decides it. */
+export const LAUNCHER_WIRED_INTO_PLUGIN = false;
+/** The launcher-form manifests, kept as data: what the plugin folder would hold after the flip. The launcher tests, the real-Claude test and the CI launcher jobs install these. */
+export const LAUNCHER_MANIFESTS = { plugin: 'launcher/manifests/plugin.json', hooks: 'launcher/manifests/hooks.json' } as const;
+
+/** Makes the plugin folder at `dir` carry the launcher-form manifests (over whatever .claude-plugin/plugin.json and hooks/hooks.json it has). */
+export function installLauncherManifests(dir: string): void {
+  mkdirSync(path.join(dir, '.claude-plugin'), { recursive: true });
+  mkdirSync(path.join(dir, 'hooks'), { recursive: true });
+  copyFileSync(path.resolve(LAUNCHER_MANIFESTS.plugin), path.join(dir, '.claude-plugin', 'plugin.json'));
+  copyFileSync(path.resolve(LAUNCHER_MANIFESTS.hooks), path.join(dir, 'hooks', 'hooks.json'));
+}
+
 const REQUIRED = ['sh', 'sed', 'awk', 'cat', 'chmod', 'cp', 'curl', 'cut', 'date', 'dirname', 'basename', 'head', 'ls', 'mkdir', 'mkfifo', 'mktemp', 'mv', 'rm', 'sleep', 'tail', 'tr', 'uname', 'sha256sum'];
 const OPTIONAL = ['nohup', 'setsid', 'env', 'touch', 'ln', 'kill'];
 

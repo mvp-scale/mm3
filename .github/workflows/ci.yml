@@ -2,7 +2,10 @@
 # other platform GitHub's free runners offer, on its own native runner: Linux arm64, macOS Apple silicon and Intel, Windows x64 and arm64.
 # Per platform: npm ci, npm run build, then the unit/contract/golden tiers and the cli tier (the built CLI, end to end). Tests that are POSIX-only
 # (symlinks, chmod, sh scripts) skip themselves on win32 with the reason beside the test. The self-contained files are tested the same way,
-# on the same six runners, by standalone.yml. fail-fast is off so one platform's red never hides the others.
+# on the same six runners, by standalone.yml. fail-fast is off so one platform's red never hides the others, and the two jobs have no `needs:` on each other,
+# so one push shows every platform's result.
+# GATING: `test` (every step) and `native` (npm ci, build, contract and golden tiers, cli tier, and the unit tier everywhere but Windows).
+# INFORMATIONAL (continue-on-error): the Windows unit tier, until its first run is triaged.
 name: ci
 
 on:
@@ -44,7 +47,9 @@ jobs:
       - run: npx tsx scripts/check-readme.ts
       - run: npm run check:pack
       - run: npm run check:plugin
-      - run: npm run check:launcher   # launcher/checksums.json is there and names package.json's version
+      # Last step on purpose, so its red hides nothing above it: launcher/checksums.json is there, names package.json's version and pins all six
+      # builds. It stays red until the owner commits the complete file that the pin job of standalone.yml prints (never edited by hand, never faked).
+      - run: npm run check:launcher
 
   native:
     name: npm package on ${{ matrix.runner }} / node ${{ matrix.node }}

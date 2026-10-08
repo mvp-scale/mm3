@@ -6,7 +6,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, symlinkSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { cleanKits, HOST_KEY, VERSION, launcherSkipReason, makeKit, pinFile, serveRelease } from '../../helpers/launcher.ts';
+import { cleanKits, HOST_KEY, VERSION, installLauncherManifests, launcherSkipReason, makeKit, pinFile, serveRelease } from '../../helpers/launcher.ts';
 
 const pkgVersion = (JSON.parse(readFileSync('package.json', 'utf8')) as { version: string }).version;
 const BIN = process.env.MM3_BIN ?? path.resolve(`dist-binary/mm3-${pkgVersion}-linux-x64`);
@@ -35,10 +35,11 @@ describe.skipIf(skip !== undefined)(`launcher with real Claude Code and the real
     symlinkSync(claude!, path.join(kit.tools, 'claude'));
     const gitPath = (process.env.PATH ?? '').split(path.delimiter).map((d) => path.join(d, 'git')).find((p) => existsSync(p));
     if (gitPath) symlinkSync(gitPath, path.join(kit.tools, 'git'));
-    // a plugin folder exactly as the repo ships it, with the pin file naming the built file
+    // a plugin folder as the repo ships it but with the launcher-form manifests (the shipped ones do not use the launcher yet), and the pin file naming the built file
     const market = path.join(kit.root, 'marketplace');
     for (const d of ['.claude-plugin', 'hooks', 'launcher', 'skills']) cpSync(path.resolve(d), path.join(market, d), { recursive: true });
     cpSync(path.resolve('bin/mm3.mjs'), path.join(market, 'bin', 'mm3.mjs'));
+    installLauncherManifests(market);
     const asset = `mm3-${VERSION}-${HOST_KEY}`;
     const realKit = { ...kit, plugin: market };
     pinFile(realKit, BIN, HOST_KEY, asset);

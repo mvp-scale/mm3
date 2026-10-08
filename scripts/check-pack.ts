@@ -27,10 +27,13 @@ export const REQUIRED: readonly string[] = [
   '.claude-plugin/marketplace.json',
   'hooks/hooks.json',
   'hooks/nudge.mjs',
-  'launcher/mm3-launch', // .claude-plugin/plugin.json and hooks/hooks.json start MM3 through it (`${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch`, run directly on macOS/Linux)
+  // the launcher ships but the plugin does not start through it yet (the shipped manifests still run node); the next release copies launcher/manifests/* over them
+  'launcher/mm3-launch', // run directly on macOS/Linux once the manifests name `${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch`
   'launcher/mm3-launch.cmd', // the same command on Windows: cmd adds .cmd from PATHEXT, so the extensionless manifest command runs this batch file
   'launcher/mm3-launch.ps1',
   'launcher/checksums.json', // the hashes the launcher checks a downloaded self-contained build against (generated: npm run gen:checksums)
+  'launcher/manifests/plugin.json', // the launcher-form manifests (data): what the plugin switches to
+  'launcher/manifests/hooks.json',
   'bin/mm3.mjs', // .claude-plugin/plugin.json launches `node ${CLAUDE_PLUGIN_ROOT}/bin/mm3.mjs mcp`: without it the plugin npm's init registers cannot start its MCP server
   'README.md',
   'LICENSE',
@@ -51,7 +54,7 @@ export function checkPackContents(entries: readonly PackEntry[]): string[] {
   for (const req of REQUIRED) {
     if (!paths.has(req)) problems.push(`✖ pack: "${req}" is missing from the tarball → check package.json's "files", "bin" and "exports"`);
   }
-  // macOS and Linux run the manifest's command directly, so the tarball must carry the execute bit on the launcher
+  // macOS and Linux will run the manifest's command directly once the plugin switches to the launcher, so the tarball must already carry the execute bit
   const launcher = entries.find((e) => e.path === EXECUTABLE);
   if (launcher?.mode !== undefined && (launcher.mode & 0o111) === 0) problems.push(`✖ pack: "${EXECUTABLE}" ships without its execute bit → run: git update-index --chmod=+x ${EXECUTABLE} && chmod +x ${EXECUTABLE}`);
   return problems;

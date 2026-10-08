@@ -3,10 +3,10 @@
 # CI runs it on a real Windows runner (.github/workflows/standalone.yml). It installs the repo's plugin into Claude Code with an isolated
 # config and home, with NO Node on PATH, serves the built Windows file from 127.0.0.1 as the fake GitHub Release (the pin file is written
 # for that file), and requires `claude mcp list` to show the MM3 server connected after one download, and a second start to download nothing.
-# The MCP command is the committed one: the extensionless ${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch, which Claude Code starts through cmd and
+# The MCP command is the launcher-form one (launcher/manifests/plugin.json, not yet the shipped plugin.json): the extensionless ${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch, which Claude Code starts through cmd and
 # cmd resolves to launcher\mm3-launch.cmd (PATHEXT). The cases differ in which Git for Windows folders are on PATH and in the folder the plugin sits in:
-#   cmd-default  the committed plugin.json, PATH has only Git's cmd folder: what the Git for Windows installer sets by default (sh.exe does NOT
-#                resolve). This is the machine most users have, and it MUST pass.
+#   cmd-default  the launcher-form plugin.json (launcher/manifests), PATH has only Git's cmd folder: what the Git for Windows installer sets by default (sh.exe does NOT
+#                resolve). The machine most users have; it must pass before the plugin is switched to the launcher (informational in CI until then).
 #   cmd-space    the same, in a folder whose name has a space (a user name with a space puts the plugin under such a path); informational
 #   sh-visible   the same plugin.json, PATH also has Git's bin and usr\bin folders (sh.exe resolves): the .cmd must still be the one that runs
 #   powershell   the other candidate: command `powershell -File launcher\mm3-launch.ps1 mcp`, PATH has neither; informational
@@ -34,10 +34,13 @@ $git = Split-Path -Parent (Split-Path -Parent (Get-Command git -ErrorAction Stop
 $bash = Join-Path $git 'bin\bash.exe'
 if (-not (Test-Path $bash)) { Fail "Git for Windows has no bash.exe under $git\bin -> this check needs Git for Windows" }
 
-# the plugin exactly as the repo ships it, plus a pin file for the built file, served from localhost
+# the plugin as the repo ships it (with the launcher-form manifests, below), plus a pin file for the built file, served from localhost
 $plugin = Join-Path $W 'plugin'
 $null = New-Item -ItemType Directory -Path $plugin
 foreach ($d in '.claude-plugin','hooks','launcher','skills','bin') { Copy-Item -Recurse (Join-Path $Repo $d) (Join-Path $plugin $d) }
+# the repo ships the node-form manifests while the launcher is dormant; the launcher is tested with its own (launcher\manifests), which is what the plugin gets at the switch
+Copy-Item (Join-Path $Repo 'launcher\manifests\plugin.json') (Join-Path $plugin '.claude-plugin\plugin.json') -Force
+Copy-Item (Join-Path $Repo 'launcher\manifests\hooks.json') (Join-Path $plugin 'hooks\hooks.json') -Force
 $asset = Split-Path -Leaf $Bin
 $key   = [regex]::Match($asset, '-(win-(?:x64|arm64))\.exe$').Groups[1].Value   # the pin names the file under the key the launcher looks up on this CPU
 if (-not $key) { Fail "cannot tell which build $asset is (expected mm3-<version>-win-x64.exe or -win-arm64.exe)" }
@@ -81,7 +84,7 @@ try {
   $r = Claude @('plugin','install','mm3@mvp-scale');    if ($r.code -ne 0) { Fail "plugin install failed: $($r.out)" }
   $r = Claude @('--debug-file',"$W\debug1.log",'mcp','list'); Write-Host $r.out
   if ($r.out -notmatch 'mm3-launch' ) { Fail 'claude mcp list did not list the plugin server' }
-  if ($Case -ne 'powershell' -and $r.out -match 'mm3-launch\.ps1') { Fail 'the committed plugin.json names the .ps1 directly; it must name the extensionless launcher' }
+  if ($Case -ne 'powershell' -and $r.out -match 'mm3-launch\.ps1') { Fail 'the launcher-form plugin.json names the .ps1 directly; it must name the extensionless launcher' }
   if ($r.out -match 'Failed to connect' -or $r.out -notmatch 'Connected') {
     if (Test-Path "$W\debug1.log") { Select-String -Path "$W\debug1.log" -Pattern 'Server stderr|spawn|ENOENT|not found|Connection failed' | Select-Object -First 15 | ForEach-Object { Write-Host "  debug: $($_.Line)" } }
     Fail "the MM3 server did not connect on the first start (sh on PATH = $shOnPath) -> see the lines above; command used: $(if ($Case -eq 'powershell') { 'powershell -File launcher/mm3-launch.ps1 mcp' } else { '<plugin>/launcher/mm3-launch mcp (cmd resolves it to mm3-launch.cmd)' })"

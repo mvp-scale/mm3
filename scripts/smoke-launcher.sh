@@ -14,6 +14,8 @@ key=${asset#mm3-$version-}; key=${key%.exe}
 sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 W=$(mktemp -d); mkdir -p "$W/rel" "$W/home" "$W/plugin"
 for d in .claude-plugin hooks launcher skills bin; do cp -R "$d" "$W/plugin/$d"; done
+# the repo ships the node-form manifests while the launcher is dormant; the launcher is tested with its own (launcher/manifests/), which is what the plugin gets at the switch
+cp launcher/manifests/plugin.json "$W/plugin/.claude-plugin/plugin.json"; cp launcher/manifests/hooks.json "$W/plugin/hooks/hooks.json"
 cp "$BIN" "$W/rel/$asset"
 port=$((8700 + $$ % 200))
 printf '{\n  "version": "%s",\n  "base": "http://127.0.0.1:%s",\n  "assets": {\n    "%s": { "file": "%s", "sha256": "%s", "bytes": %s }\n  }\n}\n' \

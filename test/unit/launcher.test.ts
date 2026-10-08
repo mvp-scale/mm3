@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { MIN_NODE_LABEL } from '../../src/util/node-version.ts';
-import { cleanKits, FAKE_STANDALONE, HOST_KEY, INITIALIZE, VERSION, launcherSkipReason, makeKit, pinFile, runLauncher, serveRelease, type Kit, type NodeKind, type Release } from '../helpers/launcher.ts';
+import { cleanKits, FAKE_STANDALONE, HOST_KEY, INITIALIZE, LAUNCHER_MANIFESTS, VERSION, launcherSkipReason, makeKit, pinFile, runLauncher, serveRelease, type Kit, type NodeKind, type Release } from '../helpers/launcher.ts';
 
 const skip = launcherSkipReason();
 if (skip !== undefined && process.env.MM3_REQUIRE_LAUNCHER) it('[C-281] the launcher tests must run here (MM3_REQUIRE_LAUNCHER is set)', () => { throw new Error(`launcher tests are skipped: ${skip}`); });
@@ -233,9 +233,10 @@ it('the PowerShell launcher computes sha256 with .NET, not Get-FileHash: Claude 
 });
 
 // ---- how the plugin names its launcher: one extensionless command, run directly on macOS/Linux, resolved to a .cmd by cmd on Windows ----
+// The manifests read here are the launcher-form ones (launcher/manifests/): the shipped plugin does not use the launcher yet (test/unit/launcher-manifests.test.ts).
 describe('the launcher command the plugin names [C-287]', () => {
-  const mcp = (JSON.parse(readFileSync('.claude-plugin/plugin.json', 'utf8')) as { mcpServers: { mm3: { command: string; args: string[] } } }).mcpServers.mm3;
-  const hooks = JSON.parse(readFileSync('hooks/hooks.json', 'utf8')) as { hooks: Record<string, Array<{ hooks: Array<{ command: string; args?: string[] }> }>> };
+  const mcp = (JSON.parse(readFileSync(LAUNCHER_MANIFESTS.plugin, 'utf8')) as { mcpServers: { mm3: { command: string; args: string[] } } }).mcpServers.mm3;
+  const hooks = JSON.parse(readFileSync(LAUNCHER_MANIFESTS.hooks, 'utf8')) as { hooks: Record<string, Array<{ hooks: Array<{ command: string; args?: string[] }> }>> };
   const hookCommands = Object.values(hooks.hooks).flatMap((groups) => groups.flatMap((g) => g.hooks));
 
   it('[C-287] the MCP command is the extensionless launcher path, not `sh`: a default Git for Windows install has no sh on PATH, and cmd turns the bare name into mm3-launch.cmd', () => {

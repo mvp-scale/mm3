@@ -21,7 +21,7 @@ Pick **project** scope. Claude asks for a TypeSafe API key (masked, optional): p
 
 The plugin carries its own copy of MM3 and gives Claude the `mm3` tool, so Claude can run every command (`mm3 config --load` included) without anything else installed. It is updated through Claude Code, like any plugin.
 
-On a machine without Node 22.13+, the plugin downloads the self-contained MM3 build once (about 100 MB, from this repository's GitHub Release for the plugin's own version), checks it against a sha256 pinned inside the plugin before it installs it to `~/.local/bin/mm3`, and says so in Claude Code's start-up message. With Node 22.13+ nothing is downloaded. The self-contained build exists for Linux, Windows and macOS, each on Intel/AMD (x64) and ARM (arm64). Details: [Node version](docs/node-version.md#claude-code-without-node).
+On a machine without Node 22.13+ the plugin, as installed from npm or the marketplace, still needs Node to start, exactly as before. The self-contained MM3 build (one file per system, own Node inside, for Linux, Windows and macOS on Intel/AMD and ARM) runs every command without Node, and its `init` registers a plugin that starts the file itself. The plugin's own fall-back (it downloads that build once and checks it against a sha256 pinned inside the plugin) ships in this package and is tested on every platform, but the plugin does not start through it yet; that switch comes in the next release. Details: [Node version](docs/node-version.md#claude-code-without-node).
 
 In your own terminal (optional, needs Node 22.13+; [how to pin it for one project](docs/node-version.md)). Run it without installing anything:
 
