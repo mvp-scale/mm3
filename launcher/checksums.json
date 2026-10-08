@@ -2,11 +2,11 @@
   "version": "0.1.4",
   "base": "https://github.com/mvp-scale/mm3/releases/download/v0.1.4",
   "assets": {
-    "darwin-arm64": { "file": "mm3-0.1.4-darwin-arm64", "sha256": "f94ef0b5e7ef497fe29d9414d3f094d354a8b228acf6a9491f4e3483eabcf1a3", "bytes": 122781232 },
-    "darwin-x64": { "file": "mm3-0.1.4-darwin-x64", "sha256": "1cf302079fc65918bdad607445e21b466f988468916ae056f44f62d1334d5dff", "bytes": 125926720 },
-    "linux-arm64": { "file": "mm3-0.1.4-linux-arm64", "sha256": "3d9bb9cae2539e34a42891862051d84ec411ad04cb91968a5af236716c2f5a73", "bytes": 123866240 },
-    "linux-x64": { "file": "mm3-0.1.4-linux-x64", "sha256": "98a0cc6ea6c965c6646daafeb4d7de53d41a466a3b7b559ed847b2e2b1ec7661", "bytes": 127536320 },
-    "win-arm64": { "file": "mm3-0.1.4-win-arm64.exe", "sha256": "35c6f68ed445e90922111241ec43d1e4157b765aadb59025863b97d9376d369b", "bytes": 82887680 },
-    "win-x64": { "file": "mm3-0.1.4-win-x64.exe", "sha256": "11eea62cef7cc6113b1873e31edc3b9cdf17500b102565b67829030c80e6b5e9", "bytes": 94586368 }
+    "darwin-arm64": { "file": "mm3-0.1.4-darwin-arm64", "sha256": "d1782b9b30f9b02039412e2121ace4f9580d27fe690c14b37105c2144f14f714", "bytes": 122781232 },
+    "darwin-x64": { "file": "mm3-0.1.4-darwin-x64", "sha256": "e8e5282c8aafd8fd75519db3b40516929f93822a051dda4fb87f393405e591c1", "bytes": 125926720 },
+    "linux-arm64": { "file": "mm3-0.1.4-linux-arm64", "sha256": "7fd40e381a467fbb74cd196d9499e607eb793863856762477769a751b3bcac30", "bytes": 123866240 },
+    "linux-x64": { "file": "mm3-0.1.4-linux-x64", "sha256": "63d680b0e47626042ece6207b4840cd2630827273cfe4d11255629b7be082b10", "bytes": 127536320 },
+    "win-arm64": { "file": "mm3-0.1.4-win-arm64.exe", "sha256": "7dcbd07956d0eb8649b078fc09b3a54992e52a3400af4cf5170ae488496bc00e", "bytes": 82887680 },
+    "win-x64": { "file": "mm3-0.1.4-win-x64.exe", "sha256": "8f0373e57b0bcca9898a5d6de735f10a268a1dfdf2613069fa48294ac7cf90df", "bytes": 94586368 }
   }
 }
