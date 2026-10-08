@@ -65,7 +65,13 @@ function syncDir(dir: string, files: Record<string, string>): number {
   let changed = 0;
   for (const [rel, text] of Object.entries(files)) {
     const file = path.join(dir, ...rel.split('/'));
-    if (existsSync(file) && readFileSync(file, 'utf8') === text) continue;
+    let current: string | undefined;
+    try {
+      current = readFileSync(file, 'utf8'); // one read, no exists-then-read gap
+    } catch {
+      current = undefined;
+    }
+    if (current === text) continue;
     mkdirSync(path.dirname(file), { recursive: true });
     writeFileSync(file, text);
     changed += 1;

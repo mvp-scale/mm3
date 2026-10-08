@@ -198,7 +198,13 @@ export async function buildBinary(targetName: string, outDir: string = OUT_DIR, 
 
     const hash = sha256(file);
     const sums = path.join(outDir, 'SHA256SUMS');
-    const kept = existsSync(sums) ? readFileSync(sums, 'utf8').split('\n').filter((l) => l && !l.endsWith(`  ${path.basename(file)}`)) : [];
+    let prior = '';
+    try {
+      prior = readFileSync(sums, 'utf8'); // one read, no exists-then-read gap
+    } catch {
+      prior = '';
+    }
+    const kept = prior.split('\n').filter((l) => l && !l.endsWith(`  ${path.basename(file)}`));
     writeFileSync(sums, `${[...kept, `${hash}  ${path.basename(file)}`].sort().join('\n')}\n`);
     return { file, bytes: statSync(file).size, sha256: hash, blobSha256: sha256(blob) };
   } finally {

@@ -13129,7 +13129,13 @@ function syncDir(dir, files) {
   let changed = 0;
   for (const [rel, text] of Object.entries(files)) {
     const file = path14.join(dir, ...rel.split("/"));
-    if (existsSync12(file) && readFileSync17(file, "utf8") === text) continue;
+    let current;
+    try {
+      current = readFileSync17(file, "utf8");
+    } catch {
+      current = void 0;
+    }
+    if (current === text) continue;
     mkdirSync6(path14.dirname(file), { recursive: true });
     writeFileSync7(file, text);
     changed += 1;

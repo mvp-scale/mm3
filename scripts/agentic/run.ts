@@ -8,7 +8,7 @@
 // system tools only, no Node, and each row says which build it tested (kind, version, sha256, whether Node was on the PATH).
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { addUsage, attemptsByAgent, noUsage, runClaude, strayServers, type ClaudeRun, type Usage } from './claude.ts';
@@ -150,10 +150,15 @@ export interface Standalone {
 
 export function describeStandalone(file: string): Standalone {
   const abs = path.resolve(file);
-  if (!existsSync(abs) || !statSync(abs).isFile()) throw new Error(`✖ standalone: ${file} is not a file → build one with "npm run build:binary -- --target linux-x64" and pass its path with --bin (or MM3_BIN)`);
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(abs); // one read, no exists-then-read gap: the hash and the size describe the same bytes (a folder fails here too)
+  } catch {
+    throw new Error(`✖ standalone: ${file} is not a file → build one with "npm run build:binary -- --target linux-x64" and pass its path with --bin (or MM3_BIN)`);
+  }
   const v = spawnSync(abs, ['--version'], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } });
   if (v.status !== 0) throw new Error(`✖ standalone: ${file} did not run (--version exited ${v.status ?? 'without a status'}) → it needs to be an executable MM3 standalone for this OS`);
-  return { file: abs, sha256: createHash('sha256').update(readFileSync(abs)).digest('hex'), size: statSync(abs).size, version: v.stdout.trim() };
+  return { file: abs, sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length, version: v.stdout.trim() };
 }
 
 /** The system programs an agent's shell and a request-writing job use. Nothing here is a JavaScript runtime. */

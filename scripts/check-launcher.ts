@@ -39,7 +39,7 @@ export const releaseBase = (slug: string, version: string): string => `https://g
 
 /** The asset key (`linux-x64`) of a built file name `mm3-<version>-<key>[.exe]`, or undefined. */
 export function assetKey(file: string, version: string): string | undefined {
-  const m = new RegExp(`^mm3-${version.replace(/\./gu, '\\.')}-([a-z0-9]+-[a-z0-9]+)(?:\\.exe)?$`, 'u').exec(file);
+  const m = new RegExp(`^mm3-${version.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}-([a-z0-9]+-[a-z0-9]+)(?:\\.exe)?$`, 'u').exec(file);
   return m?.[1];
 }
 
