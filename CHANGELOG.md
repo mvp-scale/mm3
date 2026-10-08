@@ -2,7 +2,19 @@
 
 Newest first. Each entry says what you can now do, and the number is the pull request that shipped it. Releases are tagged; the top section is what the `nightly` build on npm already has.
 
-## Unreleased: 0.1.3, on the nightly build
+## Unreleased: 0.1.4, on the nightly build
+
+**MM3 now runs on a computer with no Node installed, and the ledger stays fast at 100,000 runs.**
+
+- **A self-contained MM3, one file per system, with its own Node inside.** Linux and Windows builds, so a machine with no Node (or an old one) can still run every command. `mm3 init` from that file installs it and registers the plugin the same way the npm install does, and `mm3 uninstall` removes it. The release carries the files with their SHA-256 sums, built in GitHub from the tagged commit; two builds of the same commit are byte-identical. (#41)
+- **The plugin falls back to it by itself.** On a machine without Node 22.13 or newer, the plugin says what it found, downloads the self-contained build once, checks it against a hash pinned in the plugin (and refuses on a mismatch), runs `init`, and carries on. A start with a good Node downloads nothing. The README says so. (#41)
+- **A clear message for an old or missing Node.** `mm3` now says: pin Node 22.13+ for this project (nvm, fnm or Volta, no machine-wide change), and where to read more; `docs/node-version.md` has the steps for macOS, Linux and Windows. `mm3 doctor` still runs on an old Node, even inside a project that has a ledger. (#41)
+- **Fixed: the plugin installed from npm could not start.** The npm package left out the plugin's bundle, so its MCP server had nothing to run. It ships now. (#41)
+- **Fixed: `view` and the reports slowed down and grew in memory as a ledger grew.** Each `view` left the index one line behind, so the next read scanned the whole log: 7 to 10 seconds and up to 694 MB at 100,000 runs. Now `view src` takes 0.45 s and about 76 MB, and `report hits` 0.16 s. The output is byte-identical. (#41)
+- **Both installs can live side by side.** Whichever of npm or the self-contained file runs `init` first owns `mm3`; the other says so and changes nothing. (#41)
+- **Agent tests can use the self-contained build with no Node on the agent's PATH** (`--bin`, a new job "uses MM3 with no Node on PATH"), and `npm run parity` / `npm run parity:install` compare the two installs step by step. (#41)
+
+## v0.1.3, 2026-10-07
 
 **Agents get a verdict on the first real try more often, and every agent test now shows how the agent got there.**
 
