@@ -26,7 +26,18 @@ mm3 init --agents
 
 <p align="center"><img src="docs/assets/agents.svg" width="900" alt="Agents MM3 was tested on, and agents expected to work. Tested, installed and registered through each agent's own commands: Claude Code, Codex, GitHub Copilot, Factory Droid, Gemini CLI, Goose, OpenCode, Amp and Cursor. Expected to work, following the same standards: Aider, Hermes, Cline, Kilo Code, Pi, OpenClaw, Kiro, Antigravity and any agent that reads AGENTS.md."></p>
 
-[Each agent's exact command, and what we tested](https://mm3lab.dev/agents), is one click away; the [checklist and ledger](docs/evidence/readiness.md) are on GitHub. Then open your agent and ask it to use MM3: with an agent in the loop, the request YAML is written in seconds. MM3 tells it if no TypeSafe key is set (until then you get labelled sample answers); the [config guide](docs/config-guide.md) covers the key and endpoint. Needs Node 22.13+, or the standalone build with its own Node: [Node version](docs/node-version.md).
+Done. [Each agent's exact command, and what we tested](https://mm3lab.dev/agents) · [checklist and ledger](docs/evidence/readiness.md)
+
+**Optional: bring a key.** Have a TypeSafe key ready, or the URL of your own hosted TypeSafe. No key? MM3 still runs, on labelled samples.
+
+```bash
+export TYPESAFE_API_KEY=...
+export TYPESAFE_BASE_URL=https://your-typesafe.example   # only if you host your own
+```
+
+In Claude Code, add the key with `/plugin configure mm3@mvp-scale` instead: an exported key does not reach the plugin, and this keeps it in Claude's secure storage ([config guide](docs/config-guide.md)). Needs Node 22.13+, or the standalone build with its own Node ([Node version](docs/node-version.md)).
+
+Then ask your agent to use MM3. It writes the request YAML in seconds.
 
 **Status: beta.** It works well and we use it ourselves; formal benchmarks are coming. The plugin and the npm package are both out.
 
