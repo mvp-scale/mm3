@@ -1,0 +1,26 @@
+{
+  "_doc": "One entry per supported agent. A route is how MM3 gets into that agent: `plugin` (marketplace + plugin install) or `mcp` (register the server directly). steps run in order and stop at the first failure (that is L1); `list` is the agent's own command to show what it registered, and `expect` must match its output (that is L2). Placeholders: {src} = the plugin folder, {name} = its folder name, {exe} {argv} {jsonargv} {jsoncmd} = the MCP server command (node bin/mm3.mjs mcp, or the launcher). `list` null: the agent has no command to read it back. An agent that does not pass its own environment on to the MCP server (Cursor) gets the test-only download address in its config instead.",
+  "agents": [
+    { "id": "claude", "version": "claude --version", "routes": [
+      { "name": "plugin", "steps": ["claude plugin marketplace add {src}", "claude plugin install mm3@mvp-scale"], "list": "claude plugin list; claude mcp list", "expect": "mm3@mvp-scale[\\s\\S]*mm3: .*Connected" } ] },
+    { "id": "codex", "version": "codex --version", "routes": [
+      { "name": "plugin", "steps": ["codex plugin marketplace add {src}", "codex plugin add mm3@mvp-scale"], "list": "codex plugin list; codex mcp list", "expect": "mm3@mvp-scale\\s+installed, enabled" } ] },
+    { "id": "copilot", "version": "copilot --version", "routes": [
+      { "name": "plugin", "steps": ["copilot plugin marketplace add {src}", "copilot plugin install mm3@mvp-scale"], "list": "copilot plugin list", "expect": "mm3@mvp-scale \\(enabled\\)" } ] },
+    { "id": "droid", "version": "droid --version", "routes": [
+      { "name": "plugin", "steps": ["droid plugin marketplace add {src}", "droid plugin install mm3@{name}"], "list": "droid plugin list", "expect": "mm3@{name}" } ] },
+    { "id": "gemini", "version": "gemini --version", "routes": [
+      { "name": "plugin", "steps": ["gemini extensions install {src} --consent --skip-settings"], "list": "gemini extensions list", "expect": "mm3" },
+      { "name": "mcp", "steps": ["gemini mcp add -s user mm3 {exe} {argv}"], "list": "gemini mcp list", "expect": "mm3[^\\n]*Connected" } ] },
+    { "id": "goose", "version": "goose --version", "routes": [
+      { "name": "plugin", "steps": ["git config --global --add safe.directory '*'", "goose plugin install {src}"], "list": null, "expect": null } ] },
+    { "id": "opencode", "version": "opencode --version", "routes": [
+      { "name": "plugin", "steps": ["opencode plugin @mvpscale/mm3"], "list": "opencode mcp list", "expect": "mm3" },
+      { "name": "mcp", "steps": ["printf '{\"mcp\":{\"mm3\":{\"type\":\"local\",\"command\":{jsoncmd},\"enabled\":true}}}' > opencode.json"], "list": "opencode mcp list", "expect": "mm3[^\\n]*connected" } ] },
+    { "id": "amp", "version": "amp --version", "routes": [
+      { "name": "mcp", "steps": ["amp mcp add mm3 -- {exe} {argv}"], "list": "amp mcp list", "expect": "mm3\\s+command" } ] },
+    { "id": "cursor-agent", "version": "cursor-agent --version", "routes": [
+      { "name": "mcp", "steps": ["mkdir -p ~/.cursor", "printf '{\"mcpServers\":{\"mm3\":{\"command\":\"{exe}\",\"args\":{jsonargv},\"env\":{\"MM3_TEST_RELEASE_URL\":\"%s\"}}}}' \"$MM3_TEST_RELEASE_URL\" > ~/.cursor/mcp.json"], "list": "cursor-agent mcp list", "expect": "mm3: ready" } ] },
+    { "id": "aider", "version": "aider --version", "routes": [] }
+  ]
+}
