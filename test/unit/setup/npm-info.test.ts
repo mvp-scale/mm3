@@ -42,7 +42,7 @@ describe('detectSelfSpec', () => {
       return JSON.stringify(lock);
     };
     const result: SelfSpec = detectSelfSpec(packageDir, pkg, readFile);
-    expect(result).toEqual({ spec: path.join('/fake', 'packages', 'mm3-0.0.0.tgz'), kind: 'tarball' });
+    expect(result).toEqual({ spec: path.resolve('/fake', 'packages', 'mm3-0.0.0.tgz'), kind: 'tarball' }); // resolve: on Windows a bare '/fake' gains the current drive
   });
 
   it('a registry-resolved entry (or no matching entry, or no lockfile) is the registry spec', () => {

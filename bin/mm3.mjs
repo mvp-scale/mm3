@@ -8145,7 +8145,15 @@ var DEAD_PID_GRACE_MS = 2e3;
 var ORPHAN_BREAK_MS = 2e3;
 var errno = (e) => e?.code;
 var isAbsent = (e) => errno(e) === "ENOENT" || errno(e) === "ENOTDIR";
+var winBusy = (e) => process.platform === "win32" && ["EPERM", "EBUSY", "EACCES"].includes(errno(e) ?? "");
 var notALock = (lockPath) => new StoreError(`\u2716 files: ${shownStore(lockPath)} is not a lock file \u2192 remove it`);
+function isFolder(p) {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
 function readLock(lockPath) {
   let fd;
   try {
@@ -8156,6 +8164,7 @@ function readLock(lockPath) {
   } catch (e) {
     if (e instanceof StoreError) throw e;
     if (errno(e) === "ENOENT") return void 0;
+    if (winBusy(e) && !isFolder(lockPath)) return { body: "", ageMs: 0 };
     throw notALock(lockPath);
   } finally {
     if (fd !== void 0) closeSync(fd);
@@ -8174,7 +8183,10 @@ function tryBreak(lockPath, staleMs) {
   try {
     closeSync(openSync(breakPath, "wx"));
   } catch (e) {
-    if (errno(e) !== "EEXIST") throw storeError(e, breakPath, "write");
+    if (errno(e) !== "EEXIST") {
+      if (winBusy(e)) return false;
+      throw storeError(e, breakPath, "write");
+    }
     try {
       if (Date.now() - statSync(breakPath).mtimeMs > ORPHAN_BREAK_MS) unlinkSync(breakPath);
     } catch {
@@ -8188,6 +8200,7 @@ function tryBreak(lockPath, staleMs) {
     try {
       unlinkSync(lockPath);
     } catch (e) {
+      if (winBusy(e)) return false;
       if (errno(e) !== "ENOENT") throw storeError(e, lockPath, "write");
     }
     return true;
@@ -8221,7 +8234,8 @@ function withLock(lockPath, fn, opts = {}) {
       break;
     } catch (e) {
       if (e instanceof StoreError) throw e;
-      if (e.code !== "EEXIST") throw storeError(e, lockPath, "write");
+      const contended = errno(e) === "EEXIST" || winBusy(e);
+      if (!contended) throw storeError(e, lockPath, "write");
       if (tryBreak(lockPath, staleMs)) continue;
       if (Date.now() - start > timeoutMs) {
         throw new LockError(`\u2716 lock: ${shownStore(lockPath)} is locked \u2192 wait for the other run, or delete the lock file if no run is active`);
@@ -8232,9 +8246,17 @@ function withLock(lockPath, fn, opts = {}) {
   try {
     return fn();
   } finally {
+    releaseLock(lockPath);
+  }
+}
+function releaseLock(lockPath) {
+  for (let attempt = 0; ; attempt++) {
     try {
       unlinkSync(lockPath);
-    } catch {
+      return;
+    } catch (e) {
+      if (!winBusy(e) || attempt >= 40) return;
+      sleepSync(25);
     }
   }
 }
@@ -8469,6 +8491,7 @@ function readLedger(paths, opts = {}) {
   });
   return records;
 }
+var folderInPlaceOfLog = () => Object.assign(new Error("EISDIR: illegal operation on a directory, read"), { code: "EISDIR" });
 function checkTail(paths, upto, lineCount) {
   let fd;
   try {
@@ -8479,7 +8502,9 @@ function checkTail(paths, upto, lineCount) {
   }
   let raw;
   try {
-    const size = fstatSync2(fd).size;
+    const st = fstatSync2(fd);
+    if (!st.isFile()) throw folderInPlaceOfLog();
+    const size = st.size;
     if (size <= upto) return;
     const buf = Buffer.alloc(size - upto);
     let got = 0;
@@ -8527,7 +8552,9 @@ function logEndsCleanly(logPath) {
     throw e;
   }
   try {
-    const size = fstatSync2(fd).size;
+    const st = fstatSync2(fd);
+    if (!st.isFile()) throw folderInPlaceOfLog();
+    const size = st.size;
     if (size === 0) return true;
     const buf = Buffer.alloc(1);
     const got = readSync(fd, buf, 0, 1, size - 1);
@@ -11971,6 +11998,7 @@ function removeEnvFileValue(file, name) {
   return "removed";
 }
 function looseFileModeWarning(file, mode) {
+  if (process.platform === "win32") return void 0;
   if ((mode & 63) === 0) return void 0;
   return `\u2716 credentials: ${file} is mode ${mode.toString(8)}, looser than 0600 \u2192 chmod 600 ${file}`;
 }
@@ -12805,7 +12833,7 @@ function keyLine(env, config, deps) {
   if (config.keySource === "file") {
     const file = envFilePath(env);
     const read3 = readEnvFile(file);
-    const mode = read3?.mode ?? 384;
+    const mode = process.platform === "win32" ? 384 : read3?.mode ?? 384;
     const note = read3 ? looseFileModeWarning(file, mode) ?? (read3.ignoredLines > 0 ? `\u2716 credentials: ${file} has ${read3.ignoredLines} line(s) mm3 ignored (not "export NAME='value'" for an allowed name) \u2192 fix or remove those lines` : void 0) : void 0;
     return { value: `yes \xB7 from user file ${file} (${octal4(mode)}, not encrypted)`, note };
   }
@@ -13855,7 +13883,7 @@ function gitRootOf(dir, spawn) {
 }
 function inCallersSpelling(dir, top) {
   try {
-    const real2 = realpathSync6(dir);
+    const real2 = realpathSync6.native(dir);
     if (real2 === dir) return top;
     const rel = path19.relative(top, real2);
     if (isOutside(rel)) return top;
@@ -18321,7 +18349,7 @@ var UsageStop = class extends Error {
     this.name = "UsageStop";
   }
 };
-var isFolder = (p) => {
+var isFolder2 = (p) => {
   try {
     return statSync5(p).isDirectory();
   } catch {
@@ -18573,7 +18601,7 @@ async function dispatch(argv, ctx) {
   }
   const paths = resolvePaths(ctx.cwd, ctx.env);
   if (!paths) return finish(2, withAgentPointer(NO_PROJECT, command));
-  if (!isFolder(paths.root)) return finish(2, withAgentPointer(`\u2716 project: "${clip(paths.root, 80)}" is not a folder \u2192 give an existing project folder (MM3_HOME, or the plugin's project field)`, command));
+  if (!isFolder2(paths.root)) return finish(2, withAgentPointer(`\u2716 project: "${clip(paths.root, 80)}" is not a folder \u2192 give an existing project folder (MM3_HOME, or the plugin's project field)`, command));
   let resolvedOnce;
   const resolved = () => resolvedOnce ??= resolveConfig(paths, ctx.env);
   switch (command) {

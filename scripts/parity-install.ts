@@ -2,7 +2,7 @@
  * `npm run parity:install`: the install A/B. Two clean Ubuntu 24.04 containers, each `--network none`, each with a
  * throwaway HOME and a stub `claude` that records the plugin commands (no Claude, no key, no paid call):
  *   A  the npm channel: Node present (the official tarball already cached by build:binary, mounted read-only),
- *      `npm pack` of this repo installed with `npm exec <tgz> -- mm3 init`, offline from a copy of the npm cache.
+ *      `npm pack` of this repo installed with `npm exec <tgz> -- mm3 init`, offline from a cache warmed fresh for the tarball.
  *   B  the standalone channel: NO Node and no npm (asserted first), the one file placed, `<file> init`.
  * Then, in both and in this order: the same fixed verbs on the offline fake provider (the scripts/parity.ts
  * step list), `mcp` launched with the command line read back out of the plugin manifest Claude cached, the plugin
@@ -21,7 +21,7 @@
  * T-e uninstall after each leaves nothing behind and the other channel's files alone, T-f the standalone on a box
  * that HAS Node against the same on a box with none (output, trees, verbs, mcp, hook must match).
  * Needs: Docker, ubuntu:24.04 cached locally, `npm run build:binary -- --target linux-x64` done once (it
- * also caches the Node archive), and the npm cache holding yaml (a copy of ~/.npm is used, never written).
+ * also caches the Node archive), and the network once (a fresh npm cache is warmed from the registry for the tarball, never ~/.npm).
  */
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, chmodSync, readdirSync } from 'node:fs';
@@ -488,6 +488,26 @@ function bump(version: string): string {
   return `${x}.${y}.${Number(z) + 1}`;
 }
 
+/** Builds the offline npm cache the containers use, the same way on every machine: the host-side npm (the Node the containers carry)
+ *  installs each tarball into a throwaway prefix with a brand-new, empty cache, so that cache holds exactly what installing the
+ *  tarball needs (yaml and its metadata) and nothing depends on the host's own pre-warmed ~/.npm. The one place that needs the network. */
+function warmNpmCache(nodeDir: string, tarballs: string[], tmp: string, cacheDir: string): void {
+  mkdirSync(tmp, { recursive: true });
+  const node = path.join(nodeDir, 'bin', 'node');
+  const npmCli = path.join(nodeDir, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  const env = { ...process.env, npm_config_cache: cacheDir, npm_config_offline: '', npm_config_prefer_offline: '', npm_config_update_notifier: 'false', npm_config_fund: 'false', npm_config_audit: 'false' };
+  delete env.npm_config_offline;
+  delete env.npm_config_prefer_offline;
+  mkdirSync(cacheDir, { recursive: true });
+  const npm = (args: string[]): void => {
+    const r = spawnSync(node, [npmCli, ...args], { encoding: 'utf8', env, timeout: 300_000 });
+    if (r.status !== 0) throw new Error(`could not warm the npm cache (npm ${args.join(' ')}): ${r.stderr || r.stdout}`);
+  };
+  // the same two routes the containers take offline: npm exec of the tarball (channel A init) and npm install -g of it (upgrade)
+  tarballs.forEach((t, i) => npm(['install', '-g', '--prefix', path.join(tmp, `prefix${i}`), t]));
+  npm(['exec', '--yes', `--package=${tarballs[0]!}`, '--', 'node', '-e', '0']);
+}
+
 export async function runInstallParity(): Promise<{ rows: Row[]; stages: number }> {
   const version = (JSON.parse(readFileSync('package.json', 'utf8')) as { version: string }).version;
   const next = bump(version);
@@ -495,9 +515,6 @@ export async function runInstallParity(): Promise<{ rows: Row[]; stages: number 
   const nodeArchive = path.resolve('dist-binary', 'cache', 'node-v24.21.0-linux-x64.tar.xz');
   if (!existsSync(bin) || !existsSync(nodeArchive)) throw new Error('the standalone or the cached Node archive is missing → run "npm run build:binary -- --target linux-x64" (needs the network once)');
   if ([newestMs('src'), newestMs('skills'), newestMs('.claude-plugin')].some((m) => m > statSync(bin).mtimeMs)) throw new Error(`${bin} is older than src/, skills/ or .claude-plugin/ → rebuild it with "npm run build:binary -- --target linux-x64"`);
-  const npmCache = path.join(os.homedir(), '.npm', '_cacache');
-  if (!existsSync(npmCache)) throw new Error(`no npm cache at ${npmCache} → run "npm install" once so yaml is cached (the containers have no network)`);
-
   const scratch = mkdtempSync(path.join(os.tmpdir(), 'mm3-parity-install-'));
   let a: Channel | undefined;
   let b: Channel | undefined;
@@ -535,7 +552,7 @@ export async function runInstallParity(): Promise<{ rows: Row[]; stages: number 
       mkdirSync(w);
       cpSync(fixture, path.join(w, 'fixture'), { recursive: true });
     }
-    cpSync(npmCache, path.join(workA, 'npm-cache', '_cacache'), { recursive: true });
+    warmNpmCache(nodeDir, [tgz, tgzNext], path.join(scratch, 'warm'), path.join(workA, 'npm-cache'));
     cpSync(tgz, path.join(workA, path.basename(tgz)));
     cpSync(tgzNext, path.join(workA, path.basename(tgzNext)));
     cpSync(bin, path.join(workA, path.basename(bin)));

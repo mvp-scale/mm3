@@ -10,6 +10,9 @@ import { claudeProgram } from '../../scripts/agentic/claude.ts';
 import { describeStandalone, nodeLeaks, resolveOnPath, runFull, shimExec, systemToolsDir, type FullScenario, type Rules } from '../../scripts/agentic/run.ts';
 import { toLedgerRows } from '../../scripts/agentic/record.ts';
 import { parseTrialArgs } from '../../scripts/agentic/trial.ts';
+// skipped on Windows: these build POSIX shell shims (#!/bin/sh) and a ':'-separated PATH, a Linux and macOS developer tool
+const WINDOWS = process.platform === 'win32';
+
 
 const spec = JSON.parse(readFileSync('test/agentic/scenarios/baseline.json', 'utf8')) as { full: FullScenario[]; rules: Rules };
 const tmp = (): string => mkdtempSync(path.join(os.tmpdir(), 'mm3-standalone-test-'));
@@ -32,7 +35,7 @@ describe('the standalone as the tool under test [C-267]', () => {
     expect(() => parseTrialArgs(['B1-class-a-file', '--bin', '/x', '--route', 'mcp'], {})).toThrow(/CLI route only/u);
   });
 
-  it('[C-267] the file is described by what it is: absolute path, sha256, size and the version it prints', () => {
+  it.skipIf(WINDOWS)('[C-267] the file is described by what it is: absolute path, sha256, size and the version it prints', () => {
     const file = fakeStandalone();
     const d = describeStandalone(file);
     expect(d).toMatchObject({ file, version: '9.9.9', size: readFileSync(file).length });
@@ -40,7 +43,7 @@ describe('the standalone as the tool under test [C-267]', () => {
     expect(() => describeStandalone(path.join(tmp(), 'missing'))).toThrow(/is not a file → build one/u);
   });
 
-  it('[C-267] the agent\'s `mm3` resolves to a shim that runs the file; its PATH (shim plus system tools) finds no node, npm or npx', () => {
+  it.skipIf(WINDOWS)('[C-267] the agent\'s `mm3` resolves to a shim that runs the file; its PATH (shim plus system tools) finds no node, npm or npx', () => {
     const file = fakeStandalone();
     const shim = shimExec(file);
     const agentPath = `${shim}:${systemToolsDir()}`;
@@ -52,7 +55,7 @@ describe('the standalone as the tool under test [C-267]', () => {
     expect(resolveOnPath('node', process.env.PATH ?? '')).not.toBeNull(); // and the check can tell: this machine's own PATH does have node
   });
 
-  it('[C-267] the tools folder links system programs and no JavaScript runtime', () => {
+  it.skipIf(WINDOWS)('[C-267] the tools folder links system programs and no JavaScript runtime', () => {
     const names = readdirSync(systemToolsDir());
     expect(names).toEqual(expect.arrayContaining(['sh', 'cat', 'ls', 'grep']));
     expect(names.filter((n) => /^(node|npm|npx|nodejs|bun|deno|tsx)$/u.test(n))).toEqual([]);
@@ -89,7 +92,7 @@ describe('the standalone as the tool under test [C-267]', () => {
 });
 
 describe('the agent can be given a PATH without claude [C-267]', () => {
-  it('[C-267] claude is found on the harness\'s PATH, so a Node-free agent PATH does not stop it from starting', () => {
+  it.skipIf(WINDOWS)('[C-267] claude is found on the harness\'s PATH, so a Node-free agent PATH does not stop it from starting', () => {
     const dir = tmp();
     writeFileSync(path.join(dir, 'claude'), '#!/bin/sh\n');
     chmodSync(path.join(dir, 'claude'), 0o755);

@@ -45,7 +45,7 @@ describe('doctor `versions:` reads the plugin record as Claude writes it', () =>
     const installPath = path.join(claude, 'plugins', 'cache', 'mm3', 'mm3', 'abc123abc123');
     mkdirSync(installPath, { recursive: true });
     if (installedPackage) writeFileSync(path.join(installPath, 'package.json'), JSON.stringify(installedPackage));
-    const text = JSON.stringify(record).replaceAll('<install>', installPath);
+    const text = JSON.stringify(record).replaceAll('<install>', JSON.stringify(installPath).slice(1, -1)); // escaped: a Windows path has backslashes
     writeFileSync(path.join(claude, 'plugins', 'installed_plugins.json'), text);
     return { env: { CLAUDE_CONFIG_DIR: claude } };
   };

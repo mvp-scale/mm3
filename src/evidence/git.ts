@@ -45,7 +45,7 @@ export function gitRootOf(dir: string, spawn: Spawn): string | undefined {
  *  handed back as `dir` itself, climbed up as many levels as `dir` sits below git's toplevel. */
 function inCallersSpelling(dir: string, top: string): string {
   try {
-    const real = realpathSync(dir);
+    const real = realpathSync.native(dir); // .native expands Windows 8.3 names (RUNNER~1) the way git prints them; the JS version does not
     if (real === dir) return top;
     const rel = path.relative(top, real);
     if (isOutside(rel)) return top;

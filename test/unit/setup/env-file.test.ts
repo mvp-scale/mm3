@@ -98,7 +98,8 @@ describe('canQuote', () => {
 });
 
 describe('setEnvFileValue: updates one line in place, never touches the rest', () => {
-  it('creates the file at 0600 in a 0700 dir when it does not exist yet', () => {
+  // skipped on Windows: stat has no POSIX mode bits (it reports 0666), so 0600/0700 cannot be observed
+  it.skipIf(process.platform === 'win32')('creates the file at 0600 in a 0700 dir when it does not exist yet', () => {
     const env = tmpEnv();
     const file = envFilePath(env);
     setEnvFileValue(file, 'TYPESAFE_API_KEY', 'brand-new-key');

@@ -83,7 +83,8 @@ export function findUnusedExports(files: readonly string[], publicSurfaceFile = 
   const wholeSrc = [...files, ...otherCallerFiles].map((f) => ({ f, text: readFileSync(f, 'utf8') }));
   return findExports(files).filter((e) => {
     if (e.file === publicSurfaceFile) return false;
-    if (new RegExp(`from '\\./${path.relative('src', e.file).replace(/\.ts$/u, '')}\\.ts'`, 'u').test(publicText.replace('src/', './'))) return false; // barrel-exported wholesale
+    const barrelName = path.relative('src', e.file).split(path.sep).join('/').replace(/\.ts$/u, '').replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'); // forward slashes (Windows) and regex-escaped
+    if (new RegExp(`from '\\./${barrelName}\\.ts'`, 'u').test(publicText.replace('src/', './'))) return false; // barrel-exported wholesale
     if (new RegExp(`\\b${e.name}\\b`, 'u').test(publicText)) return false; // named in index.ts: intentionally public
     return !wholeSrc.some(({ f, text }) => f !== e.file && new RegExp(`\\b${e.name}\\b`, 'u').test(text));
   });

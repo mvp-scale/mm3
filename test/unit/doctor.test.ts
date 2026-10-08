@@ -93,7 +93,7 @@ describe('doctor (P5)', () => {
     expect(r.exit).toBe(0);
     expect(r.text).not.toContain('project: none');
     // Quoted: the value contains ": " (from "plugin enabled here:"), which emit()'s scalar() always quotes.
-    expect(r.text).toContain(`project: "${path.relative(process.cwd(), paths.root)} · plugin enabled here: no"`);
+    expect(r.text).toContain(`project: ${JSON.stringify(`${path.relative(process.cwd(), paths.root)} · plugin enabled here: no`)}`); // JSON-quoted, so a Windows path's backslashes are doubled
   });
 
   it('"plugin enabled here" is yes when the plugin is installed at project scope [C-102]', () => {

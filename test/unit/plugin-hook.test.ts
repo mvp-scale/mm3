@@ -26,7 +26,7 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 /** Runs the hook as Claude Code does: node, the input JSON on stdin; the marker folder is private to the test. */
 function fire(input: unknown, opts: { env?: Record<string, string> } = {}): { out: string; status: number | null } {
   const raw = typeof input === 'string' ? input : JSON.stringify(input);
-  const env: Record<string, string> = { PATH: process.env.PATH ?? '', TMPDIR: scratch, ...(opts.env ?? {}) };
+  const env: Record<string, string> = { PATH: process.env.PATH ?? '', TMPDIR: scratch, ...(process.platform === 'win32' ? { TEMP: scratch, TMP: scratch, SystemRoot: process.env.SystemRoot ?? '' } : {}), ...(opts.env ?? {}) }; // Windows takes its temp folder from TEMP and needs SystemRoot to start
   const r = spawnSync('node', [SCRIPT], { input: raw, encoding: 'utf8', env });
   return { out: r.stdout, status: r.status };
 }

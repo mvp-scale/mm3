@@ -32,7 +32,7 @@ describe('plain words at the boundary [C-197]', () => {
     for (const argv of [['class', '-'], ['view', 'src'], ['budget']]) {
       const r = await runCli(argv, ctxIn(root, { MM3_HOME: path.join(root, 'no', 'such', 'folder') }));
       expect(r.exit, argv.join(' ')).toBe(2);
-      expect(r.text).toMatch(/^✖ project: "(?:.*no\/such\/folder|.{79}…)" is not a folder → give an existing project folder \(MM3_HOME, or the plugin's project field\)\n→ see: mm3 agent \w+\n$/u);
+      expect(r.text).toMatch(/^✖ project: "(?:.*no[\\/]+such[\\/]+folder|.{79}…)" is not a folder → give an existing project folder \(MM3_HOME, or the plugin's project field\)\n→ see: mm3 agent \w+\n$/u);
       expect(r.text).not.toMatch(RAW);
     }
   });

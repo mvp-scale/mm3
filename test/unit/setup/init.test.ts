@@ -69,7 +69,8 @@ function unwritablePrefix(home: string): string {
 const YES_NO_CLAUDE_STDIN: InitFlags = { key: 'stdin', claude: false, yes: true };
 
 describe('runInit: a fresh --yes --no-claude --key-stdin run, inside a git project', () => {
-  it('installs --user when the global prefix is not writable and cwd has no package.json, stores the key to the env file (secret-tool absent), and creates a self-ignoring .mm3/ [C-099][C-101]', async () => {
+  // skipped on Windows: chmod mode bits do not make a folder unwritable there, so the prefix stays writable
+  it.skipIf(WINDOWS)('installs --user when the global prefix is not writable and cwd has no package.json, stores the key to the env file (secret-tool absent), and creates a self-ignoring .mm3/ [C-099][C-101]', async () => {
     const { ctx, home } = baseCtx();
     if (process.getuid && process.getuid() === 0) return; // root ignores the chmod; skip under root
     const prefix = unwritablePrefix(home);

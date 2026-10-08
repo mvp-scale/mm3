@@ -105,7 +105,7 @@ function keyLine(env: Record<string, string | undefined>, config: JevConfig, dep
   if (config.keySource === 'file') {
     const file = envFilePath(env);
     const read = readEnvFile(file);
-    const mode = read?.mode ?? 0o600;
+    const mode = process.platform === 'win32' ? 0o600 : (read?.mode ?? 0o600); // Windows stat has no real mode bits
     const note = read
       ? (looseFileModeWarning(file, mode) ?? (read.ignoredLines > 0 ? `✖ credentials: ${file} has ${read.ignoredLines} line(s) mm3 ignored (not "export NAME='value'" for an allowed name) → fix or remove those lines` : undefined))
       : undefined;

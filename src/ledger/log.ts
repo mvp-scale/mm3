@@ -361,6 +361,9 @@ export function readLedger(paths: Mm3Paths, opts: { partialTail?: boolean } = {}
  * bytes, never the whole log — needs checking here, via a targeted read (openSync/readSync at `upto`, never
  * readFileSync of the whole file), with the exact readLedger wording and line number.
  */
+/** A folder where log.jsonl should be: POSIX fails the read with EISDIR on its own, Windows opens it and reports size 0, so say it the same way. */
+const folderInPlaceOfLog = (): NodeJS.ErrnoException => Object.assign(new Error('EISDIR: illegal operation on a directory, read'), { code: 'EISDIR' });
+
 function checkTail(paths: Mm3Paths, upto: number, lineCount: number): void {
   let fd: number;
   try {
@@ -371,7 +374,9 @@ function checkTail(paths: Mm3Paths, upto: number, lineCount: number): void {
   }
   let raw: string;
   try {
-    const size = fstatSync(fd).size;
+    const st = fstatSync(fd);
+    if (!st.isFile()) throw folderInPlaceOfLog();
+    const size = st.size;
     if (size <= upto) return;
     const buf = Buffer.alloc(size - upto);
     let got = 0;
@@ -439,7 +444,9 @@ function logEndsCleanly(logPath: string): boolean {
     throw e;
   }
   try {
-    const size = fstatSync(fd).size;
+    const st = fstatSync(fd);
+    if (!st.isFile()) throw folderInPlaceOfLog();
+    const size = st.size;
     if (size === 0) return true;
     const buf = Buffer.alloc(1);
     const got = readSync(fd, buf, 0, 1, size - 1);

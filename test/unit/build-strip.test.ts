@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildStrip, extractStrip, freeCommands, stillHtml, stripData, stripGeometry, stripScene, stripTimeline } from '../../scripts/build-strip.ts';
+// skipped on Windows: these build POSIX shell shims (#!/bin/sh) and a ':'-separated PATH, a Linux and macOS developer tool
+const WINDOWS = process.platform === 'win32';
+
 
 const scene = stripScene();
 const svg = buildStrip(scene);
@@ -177,7 +180,7 @@ describe('extractStrip', () => {
     expect(s.response).toContain('<path>');
   });
 
-  it('captures the free view / report output of the play area, scrubbed, and refuses a failing command', () => {
+  it.skipIf(WINDOWS)('captures the free view / report output of the play area, scrubbed, and refuses a failing command', () => {
     const { dir, req, out } = play('g1', true);
     const s = extractStrip(dir, 'MM3-0008', req, out, true);
     expect(s.free.map((f) => f.cmd)).toEqual(freeCommands('MM3-0008', req).map((c) => c.show));

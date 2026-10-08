@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { embeddedFiles } from '../../scripts/build-binary.ts';
 import { HOOK_ARG, isHookLaunch } from '../../src/setup/standalone-hook.ts';
@@ -16,14 +17,18 @@ beforeAll(() => {
   project = path.join(scratch, 'proj');
   mkdirSync(path.join(project, '.mm3'), { recursive: true });
   const driver = path.join(scratch, 'driver.mts');
-  writeFileSync(driver, `import { readFileSync } from 'node:fs';\n(globalThis as any).__MM3_EMBEDDED__ = JSON.parse(readFileSync(process.argv[2]!, 'utf8'));\nconst { runEmbeddedHook } = await import(${JSON.stringify(path.resolve('src/setup/standalone-hook.ts'))});\nrunEmbeddedHook();\n`);
+  writeFileSync(driver, `import { readFileSync } from 'node:fs';\n(globalThis as any).__MM3_EMBEDDED__ = JSON.parse(readFileSync(process.argv[2]!, 'utf8'));\nconst { runEmbeddedHook } = await import(${JSON.stringify(pathToFileURL(path.resolve('src/setup/standalone-hook.ts')).href)});\nrunEmbeddedHook();\n`);
   writeFileSync(path.join(scratch, 'embedded.json'), JSON.stringify(embeddedFiles()));
 });
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 const input = (extra: Record<string, unknown>): string => JSON.stringify({ session_id: `s-${Math.random()}`, cwd: project, hook_event_name: 'PreToolUse', ...extra });
 // each run gets its own marker folder, so the "once per session" rule does not make the second run quiet
-const env = (): Record<string, string> => ({ PATH: process.env.PATH ?? '', TMPDIR: mkdtempSync(path.join(scratch, 'tmp-')) });
+// (Windows: node needs SystemRoot to start, and takes its temp folder from TEMP, not TMPDIR)
+const env = (): Record<string, string> => {
+  const tmp = mkdtempSync(path.join(scratch, 'tmp-'));
+  return { PATH: process.env.PATH ?? '', TMPDIR: tmp, ...(process.platform === 'win32' ? { TEMP: tmp, TMP: tmp, SystemRoot: process.env.SystemRoot ?? '' } : {}) };
+};
 const viaNode = (raw: string) => spawnSync('node', ['hooks/nudge.mjs'], { input: raw, encoding: 'utf8', env: env() });
 const viaBinaryPath = (raw: string) => spawnSync('node', ['--import', 'tsx', path.join(scratch, 'driver.mts'), path.join(scratch, 'embedded.json')], { input: raw, encoding: 'utf8', env: env() });
 
