@@ -10,16 +10,36 @@
 
 ## Install
 
-In Claude Code, from your project:
+MM3 installs into your coding agent as a plugin or as an MCP server, whichever the agent supports. These commands were run as written on a clean Ubuntu; what passed, agent by agent, is in [what we tested](docs/evidence/readiness.md) and on [mm3lab.dev/agents](https://mm3lab.dev/agents).
+
+**Claude Code**, from your project:
 
 ```text
 /plugin marketplace add mvp-scale/mm3
 /plugin install mm3@mvp-scale
 ```
 
-Pick **project** scope. Claude asks for a TypeSafe API key (masked, optional): press Enter on "TypeSafe API key", paste, Enter, then "Save configuration". Leave it empty to add one later with `mm3 init`.
+**Other agents**, from your terminal:
 
-The plugin carries its own copy of MM3 and gives Claude the `mm3` tool, so Claude can run every command (`mm3 config --load` included) without anything else installed. It is updated through Claude Code, like any plugin.
+```bash
+# Codex
+codex plugin marketplace add mvp-scale/mm3
+codex plugin add mm3@mvp-scale
+# GitHub Copilot
+copilot plugin marketplace add mvp-scale/mm3
+copilot plugin install mm3@mvp-scale
+# Factory Droid
+droid plugin marketplace add https://github.com/mvp-scale/mm3
+droid plugin install mm3@mm3
+# Gemini CLI
+gemini extensions install https://github.com/mvp-scale/mm3
+```
+
+An agent that takes MCP servers instead (Cursor, OpenCode and Amp, and any of the above): install the command once with `npm install -g @mvpscale/mm3`, then register `mm3 mcp` as a local (stdio) server in that agent. Agents read `AGENTS.md`, and [mm3lab.dev/llms.txt](https://mm3lab.dev/llms.txt) is the machine-readable index.
+
+In Claude Code, pick **project** scope. Claude asks for a TypeSafe API key (masked, optional): press Enter on "TypeSafe API key", paste, Enter, then "Save configuration". Leave it empty to add one later with `mm3 init`.
+
+The Claude plugin carries its own copy of MM3 and gives Claude the `mm3` tool, so Claude can run every command (`mm3 config --load` included) without anything else installed. It is updated through Claude Code, like any plugin.
 
 On a machine without Node 22.13+ the plugin, as installed from npm or the marketplace, still needs Node to start, exactly as before. The self-contained MM3 build (one file per system, own Node inside, for Linux, Windows and macOS on Intel/AMD and ARM) runs every command without Node, and its `init` registers a plugin that starts the file itself. The plugin's own fall-back (it downloads that build once and checks it against a sha256 pinned inside the plugin) ships in this package and is tested on every platform, but the plugin does not start through it yet; that switch comes in the next release. Details: [Node version](docs/node-version.md#claude-code-without-node).
 
