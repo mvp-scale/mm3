@@ -7369,7 +7369,7 @@ var require_dist = __commonJS({
 
 // src/cli.ts
 var import_yaml6 = __toESM(require_dist(), 1);
-import { readFileSync as readFileSync24, realpathSync as realpathSync8, statSync as statSync5 } from "node:fs";
+import { readFileSync as readFileSync24, realpathSync as realpathSync9, statSync as statSync5 } from "node:fs";
 import os3 from "node:os";
 import path27 from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
@@ -8240,7 +8240,7 @@ function withLock(lockPath, fn, opts = {}) {
 }
 
 // src/ledger/paths.ts
-import { existsSync as existsSync2, mkdirSync as mkdirSync2, writeFileSync } from "node:fs";
+import { existsSync as existsSync2, mkdirSync as mkdirSync2, realpathSync, writeFileSync } from "node:fs";
 import path2 from "node:path";
 function pathsFor(root) {
   const dir = path2.join(root, ".mm3");
@@ -8276,6 +8276,15 @@ function resolvePaths(cwd = process.cwd(), env = process.env) {
   const home = env.MM3_HOME?.trim();
   const root = home ? path2.resolve(home) : findRoot(cwd);
   return root === void 0 ? void 0 : pathsFor(root);
+}
+function relativeToCwd(cwd, root) {
+  const plain = path2.relative(cwd, root);
+  try {
+    const real2 = path2.relative(realpathSync(cwd), realpathSync(root));
+    return real2.length < plain.length ? real2 : plain;
+  } catch {
+    return plain;
+  }
 }
 
 // src/config/write.ts
@@ -12025,12 +12034,12 @@ function removeStoredKey(runner, platform, env) {
 }
 
 // src/setup/init.ts
-import { existsSync as existsSync13, lstatSync as lstatSync2, mkdirSync as mkdirSync7, readFileSync as readFileSync18, readlinkSync, realpathSync as realpathSync2, writeFileSync as writeFileSync8 } from "node:fs";
+import { existsSync as existsSync13, lstatSync as lstatSync2, mkdirSync as mkdirSync7, readFileSync as readFileSync18, readlinkSync, realpathSync as realpathSync3, writeFileSync as writeFileSync8 } from "node:fs";
 import path15 from "node:path";
 
 // src/verbs/doctor.ts
 var import_yaml4 = __toESM(require_dist(), 1);
-import { existsSync as existsSync11, readFileSync as readFileSync15, realpathSync } from "node:fs";
+import { existsSync as existsSync11, readFileSync as readFileSync15, realpathSync as realpathSync2 } from "node:fs";
 import path12 from "node:path";
 
 // src/setup/agents-status.ts
@@ -12806,7 +12815,7 @@ function keyLine(env, config, deps) {
 }
 function versionOnPath(bin) {
   try {
-    let dir = path12.dirname(realpathSync(bin));
+    let dir = path12.dirname(realpathSync2(bin));
     for (let i = 0; i < 6; i++) {
       const pj = path12.join(dir, "package.json");
       if (existsSync11(pj)) {
@@ -12925,7 +12934,7 @@ function runDoctor(env, paths, nodeVersion = process.version, deps = {}) {
     throw e;
   }
   const who = identityFor(env, config);
-  const project = paths ? projectLine(path12.relative(process.cwd(), paths.root) || ".", deps) : "none";
+  const project = paths ? projectLine(relativeToCwd(process.cwd(), paths.root) || ".", deps) : "none";
   const { value: key2, note: keyNote } = keyLine(env, config, deps);
   const notes = [
     "free: no call, no spend",
@@ -13155,7 +13164,7 @@ function failed(what, r, fallback) {
 var insideGitProject = (cwd) => existsSync13(path15.join(cwd, ".git"));
 function isPackageBin(binPath, pkgName) {
   try {
-    let dir = path15.dirname(realpathSync2(binPath));
+    let dir = path15.dirname(realpathSync3(binPath));
     for (let i = 0; i < 6; i++) {
       const pj = path15.join(dir, "package.json");
       if (existsSync13(pj)) {
@@ -13400,7 +13409,7 @@ var realRunner = (cmd, args2, opts = {}) => {
 };
 
 // src/setup/uninstall.ts
-import { existsSync as existsSync14, realpathSync as realpathSync3, rmSync as rmSync6 } from "node:fs";
+import { existsSync as existsSync14, realpathSync as realpathSync4, rmSync as rmSync6 } from "node:fs";
 import path16 from "node:path";
 var GLYPH2 = { done: "\u2714", already: "\xB7", skipped: "\u2013", problem: "\u2716" };
 var line2 = (status, label, text) => `${GLYPH2[status]} ${label}: ${text}`;
@@ -13412,11 +13421,19 @@ function detectInstallMode(ctx) {
   if (!onPath) return void 0;
   let real2;
   try {
-    real2 = realpathSync3(onPath);
+    real2 = realpathSync4(onPath);
   } catch {
     real2 = onPath;
   }
-  const under = (dir) => real2 === dir || real2.startsWith(dir.endsWith(path16.sep) ? dir : `${dir}${path16.sep}`);
+  const within = (dir) => real2 === dir || real2.startsWith(dir.endsWith(path16.sep) ? dir : `${dir}${path16.sep}`);
+  const under = (dir) => {
+    if (within(dir)) return true;
+    try {
+      return within(realpathSync4(dir));
+    } catch {
+      return false;
+    }
+  };
   if (under(path16.join(ctx.cwd, "node_modules"))) return { mode: "local", projectDir: ctx.cwd };
   const globalPrefix = npmGlobalPrefix(ctx.runner);
   if (globalPrefix && under(globalPrefix)) return { mode: "global", npmPrefix: globalPrefix };
@@ -13722,11 +13739,11 @@ function itemsState(items, notes, limits = ITEM_LIMITS) {
 
 // src/evidence/git.ts
 import { spawnSync } from "node:child_process";
-import { closeSync as closeSync6, fstatSync as fstatSync6, openSync as openSync6, readFileSync as readFileSync20, realpathSync as realpathSync5 } from "node:fs";
+import { closeSync as closeSync6, fstatSync as fstatSync6, openSync as openSync6, readFileSync as readFileSync20, realpathSync as realpathSync6 } from "node:fs";
 import path19 from "node:path";
 
 // src/evidence/code.ts
-import { closeSync as closeSync5, fstatSync as fstatSync5, openSync as openSync5, readFileSync as readFileSync19, realpathSync as realpathSync4 } from "node:fs";
+import { closeSync as closeSync5, fstatSync as fstatSync5, openSync as openSync5, readFileSync as readFileSync19, realpathSync as realpathSync5 } from "node:fs";
 import path18 from "node:path";
 
 // src/evidence/paths.ts
@@ -13773,7 +13790,7 @@ function readCodeEvidence(root, where, opts = {}) {
     let text;
     let fd;
     try {
-      if (isOutside(path18.relative(realpathSync4(root), realpathSync4(full)))) {
+      if (isOutside(path18.relative(realpathSync5(root), realpathSync5(full)))) {
         errors.push(outside);
         continue;
       }
@@ -13833,7 +13850,19 @@ var isGitOption = (ref) => ref.startsWith("-");
 function gitRootOf(dir, spawn) {
   const result = spawn("git", ["rev-parse", "--show-toplevel"], { cwd: dir, encoding: "utf8" });
   const out = typeof result.stdout === "string" ? result.stdout.trim() : "";
-  return result.status === 0 && out ? out : void 0;
+  if (result.status !== 0 || !out) return void 0;
+  return inCallersSpelling(dir, out);
+}
+function inCallersSpelling(dir, top) {
+  try {
+    const real2 = realpathSync6(dir);
+    if (real2 === dir) return top;
+    const rel = path19.relative(top, real2);
+    if (isOutside(rel)) return top;
+    return rel ? path19.resolve(dir, ...rel.split(path19.sep).map(() => "..")) : dir;
+  } catch {
+    return top;
+  }
 }
 function firstWhereDir(root, wherePaths) {
   const first = wherePaths[0];
@@ -13914,7 +13943,7 @@ function readGitEvidence(root, ref, field, paths, deps) {
       let text;
       let fd;
       try {
-        if (isOutside(path19.relative(realpathSync5(root), realpathSync5(full)))) {
+        if (isOutside(path19.relative(realpathSync6(root), realpathSync6(full)))) {
           errors.push(outside);
           continue;
         }
@@ -13959,7 +13988,7 @@ function readGitEvidence(root, ref, field, paths, deps) {
 }
 
 // src/evidence/units.ts
-import { readFileSync as readFileSync21, realpathSync as realpathSync6 } from "node:fs";
+import { readFileSync as readFileSync21, realpathSync as realpathSync7 } from "node:fs";
 import path21 from "node:path";
 
 // src/evidence/glob.ts
@@ -14351,7 +14380,7 @@ function readFiles(root, spec, notes, maxFiles) {
     const full = path21.join(root, rel);
     let text;
     try {
-      if (isOutside(path21.relative(realpathSync6(root), realpathSync6(full)))) throw new Error("outside");
+      if (isOutside(path21.relative(realpathSync7(root), realpathSync7(full)))) throw new Error("outside");
       text = readFileSync21(full, "utf8");
     } catch {
       notes.push(`${rel}: could not read, skipped`);
@@ -14432,7 +14461,7 @@ function readUnit(root, unit) {
   if (isOutside(rel)) return outside;
   let text;
   try {
-    if (isOutside(path21.relative(realpathSync6(root), realpathSync6(full)))) return outside;
+    if (isOutside(path21.relative(realpathSync7(root), realpathSync7(full)))) return outside;
     text = readFileSync21(full, "utf8");
   } catch {
     return { ok: false, error: `cannot read "${unit.path}"` };
@@ -18201,11 +18230,11 @@ function resolveMcpActor() {
 }
 
 // src/util/plugin-build.ts
-import { readFileSync as readFileSync23, realpathSync as realpathSync7 } from "node:fs";
+import { readFileSync as readFileSync23, realpathSync as realpathSync8 } from "node:fs";
 import path26 from "node:path";
 var real = (p) => {
   try {
-    return realpathSync7(p);
+    return realpathSync8(p);
   } catch {
     return path26.resolve(p);
   }
@@ -18445,7 +18474,7 @@ async function dispatch(argv, ctx) {
     if (values.load && values.write) throw new UsageStop("config", "--load and --write cannot go together \u2192 run mm3 config --write first, edit the file, then mm3 config --load");
     positionalCount("config", positionals, 0, values.load ? 1 : 0);
     const configPaths = resolvePaths(ctx.cwd, ctx.env);
-    const projectLine2 = configPaths ? path27.relative(ctx.cwd, configPaths.root) || "." : "none";
+    const projectLine2 = configPaths ? relativeToCwd(ctx.cwd, configPaths.root) || "." : "none";
     const r = values.load ? runConfigLoad(configPaths, positionals[0], ctx.cwd, projectLine2) : values.write ? runConfigWrite(configPaths, projectLine2) : runConfig(ctx.env, configPaths, projectLine2);
     return finish(r.exit, r.text);
   }
@@ -18725,7 +18754,7 @@ function isEntrypoint() {
   const invoked = process.argv[1];
   if (!invoked) return false;
   try {
-    return realpathSync8(invoked) === realpathSync8(fileURLToPath2(import.meta.url));
+    return realpathSync9(invoked) === realpathSync9(fileURLToPath2(import.meta.url));
   } catch {
     return false;
   }

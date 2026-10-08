@@ -25,7 +25,7 @@ import { classifierFileConfig, resolveConfig, type ResolvedConfig } from './conf
 import { RUN_ID } from './ledger/ids.ts';
 import { LockError, StoreError } from './ledger/lock.ts';
 import { appendOutcome, findRun, isContractRun, LedgerError, type Outcome } from './ledger/log.ts';
-import { resolvePaths, type Mm3Paths } from './ledger/paths.ts';
+import { relativeToCwd, resolvePaths, type Mm3Paths } from './ledger/paths.ts';
 import type { Level } from './lens/request.ts';
 import { runMcpServer, type McpIo } from './mcp/stdio.ts';
 import { resolveStoredKey } from './setup/keystore.ts';
@@ -356,7 +356,7 @@ async function dispatch(argv: string[], ctx: CliCtx): Promise<{ exit: number; te
     if (values.load && values.write) throw new UsageStop('config', '--load and --write cannot go together → run mm3 config --write first, edit the file, then mm3 config --load');
     positionalCount('config', positionals, 0, values.load ? 1 : 0);
     const configPaths = resolvePaths(ctx.cwd, ctx.env);
-    const projectLine = configPaths ? path.relative(ctx.cwd, configPaths.root) || '.' : 'none';
+    const projectLine = configPaths ? relativeToCwd(ctx.cwd, configPaths.root) || '.' : 'none';
     const r = values.load
       ? runConfigLoad(configPaths, positionals[0], ctx.cwd, projectLine)
       : values.write

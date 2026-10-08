@@ -38,7 +38,7 @@ import { configStatus, statusLine } from '../config/receipt.ts';
 import { nearMissNotes } from '../config/config.ts';
 import { validateConfig } from '../config/validate.ts';
 import { sqliteAvailable } from '../ledger/index.ts';
-import type { Mm3Paths } from '../ledger/paths.ts';
+import { relativeToCwd, type Mm3Paths } from '../ledger/paths.ts';
 import { envFilePath, looseFileModeWarning, readEnvFile } from '../setup/env-file.ts';
 import { agentsDoctorValue } from '../setup/agents-status.ts';
 import { readInstallRecord } from '../setup/install-record.ts';
@@ -301,7 +301,7 @@ export function runDoctor(
   }
 
   const who = identityFor(env, config);
-  const project = paths ? projectLine(path.relative(process.cwd(), paths.root) || '.', deps) : 'none';
+  const project = paths ? projectLine(relativeToCwd(process.cwd(), paths.root) || '.', deps) : 'none';
   const { value: key, note: keyNote } = keyLine(env, config, deps);
   const notes = [
     'free: no call, no spend',

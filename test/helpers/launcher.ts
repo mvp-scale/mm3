@@ -52,11 +52,12 @@ export interface Kit {
 }
 
 /** A fake "self-contained MM3": answers --version, init (copies itself to ~/.local/bin/mm3), mcp (one fixed reply), __hook. */
+// the stand-in 'mcp' stays until its stdin closes, like a real server: exiting at once made the launcher's next write hit a closed pipe under load
 export const FAKE_STANDALONE = `#!/bin/sh
 case "$1" in
   --version) echo "mm3 fake-standalone" ;;
   init) mkdir -p "$HOME/.local/bin" && cp "$0" "$HOME/.local/bin/mm3" && echo "✔ cli: installed" ;;
-  mcp) read -r line; echo '{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"FAKE-STANDALONE-MCP"}}}' ;;
+  mcp) read -r line; echo '{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"FAKE-STANDALONE-MCP"}}}'; cat >/dev/null ;;
   __hook) cat >/dev/null; echo '{"fake":"standalone-hook"}' ;;
 esac
 `;

@@ -112,8 +112,14 @@ describe('[C-227] a section with every child commented out means no overrides', 
   });
 });
 
+/** macOS and Windows folders ignore case: "Config.yaml" there IS config.yaml, so it is no near miss and the case is not testable. */
+const caseBlind = ((): boolean => {
+  const { root } = tempProject({ 'case-probe.txt': 'x' });
+  return existsSync(path.join(root, 'CASE-PROBE.TXT'));
+})();
+
 describe('[C-228] near-miss config file names', () => {
-  it.each(['config.yml', 'config.ymal', 'config.yaml.txt', 'config.json', 'Config.yaml'])('%s gets a did-you-mean note in config and doctor', (name) => {
+  it.each(['config.yml', 'config.ymal', 'config.yaml.txt', 'config.json', ...(caseBlind ? [] : ['Config.yaml'])])('%s gets a did-you-mean note in config and doctor', (name) => {
     const { paths } = tempProject();
     mkdirSync(paths.dir, { recursive: true });
     writeFileSync(path.join(paths.dir, name), 'budget:\n  usd: 1\n');

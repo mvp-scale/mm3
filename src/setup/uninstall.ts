@@ -67,7 +67,16 @@ function detectInstallMode(ctx: UninstallCtx): { mode: InstallMode; npmPrefix?: 
   } catch {
     real = onPath;
   }
-  const under = (dir: string): boolean => real === dir || real.startsWith(dir.endsWith(path.sep) ? dir : `${dir}${path.sep}`);
+  const within = (dir: string): boolean => real === dir || real.startsWith(dir.endsWith(path.sep) ? dir : `${dir}${path.sep}`);
+  // `real` has symlinks resolved (macOS: /private/var/… for a /var/… home or temp folder), so the folder is also tried the same way
+  const under = (dir: string): boolean => {
+    if (within(dir)) return true;
+    try {
+      return within(realpathSync(dir));
+    } catch {
+      return false;
+    }
+  };
   if (under(path.join(ctx.cwd, 'node_modules'))) return { mode: 'local', projectDir: ctx.cwd };
   const globalPrefix = npmGlobalPrefix(ctx.runner);
   if (globalPrefix && under(globalPrefix)) return { mode: 'global', npmPrefix: globalPrefix };

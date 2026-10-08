@@ -17,7 +17,8 @@ const ajvValid = new Ajv2020({ allErrors: true, strict: false }).compile(schema)
 const ROOT = 'test/fixtures/requests';
 
 function corpus(): { file: string; value: Record<string, unknown> }[] {
-  const files = readdirSync(ROOT, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.yaml')).sort();
+  // readdirSync gives backslashes on Windows; the corpus names below are posix ("agents/…", "valid/…")
+  const files = readdirSync(ROOT, { recursive: true, encoding: 'utf8' }).map((f) => f.split(path.sep).join('/')).filter((f) => f.endsWith('.yaml')).sort();
   return files.map((file) => {
     const r = readRequestText(readFileSync(path.join(ROOT, file), 'utf8'));
     if (!r.ok) throw new Error(`${file}: ${r.stops.join('; ')}`);

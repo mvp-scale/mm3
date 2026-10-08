@@ -75,6 +75,7 @@ export const INSTALL_EXPECTED: ExpectedRule[] = [
   { cmd: /./, field: 'stdout', line: /^f [0-9a-f]{12} \.\/\.local\/bin\/mm3$/, reason: 'the standalone file itself (npm has a link here)' },
   { cmd: /./, field: 'stdout', line: new RegExp(`^[fdl] (?:[0-9a-f]{12} )?\\.?/?${PKG}/(dist|node_modules|bin)(/|$)`), reason: NPM_PKG_ONLY + ' (bin/mm3.mjs is the plugin bundle the npm manifest launches)' },
   { cmd: /./, field: 'stdout', line: new RegExp(`^f [0-9a-f]{12} \\./?${PKG}/(package\\.json|README\\.md|LICENSE)$`), reason: NPM_PKG_ONLY },
+  { cmd: /./, field: 'stdout', line: new RegExp(`^[fd] (?:[0-9a-f]{12} )?\\.?/?${PKG}/launcher(/|$)`), reason: 'the npm package\'s plugin carries the launcher (mm3-launch, mm3-launch.ps1, checksums.json) that fetches the self-contained build when Node 22.13+ is missing; the standalone is that build and has no use for it' },
   { cmd: /./, field: 'stdout', line: new RegExp(`^f [0-9a-f]{12} \\./?${PKG}/hooks/nudge\\.mjs$`), reason: 'the npm package carries the nudge script as a file; the standalone runs the same script from inside the one file (hooks.json names "<file> __hook")' },
   { cmd: /./, field: 'stdout', line: new RegExp(`^f [0-9a-f]{12} \\./?${PKG}/hooks/hooks\\.json$`), reason: 'the hook command names the installed standalone file with __hook instead of "node ${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs"' },
   { cmd: /./, field: 'stdout', line: new RegExp(`^f [0-9a-f]{12} \\./?${PKG}/\\.claude-plugin/plugin\\.json$`), reason: 'the MCP command names the installed standalone file instead of "node ${CLAUDE_PLUGIN_ROOT}/bin/mm3.mjs"' },
@@ -540,6 +541,9 @@ export async function runInstallParity(): Promise<{ rows: Row[]; stages: number 
     cpSync(bin, path.join(workA, path.basename(bin)));
     cpSync(bin, path.join(workB, path.basename(bin)));
     cpSync(binNext, path.join(workB, path.basename(binNext)));
+    // The containers run as uid 1000. On a developer machine that is the same user; on a CI runner (uid 1001) the copies above are
+    // owned by someone else and npm cannot write its cache (EACCES mkdtemp /work/npm-cache/_cacache/tmp). Open the folders to every user.
+    for (const w of [workA, workB]) execFileSync('chmod', ['-R', 'a+rwX', w]);
 
     a = startChannel('A', workA, nodeDir);
     b = startChannel('B', workB, undefined);
@@ -636,7 +640,8 @@ export async function runInstallParity(): Promise<{ rows: Row[]; stages: number 
     return { rows, stages: stageCount };
   } finally {
     for (const c of [a, b]) if (c) docker(['rm', '-f', c.name]);
-    rmSync(scratch, { recursive: true, force: true });
+    // files the containers created belong to uid 1000, which a runner user cannot delete; a leftover scratch folder is not a failure
+    try { rmSync(scratch, { recursive: true, force: true }); } catch { /* temp folder; the runner is thrown away */ }
   }
 }
 
