@@ -78,7 +78,8 @@ export function makeKit(node: NodeKind, opts: { uname?: { s: string; m: string }
   const home = path.join(root, 'home');
   const data = path.join(root, 'data');
   for (const d of [path.join(plugin, 'launcher'), path.join(plugin, 'bin'), path.join(plugin, 'hooks'), tools, home]) mkdirSync(d, { recursive: true });
-  copyFileSync(LAUNCHER, path.join(plugin, 'launcher', 'mm3-launch'));
+  copyFileSync(LAUNCHER, path.join(plugin, 'launcher', 'mm3-launch')); // copyFile keeps the mode, so the execute bit the repo file has is what the tests run with
+  copyFileSync(path.resolve('launcher/mm3-launch.cmd'), path.join(plugin, 'launcher', 'mm3-launch.cmd'));
   copyFileSync(path.resolve('launcher/mm3-launch.ps1'), path.join(plugin, 'launcher', 'mm3-launch.ps1'));
   symlinkSync(path.resolve('hooks/nudge.mjs'), path.join(plugin, 'hooks', 'nudge.mjs'));
   if (node === 'node22-broken') writeFileSync(path.join(plugin, 'bin', 'mm3.mjs'), 'throw new Error("boom");\n');
@@ -135,10 +136,10 @@ export async function serveRelease(files: Record<string, string>, opts: ReleaseO
 
 export interface Ran { code: number | null; stdout: string; stderr: string }
 
-/** Runs `sh <plugin>/launcher/mm3-launch <mode>` in the kit's private environment. `stdin` is written then closed. */
+/** Runs `<plugin>/launcher/mm3-launch <mode>` in the kit's private environment, the way Claude Code does on macOS and Linux: the file itself is exec'd (shebang + execute bit), no `sh` in front. `stdin` is written then closed. */
 export function runLauncher(kit: Kit, mode: string, opts: { stdin?: string; env?: Record<string, string>; cwd?: string; timeoutMs?: number } = {}): Promise<Ran> {
   return new Promise((resolve) => {
-    const child = spawn(path.join(kit.tools, 'sh'), [path.join(kit.plugin, 'launcher', 'mm3-launch'), mode], { env: { ...kit.env, ...(opts.env ?? {}) }, cwd: opts.cwd ?? kit.home, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(path.join(kit.plugin, 'launcher', 'mm3-launch'), [mode], { env: { ...kit.env, ...(opts.env ?? {}) }, cwd: opts.cwd ?? kit.home, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });

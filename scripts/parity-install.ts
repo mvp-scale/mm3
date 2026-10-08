@@ -75,7 +75,7 @@ export const INSTALL_EXPECTED: ExpectedRule[] = [
   { cmd: /./, field: 'stdout', line: /^f [0-9a-f]{12} \.\/\.local\/bin\/mm3$/, reason: 'the standalone file itself (npm has a link here)' },
   { cmd: /./, field: 'stdout', line: new RegExp(`^[fdl] (?:[0-9a-f]{12} )?\\.?/?${PKG}/(dist|node_modules|bin)(/|$)`), reason: NPM_PKG_ONLY + ' (bin/mm3.mjs is the plugin bundle the npm manifest launches)' },
   { cmd: /./, field: 'stdout', line: new RegExp(`^f [0-9a-f]{12} \\./?${PKG}/(package\\.json|README\\.md|LICENSE)$`), reason: NPM_PKG_ONLY },
-  { cmd: /./, field: 'stdout', line: new RegExp(`^[fd] (?:[0-9a-f]{12} )?\\.?/?${PKG}/launcher(/|$)`), reason: 'the npm package\'s plugin carries the launcher (mm3-launch, mm3-launch.ps1, checksums.json) that fetches the self-contained build when Node 22.13+ is missing; the standalone is that build and has no use for it' },
+  { cmd: /./, field: 'stdout', line: new RegExp(`^[fd] (?:[0-9a-f]{12} )?\\.?/?${PKG}/launcher(/|$)`), reason: 'the npm package\'s plugin carries the launcher (mm3-launch, mm3-launch.cmd, mm3-launch.ps1, checksums.json) that fetches the self-contained build when Node 22.13+ is missing; the standalone is that build and has no use for it' },
   { cmd: /./, field: 'stdout', line: new RegExp(`^f [0-9a-f]{12} \\./?${PKG}/hooks/nudge\\.mjs$`), reason: 'the npm package carries the nudge script as a file; the standalone runs the same script from inside the one file (hooks.json names "<file> __hook")' },
   { cmd: /./, field: 'stdout', line: new RegExp(`^f [0-9a-f]{12} \\./?${PKG}/hooks/hooks\\.json$`), reason: 'the hook command names the installed standalone file with __hook instead of "node ${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs"' },
   { cmd: /./, field: 'stdout', line: new RegExp(`^f [0-9a-f]{12} \\./?${PKG}/\\.claude-plugin/plugin\\.json$`), reason: 'the MCP command names the installed standalone file instead of "node ${CLAUDE_PLUGIN_ROOT}/bin/mm3.mjs"' },
@@ -321,7 +321,8 @@ function hookStages(stage: string, a: Channel, b: Channel): void {
   const sub = (v: string): string => v.replace(/\$\{CLAUDE_PLUGIN_ROOT\}/g, CLAUDE_CACHE);
   const argvFor = (g: HookGroup[], tool: string): string[] | undefined => {
     const h = g.find((x) => new RegExp(`^(?:${x.matcher})$`).test(tool))?.hooks[0];
-    return h ? [sub(h.command), ...(h.args ?? []).map(sub)] : undefined;
+    if (!h) return undefined;
+    return h.args === undefined ? ['sh', '-c', sub(h.command)] : [sub(h.command), ...h.args.map(sub)]; // shell form (no args) runs under `sh -c` on Linux, as Claude Code does; exec form is spawned directly
   };
   const la = argvFor(ga, 'Bash');
   const lb = argvFor(gb, 'Bash');

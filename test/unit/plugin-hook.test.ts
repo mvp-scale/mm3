@@ -59,10 +59,9 @@ describe('hooks/hooks.json [C-268]', () => {
     expect(matchers).toEqual(['Agent|Task', 'Bash']);
     for (const group of file.hooks.PreToolUse) {
       const [h] = group.hooks;
-      expect(h.command).toBe('sh');
-      expect(h.args).toEqual(['${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch', 'hook']); // the launcher runs `node hooks/nudge.mjs` when Node 22.13+ is there (test/unit/launcher.test.ts)
+      expect(h.command).toBe('"${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch" hook'); // shell form (no args): exec form cannot start a script on Windows; the launcher runs `node hooks/nudge.mjs` when Node 22.13+ is there (test/unit/launcher.test.ts)
     }
-    expect(file.hooks.SessionStart[0].hooks[0].args).toEqual(['${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch', 'session-start']);
+    expect(file.hooks.SessionStart[0].hooks[0].command).toBe('"${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch" session-start');
     expect(existsSync(SCRIPT)).toBe(true);
     expect(existsSync('launcher/mm3-launch')).toBe(true);
   });

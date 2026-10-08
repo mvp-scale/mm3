@@ -1,7 +1,7 @@
 #!/bin/sh
 # MM3 plugin launcher check on macOS (and Linux), real install. Usage: sh scripts/smoke-launcher.sh /path/to/mm3-<version>-<os>-<cpu>   (run from the repo root)
 # Copies the repo's plugin into a scratch folder with a pin file written for the given built file, serves the file from 127.0.0.1 as the fake
-# GitHub Release, and runs the launcher with NO Node on its PATH: the first start must download the file once, check its sha256, install it
+# GitHub Release, and runs the launcher file itself (exec'd directly, shebang + execute bit, as Claude Code does) with NO Node on its PATH: the first start must download the file once, check its sha256, install it
 # (~/.local/bin/mm3 under a scratch HOME) and answer an MCP initialize with the real server; a second start must download nothing.
 # CI runs it on macos-14 (Apple silicon) and macos-15-intel (.github/workflows/standalone.yml, job macos-launcher). Plain POSIX tools only.
 BIN="$1"; [ -f "$BIN" ] || { echo "usage: sh scripts/smoke-launcher.sh /path/to/mm3-<version>-<os>-<cpu> (from the repo root)"; exit 2; }
@@ -35,7 +35,7 @@ env -i PATH="$LPATH" sh -c 'command -v node' >/dev/null 2>&1 && fail "node is on
 INIT='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}'
 start() { # start <n> : one launcher start, stdin open 2 s after the request, a 120 s watchdog; stdout to $W/out.$1, stderr to $W/err.$1
   ( printf '%s\n' "$INIT"; sleep 2 ) | env -i HOME="$W/home" PATH="$LPATH" CLAUDE_PLUGIN_DATA="$W/data" MM3_TEST_RELEASE_URL="http://127.0.0.1:$port" MM3_TEST_WAIT=100 \
-    sh "$W/plugin/launcher/mm3-launch" mcp >"$W/out.$1" 2>"$W/err.$1" & p=$!
+    "$W/plugin/launcher/mm3-launch" mcp >"$W/out.$1" 2>"$W/err.$1" & p=$!
   ( sleep 120; kill $p 2>/dev/null ) & dog=$!
   wait $p; code=$?; kill $dog 2>/dev/null; return $code
 }

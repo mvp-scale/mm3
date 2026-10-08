@@ -19,6 +19,17 @@ describe('checkPackContents', () => {
   });
 });
 
+describe('the plugin launcher in the tarball', () => {
+  it('requires the Windows batch twin next to the POSIX launcher, and flags a launcher that lost its execute bit', () => {
+    expect(REQUIRED).toContain('launcher/mm3-launch.cmd');
+    const without = REQUIRED.filter((p) => p !== 'launcher/mm3-launch.cmd').map((path) => ({ path, size: 10 }));
+    expect(checkPackContents(without).some((p) => p.includes('launcher/mm3-launch.cmd'))).toBe(true);
+    const entry = (mode: number) => REQUIRED.map((path) => ({ path, size: 10, ...(path === 'launcher/mm3-launch' ? { mode } : {}) }));
+    expect(checkPackContents(entry(0o755))).toEqual([]);
+    expect(checkPackContents(entry(0o644)).some((p) => p.includes('execute bit'))).toBe(true);
+  });
+});
+
 describe('the plugin bundle', () => {
   it('requires bin/mm3.mjs, because the plugin manifest launches it from the package folder', () => {
     expect(REQUIRED).toContain('bin/mm3.mjs');

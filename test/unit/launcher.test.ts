@@ -1,4 +1,4 @@
-// The plugin launcher (launcher/mm3-launch), run for real with `sh` against a fake GitHub Release on 127.0.0.1 (no real network) and a
+// The plugin launcher (launcher/mm3-launch), exec'd directly (shebang + execute bit, as Claude Code does on macOS and Linux) against a fake GitHub Release on 127.0.0.1 (no real network) and a
 // stand-in for the self-contained MM3 file. Every case gets its own private PATH, so "no Node" is true no matter what runs the tests.
 // The real standalone file + real Claude Code run is test/e2e/cli/launcher-claude.test.ts; Windows is the standalone workflow's job.
 import { spawn, spawnSync } from 'node:child_process';
@@ -200,7 +200,7 @@ describe.skipIf(skip !== undefined).concurrent(`plugin launcher${skip ? ` (skipp
     // ~13 chunks x 400 ms is longer than the 1 s allowance set here, so the stub answers first
     writeFileSync(path.join(kit.root, 'served', `mm3-${VERSION}-${HOST_KEY}`), FAKE_STANDALONE + '#'.repeat(200_000));
     pinFile(kit, path.join(kit.root, 'served', `mm3-${VERSION}-${HOST_KEY}`));
-    const child = spawn(path.join(kit.tools, 'sh'), [path.join(kit.plugin, 'launcher', 'mm3-launch'), 'mcp'], { env: { ...kit.env, ...env, MM3_TEST_WAIT: '1' }, cwd: kit.home });
+    const child = spawn(path.join(kit.plugin, 'launcher', 'mm3-launch'), ['mcp'], { env: { ...kit.env, ...env, MM3_TEST_WAIT: '1' }, cwd: kit.home });
     let out = '';
     child.stdout.on('data', (d: Buffer) => { out += d.toString(); });
     const exited = new Promise<number | null>((ok) => child.on('close', ok));
@@ -215,12 +215,14 @@ describe.skipIf(skip !== undefined).concurrent(`plugin launcher${skip ? ` (skipp
   }, 60_000);
 });
 
-it('[C-285] the Node floor in the launcher (sh and PowerShell) is the one mm3 enforces and package.json states', () => {
+it('[C-285] the Node floor in the launcher (sh, cmd and PowerShell) is the one mm3 enforces and package.json states', () => {
   const sh = /^MIN_NODE=(\d+\.\d+)\b/mu.exec(readFileSync('launcher/mm3-launch', 'utf8'))?.[1];
   const ps = /^\$MinNode\s*=\s*'(\d+\.\d+)'/mu.exec(readFileSync('launcher/mm3-launch.ps1', 'utf8'))?.[1];
+  const cmd = /^set "MIN_NODE=(\d+\.\d+)"/mu.exec(readFileSync('launcher/mm3-launch.cmd', 'utf8'))?.[1];
   const engines = (JSON.parse(readFileSync('package.json', 'utf8')) as { engines: { node: string } }).engines.node;
   expect(sh).toBe(MIN_NODE_LABEL);
   expect(ps).toBe(MIN_NODE_LABEL);
+  expect(cmd).toBe(MIN_NODE_LABEL);
   expect(engines).toBe(`>=${MIN_NODE_LABEL}`);
 });
 
@@ -228,4 +230,72 @@ it('the PowerShell launcher computes sha256 with .NET, not Get-FileHash: Claude 
   const ps = readFileSync('launcher/mm3-launch.ps1', 'utf8').split('\n').filter((l) => !l.trimStart().startsWith('#')).join('\n');
   expect(ps).not.toMatch(/Get-FileHash/u);
   expect(ps).toMatch(/SHA256\]::Create\(\)/u);
+});
+
+// ---- how the plugin names its launcher: one extensionless command, run directly on macOS/Linux, resolved to a .cmd by cmd on Windows ----
+describe('the launcher command the plugin names [C-287]', () => {
+  const mcp = (JSON.parse(readFileSync('.claude-plugin/plugin.json', 'utf8')) as { mcpServers: { mm3: { command: string; args: string[] } } }).mcpServers.mm3;
+  const hooks = JSON.parse(readFileSync('hooks/hooks.json', 'utf8')) as { hooks: Record<string, Array<{ hooks: Array<{ command: string; args?: string[] }> }>> };
+  const hookCommands = Object.values(hooks.hooks).flatMap((groups) => groups.flatMap((g) => g.hooks));
+
+  it('[C-287] the MCP command is the extensionless launcher path, not `sh`: a default Git for Windows install has no sh on PATH, and cmd turns the bare name into mm3-launch.cmd', () => {
+    expect(mcp.command).toBe('${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch');
+    expect(mcp.args).toEqual(['mcp']);
+    expect(existsSync('launcher/mm3-launch.cmd')).toBe(true); // PATHEXT: the extension-less name resolves to this file on Windows
+    expect(existsSync('launcher/mm3-launch.ps1')).toBe(true);
+  });
+
+  it('[C-287] the hooks are shell-form commands (no args: an exec-form hook needs a real .exe on Windows) that run the same path, quoted', () => {
+    expect(hookCommands.length).toBeGreaterThanOrEqual(3);
+    for (const h of hookCommands) {
+      expect(h.args).toBeUndefined();
+      expect(h.command).toMatch(/^"\$\{CLAUDE_PLUGIN_ROOT\}\/launcher\/mm3-launch" (hook|session-start)$/u);
+    }
+  });
+
+  it.skipIf(process.platform === 'win32')('[C-287] the POSIX entry starts with a /bin/sh shebang and is executable on disk and in git (macOS and Linux exec it directly)', () => {
+    const text = readFileSync('launcher/mm3-launch', 'utf8');
+    expect(text.split('\n')[0]).toBe('#!/bin/sh');
+    expect(statSync('launcher/mm3-launch').mode & 0o111).toBe(0o111);
+    const staged = spawnSync('git', ['ls-files', '-s', 'launcher/mm3-launch'], { encoding: 'utf8' });
+    if (staged.status === 0 && staged.stdout.trim() !== '') expect(staged.stdout.startsWith('100755 ')).toBe(true); // a source tarball without .git has nothing to ask
+  });
+
+  describe('launcher/mm3-launch.cmd, read as bytes (it cannot run here; the Windows runners in the standalone workflow run it)', () => {
+    const bytes = readFileSync('launcher/mm3-launch.cmd');
+    const text = bytes.toString('latin1');
+    const lines = text.split('\r\n');
+
+    it('[C-287] has CRLF line endings throughout (cmd\'s goto/call label search is unreliable on LF-only files), no BOM, ASCII only', () => {
+      expect(text.replace(/\r\n/gu, '')).not.toMatch(/[\r\n]/u); // every CR is followed by LF and every LF preceded by CR
+      expect(lines.length).toBeGreaterThan(20);
+      expect(bytes[0]).toBe(0x40); // '@': no BOM
+      expect([...bytes].every((b) => b < 0x80)).toBe(true); // cmd reads it in the console code page
+      expect(readFileSync('.gitattributes', 'utf8')).toMatch(/^launcher\/mm3-launch\.cmd\s+text\s+eol=crlf$/mu); // so a checkout on any OS keeps CRLF
+    });
+
+    it('[C-287] silences echo on its very first line (cmd echoes batch lines to stdout, which belongs to the MCP protocol) and has no shebang', () => {
+      expect(lines[0]).toBe('@echo off');
+      expect(text).not.toContain('#!');
+    });
+
+    it('[C-287] never needs sh, only runs the MCP mode, and every goto/call target is a label that exists', () => {
+      const code = lines.filter((l) => !/^\s*rem(\s|$)/iu.test(l));
+      expect(code.join('\n')).not.toMatch(/\bsh\b/u);
+      const labels = new Set(code.filter((l) => /^:[A-Za-z]/u.test(l)).map((l) => l.slice(1).trim()));
+      const targets = [...code.join('\n').matchAll(/\b(?:goto|call)\s+:([A-Za-z]\w*)/giu)].map((m) => m[1]!);
+      expect(targets.length).toBeGreaterThan(0);
+      for (const t of targets) expect(labels.has(t), `label :${t}`).toBe(true);
+    });
+
+    it('[C-287] no rem line holds a character cmd treats as an operator (a rem line with > or & can write a file or run a command)', () => {
+      for (const l of lines.filter((x) => /^\s*rem(\s|$)/iu.test(x))) expect(l, l).not.toMatch(/[<>&|]/u);
+    });
+
+    it('[C-281] [C-287] the fallback hands the download to the PowerShell twin with the reason, bypassing the execution policy and any profile', () => {
+      expect(text).toMatch(/-NoProfile -ExecutionPolicy Bypass -File "%HERE%mm3-launch\.ps1" mcp "%WHY%"/u);
+      expect(text).toContain('call node "%HERE%..\\bin\\mm3.mjs" --version'); // the same "will MM3 start here" probe as the sh launcher
+      expect(text).toContain('call node "%HERE%..\\bin\\mm3.mjs" mcp');
+    });
+  });
 });

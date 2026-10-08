@@ -13,7 +13,7 @@
 #              SMOKE first (about a dozen checks, node hidden from PATH: scripts/smoke-standalone.sh / .ps1), then, only if smoke is green, DEEP:
 #              npm ci, then the repo's own harness against the file with MM3_BIN set: `npm run test:cli` (the cli tier, ~100 cases) and
 #              `sh scripts/flows.sh` (the offline tour of every verb), so the packed file must pass the same tests as the npm package.
-#   launchers  the plugin launcher (launcher/mm3-launch, mm3-launch.ps1), which downloads these files on a machine without Node 22.13+ and checks
+#   launchers  the plugin launcher (launcher/mm3-launch, mm3-launch.cmd, mm3-launch.ps1), which downloads these files on a machine without Node 22.13+ and checks
 #              them against launcher/checksums.json: Linux x64 and arm64 (the launcher tests, then the real file under real Claude Code), macOS
 #              Apple silicon and Intel (a real install from a locally served file, scripts/smoke-launcher.sh), Windows x64 and arm64 (under real
 #              Claude Code, scripts/smoke-launcher.ps1).
@@ -171,11 +171,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # sh-visible: the committed plugin.json (command `sh`) with Git for Windows' bin folders on PATH
-        # sh-default: the same plugin.json with only Git's cmd folder on PATH, which is what Git's installer sets by default (no sh)
-        # powershell: the other candidate command (`powershell -File launcher/mm3-launch.ps1 mcp`); informational, never fails the job
+        # The committed plugin.json names the extensionless launcher path; Claude Code starts it through cmd, which runs launcher\mm3-launch.cmd (PATHEXT).
+        # cmd-default: only Git's cmd folder on PATH, which is what Git's installer sets by default (no sh). The machine most users have: MUST pass.
+        # cmd-space:   the same, with a space in the folder the plugin sits in (a user name with a space); informational, never fails the job
+        # sh-visible:  Git's bin and usr\bin folders on PATH too (sh resolves): the .cmd must still be the one that runs
+        # powershell:  the other candidate command (`powershell -File launcher/mm3-launch.ps1 mcp`); informational, never fails the job
         runner: [windows-2025, windows-11-arm]
-        case: [sh-visible, sh-default, powershell]
+        case: [cmd-default, cmd-space, sh-visible, powershell]
         include:
           - { runner: windows-2025, key: win-x64 }
           - { runner: windows-11-arm, key: win-arm64 }
@@ -193,7 +195,7 @@ jobs:
           & "$env:USERPROFILE\.local\bin\claude.exe" --version
       - name: "Plugin launcher under real Claude Code, no Node: ${{ matrix.case }}"
         shell: pwsh
-        continue-on-error: ${{ matrix.case == 'powershell' }}
+        continue-on-error: ${{ matrix.case == 'powershell' || matrix.case == 'cmd-space' }}
         run: |
           ./scripts/smoke-launcher.ps1 -Bin "built/mm3-${{ needs.meta.outputs.version }}-${{ matrix.key }}.exe" -Case ${{ matrix.case }}
           if ($LASTEXITCODE -ne 0) { exit 1 }

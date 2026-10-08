@@ -7,8 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch", "hook"],
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch\" hook",
             "timeout": 5
           }
         ]
@@ -18,8 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch", "hook"],
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch\" hook",
             "timeout": 5
           }
         ]
@@ -30,8 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch", "session-start"],
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch\" session-start",
             "timeout": 10
           }
         ]

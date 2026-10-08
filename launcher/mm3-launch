@@ -1,5 +1,7 @@
 #!/bin/sh
-# mm3-launch: starts MM3 for the Claude Code plugin (plugin.json and hooks.json name this file; why it exists: launcher/README.md).
+# mm3-launch: starts MM3 for the Claude Code plugin (plugin.json and hooks.json name this file by path, no `sh` in front; why it exists: launcher/README.md).
+#   macOS/Linux run it directly (shebang + execute bit). Windows runs its twin mm3-launch.cmd for the MCP server (cmd adds .cmd from PATHEXT); this file
+#   runs on Windows only for the hooks, through Git Bash.
 #   normal case : Node 22.13+ is present -> exec node bin/mm3.mjs mcp   (hook: exec node hooks/nudge.mjs; nothing is downloaded)
 #   fallback    : Node missing, too old, or MM3 will not start on it -> use the self-contained MM3 build:
 #                 a detached fetcher downloads it for this OS/CPU (key = uname -s / -m: linux|darwin|win - x64|arm64, the six builds in
