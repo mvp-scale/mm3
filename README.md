@@ -28,16 +28,14 @@ mm3 init --agents
 
 Done. [Each agent's exact command, and what we tested](https://mm3lab.dev/agents) · [checklist and ledger](docs/evidence/readiness.md)
 
-**Optional: bring a key.** Have a TypeSafe key ready, or the URL of your own hosted TypeSafe. No key? MM3 still runs, on labelled samples.
+**Bring your own key and base URL.** No key? MM3 still runs, on labelled samples.
 
 ```bash
 export TYPESAFE_API_KEY=...
-export TYPESAFE_BASE_URL=https://your-typesafe.example   # only if you host your own
+export TYPESAFE_BASE_URL=https://your-typesafe.example
 ```
 
-In Claude Code, add the key with `/plugin configure mm3@mvp-scale` instead: an exported key does not reach the plugin, and this keeps it in Claude's secure storage ([config guide](docs/config-guide.md)). Needs Node 22.13+, or the standalone build with its own Node ([Node version](docs/node-version.md)).
-
-Then ask your agent to use MM3. It writes the request YAML in seconds.
+Using the plugin? Keep the key in its secure settings instead (Claude Code: `/plugin configure mm3@mvp-scale`). Then run your agent: it writes the request YAML in seconds. Needs Node 22.13+, or the [standalone build](docs/node-version.md). More: the [config guide](docs/config-guide.md).
 
 **Status: beta.** It works well and we use it ourselves; formal benchmarks are coming. The plugin and the npm package are both out.
 
