@@ -284,7 +284,7 @@ describe('the fallback path gives identical results to whatever engine is really
     };
 
     expect(b).toEqual(a);
-  });
+  }, 30_000); // slow hosted runners (Intel macOS) need more than the 5 s default
 
   it('familyCounts (family/section per category, indexed) agrees between the two engines', () => {
     const { paths } = tempProject({});

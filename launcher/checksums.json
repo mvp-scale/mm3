@@ -2,9 +2,11 @@
   "version": "0.1.4",
   "base": "https://github.com/mvp-scale/mm3/releases/download/v0.1.4",
   "assets": {
-    "linux-arm64": { "file": "mm3-0.1.4-linux-arm64", "sha256": "f3c465bd50ed7b7952a4f92cbe514d7577d2ceb5d140299a43ce7a76b769d305", "bytes": 123866240 },
-    "linux-x64": { "file": "mm3-0.1.4-linux-x64", "sha256": "8a85c17debf7fc24a9b372243d97448fbe706281ab1e6a8498bfe46ca0828175", "bytes": 127536320 },
-    "win-arm64": { "file": "mm3-0.1.4-win-arm64.exe", "sha256": "e48803e9e3d60334c0dd83bd29e59814dfde7332c6dcf2c2b5a5e610d048467d", "bytes": 82886144 },
-    "win-x64": { "file": "mm3-0.1.4-win-x64.exe", "sha256": "c32fe67cc533c47cf44d614ef2225e1ae50aa0c43f52eb72a4d26e612675dca4", "bytes": 94584832 }
+    "darwin-arm64": { "file": "mm3-0.1.4-darwin-arm64", "sha256": "f94ef0b5e7ef497fe29d9414d3f094d354a8b228acf6a9491f4e3483eabcf1a3", "bytes": 122781232 },
+    "darwin-x64": { "file": "mm3-0.1.4-darwin-x64", "sha256": "1cf302079fc65918bdad607445e21b466f988468916ae056f44f62d1334d5dff", "bytes": 125926720 },
+    "linux-arm64": { "file": "mm3-0.1.4-linux-arm64", "sha256": "3d9bb9cae2539e34a42891862051d84ec411ad04cb91968a5af236716c2f5a73", "bytes": 123866240 },
+    "linux-x64": { "file": "mm3-0.1.4-linux-x64", "sha256": "98a0cc6ea6c965c6646daafeb4d7de53d41a466a3b7b559ed847b2e2b1ec7661", "bytes": 127536320 },
+    "win-arm64": { "file": "mm3-0.1.4-win-arm64.exe", "sha256": "35c6f68ed445e90922111241ec43d1e4157b765aadb59025863b97d9376d369b", "bytes": 82887680 },
+    "win-x64": { "file": "mm3-0.1.4-win-x64.exe", "sha256": "11eea62cef7cc6113b1873e31edc3b9cdf17500b102565b67829030c80e6b5e9", "bytes": 94586368 }
   }
 }
