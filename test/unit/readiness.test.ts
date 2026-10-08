@@ -67,3 +67,16 @@ describe('readiness summary', () => {
     expect(summarize([none, ...g]).map((a) => a.proof)).toEqual(['none', 'installed']);
   });
 });
+
+describe('readiness plugin and MCP states', () => {
+  const mk = (route: string, l1: Cell['l1'], l2: Cell['l2'], nodeId = '22.13'): Cell => ({ kind: 'cell', run: 'R', ts: '', agent: 'x', agentVersion: '1.0', route, variant: 'primary', node: '', nodeId, boots: 'ok', l1, l2, fetched: false, secondStart: false, firstError: '', how: [] as string[], ms: 0 });
+  it('reports the plugin and the MCP route separately, and the agent as ready when either works', async () => {
+    const { summarize } = await import('../../scripts/readiness.ts');
+    const catalog = [{ id: 'x', version: '', routes: [{ name: 'plugin', steps: [], list: 'l', expect: 'e' }, { name: 'mcp', steps: [], list: 'l', expect: 'e', starts: true }] }];
+    const cells = ['22.13', '24'].flatMap((n) => [mk('plugin', 'ok', 'ok', n), mk('mcp', 'ok', 'ok', n)]);
+    expect(summarize(cells, catalog)[0]).toMatchObject({ plugin: 'registered', mcp: 'connected', status: 'install-ready', route: 'mcp', proof: 'connected' });
+    const failedPlugin = ['22.13', '24'].flatMap((n) => [mk('plugin', 'fail', 'skip', n), mk('mcp', 'ok', 'ok', n)]);
+    expect(summarize(failedPlugin, catalog)[0]).toMatchObject({ plugin: 'failed', mcp: 'connected', status: 'install-ready' });
+    expect(summarize(['22.13', '24'].map((n) => mk('mcp', 'ok', 'ok', n)))[0]).toMatchObject({ plugin: 'absent', mcp: 'registered' });
+  });
+});

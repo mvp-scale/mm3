@@ -1,6 +1,6 @@
 {
   "run": "RDY-0001",
-  "ts": "2026-10-08T18:33:46.400Z",
+  "ts": "2026-10-08T20:16:37.613Z",
   "mm3": "0.1.4",
   "os": "ubuntu-24.04",
   "agents": [
@@ -9,7 +9,9 @@
       "version": "2.1.294",
       "status": "install-ready",
       "proof": "connected",
-      "route": "plugin",
+      "route": "mcp",
+      "plugin": "connected",
+      "mcp": "connected",
       "failover": "covered",
       "notes": []
     },
@@ -19,6 +21,8 @@
       "status": "install-ready",
       "proof": "registered",
       "route": "plugin",
+      "plugin": "registered",
+      "mcp": "registered",
       "failover": "covered where the agent starts",
       "notes": []
     },
@@ -28,6 +32,8 @@
       "status": "install-ready",
       "proof": "registered",
       "route": "plugin",
+      "plugin": "registered",
+      "mcp": "registered",
       "failover": "covered where the agent starts",
       "notes": []
     },
@@ -35,8 +41,10 @@
       "agent": "droid",
       "version": "0.236.0",
       "status": "install-ready",
-      "proof": "registered",
-      "route": "plugin",
+      "proof": "connected",
+      "route": "mcp",
+      "plugin": "registered",
+      "mcp": "connected",
       "failover": "covered",
       "notes": []
     },
@@ -46,6 +54,8 @@
       "status": "install-ready",
       "proof": "connected",
       "route": "mcp",
+      "plugin": "failed",
+      "mcp": "connected",
       "failover": "covered where the agent starts",
       "notes": [
         "plugin route: Configuration file not found at the plugin folder/gemini-extension.json"
@@ -57,6 +67,8 @@
       "status": "install-only",
       "proof": "installed",
       "route": "plugin",
+      "plugin": "installed",
+      "mcp": "absent",
       "failover": "covered",
       "notes": []
     },
@@ -66,8 +78,12 @@
       "status": "install-ready",
       "proof": "connected",
       "route": "mcp",
+      "plugin": "failed",
+      "mcp": "connected",
       "failover": "covered",
-      "notes": []
+      "notes": [
+        "plugin route: ●  Expected one of: exports[\"./tui\"], exports[\"./server\"], package.json main for server, or package.json[\"oc-themes\"] for tui themes."
+      ]
     },
     {
       "agent": "amp",
@@ -75,6 +91,8 @@
       "status": "install-ready",
       "proof": "registered",
       "route": "mcp",
+      "plugin": "absent",
+      "mcp": "registered",
       "failover": "covered",
       "notes": []
     },
@@ -84,6 +102,8 @@
       "status": "install-ready",
       "proof": "connected",
       "route": "mcp",
+      "plugin": "absent",
+      "mcp": "connected",
       "failover": "covered",
       "notes": []
     },
@@ -92,6 +112,8 @@
       "version": "",
       "status": "no-surface",
       "proof": "none",
+      "plugin": "absent",
+      "mcp": "absent",
       "route": "-",
       "failover": "not shown",
       "notes": [

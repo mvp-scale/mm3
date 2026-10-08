@@ -124,7 +124,8 @@ export function table(cells: Cell[], nodes: NodeState[]): string {
 
 export type Status = 'install-ready' | 'install-only' | 'not-ready' | 'no-surface';
 export type Proof = 'connected' | 'registered' | 'installed' | 'none';
-export interface AgentSummary { agent: string; version: string; status: Status; proof: Proof; route: string; failover: 'covered' | 'covered where the agent starts' | 'agent needs Node' | 'partial' | 'not shown'; notes: string[] }
+export type RouteState = Proof | 'failed' | 'absent';
+export interface AgentSummary { agent: string; version: string; status: Status; proof: Proof; route: string; plugin: RouteState; mcp: RouteState; failover: 'covered' | 'covered where the agent starts' | 'agent needs Node' | 'partial' | 'not shown'; notes: string[] }
 const OLD = ['none', 'stock', '20', '22.12']; // the Node states below MM3's floor (22.13), where the failover has to take over
 
 /** One line of truth per agent from a run's cells: the best route at Node 22.13+ (primary), and whether the failover covers the states below the floor. */
@@ -132,21 +133,29 @@ export function summarize(cells: Cell[], catalog: Agent[] = []): AgentSummary[] 
   return [...new Set(cells.map((c) => c.agent))].map((agent) => {
     const mine = cells.filter((c) => c.agent === agent);
     const version = /\d+(?:\.\d+)+[\w.-]*/u.exec(mine.find((c) => c.boots === 'ok' && c.agentVersion)?.agentVersion ?? '')?.[0]?.replace(/\.$/u, '') ?? ''; // the number, without the agent's own name around it
-    if (mine.every((c) => c.route === 'none')) return { agent, version, status: 'no-surface' as const, proof: 'none' as const, route: '-', failover: 'not shown' as const, notes: [mine[0]?.firstError ?? ''] };
+    if (mine.every((c) => c.route === 'none')) return { agent, version, status: 'no-surface' as const, proof: 'none' as const, plugin: 'absent' as const, mcp: 'absent' as const, route: '-', failover: 'not shown' as const, notes: [mine[0]?.firstError ?? ''] };
     const routes = [...new Set(mine.map((c) => c.route))].filter((r) => r !== 'none');
     const at = (route: string, variant: Cell['variant'], ids: string[]): Cell[] => mine.filter((c) => c.route === route && c.variant === variant && ids.includes(c.nodeId));
-    const ready = routes.find((r) => at(r, 'primary', ['22.13', '24']).every((c) => c.l1 === 'ok' && c.l2 === 'ok'));
-    const installOnly = routes.find((r) => at(r, 'primary', ['22.13', '24']).every((c) => c.l1 === 'ok' && c.l2 === 'n/a'));
-    const route = ready ?? installOnly ?? routes[0] ?? '-';
-    const status: Status = ready ? 'install-ready' : installOnly ? 'install-only' : 'not-ready';
+    const startsOf = (r: string): boolean => catalog.find((a) => a.id === agent)?.routes.find((x) => x.name === r)?.starts === true;
+    // each of the two ways in (the plugin, the MCP server) on its own, at Node 22.13 and up
+    const state = (r: string): RouteState => {
+      if (!routes.includes(r)) return 'absent';
+      const cs = at(r, 'primary', ['22.13', '24']);
+      return cs.every((c) => c.l1 === 'ok' && c.l2 === 'ok') ? (startsOf(r) ? 'connected' : 'registered') : cs.every((c) => c.l1 === 'ok' && c.l2 === 'n/a') ? 'installed' : 'failed';
+    };
+    const plugin = state('plugin'), mcp = state('mcp');
+    const rank: RouteState[] = ['connected', 'registered', 'installed'];
+    const best = [...routes].sort((a, b) => (rank.indexOf(state(a)) + 9) % 9 - (rank.indexOf(state(b)) + 9) % 9)[0] ?? '-';
+    const route = rank.includes(state(best)) ? best : routes[0] ?? '-';
+    const status: Status = [plugin, mcp].some((x) => x === 'connected' || x === 'registered') ? 'install-ready' : [plugin, mcp].includes('installed') ? 'install-only' : 'not-ready';
     const old = at(route, 'failover', OLD);
     const runs = old.filter((c) => c.boots === 'ok'); // where the agent itself starts; where it does not, there is nothing to fall back from
     const failover = status === 'not-ready' ? 'not shown' : !runs.length ? 'agent needs Node' : runs.every((c) => c.l1 === 'ok' && (c.l2 === 'ok' || c.l2 === 'n/a')) ? (runs.length < old.length ? 'covered where the agent starts' : 'covered') : 'partial';
-    const starts = catalog.find((a) => a.id === agent)?.routes.find((r) => r.name === route)?.starts === true;
-    const proof: Proof = status === 'install-ready' ? (starts ? 'connected' : 'registered') : status === 'install-only' ? 'installed' : 'none';
+    const bestState = state(route);
+    const proof: Proof = bestState === 'connected' || bestState === 'registered' || bestState === 'installed' ? bestState : 'none';
     // what failed at Node 22.13 and up (below that, failures are the Node floor, not the agent), once per route, in plain words
     const notes = [...new Set(mine.filter((c) => c.route !== 'none' && ['22.13', '24'].includes(c.nodeId) && c.variant === 'primary' && (c.l1 === 'fail' || c.l2 === 'fail') && c.firstError && !/^[^A-Za-z]*(Done)?$/u.test(c.firstError)).map((c) => `${c.route} route: ${c.firstError.replace(/\/mktl?\//gu, 'the plugin folder/')}`))];
-    return { agent, version, status, proof, route, failover, notes };
+    return { agent, version, status, proof, route, plugin, mcp, failover, notes };
   });
 }
 
@@ -154,7 +163,8 @@ export function summarize(cells: Cell[], catalog: Agent[] = []): AgentSummary[] 
 export function evidenceMarkdown(cells: Cell[], meta: { run: string; ts: string; mm3: string }, catalog: Agent[] = []): string {
   const sums = summarize(cells, catalog);
   const mark: Record<Status, string> = { 'install-ready': '✅ install-ready', 'install-only': '🟡 install-only', 'not-ready': '❌ not ready', 'no-surface': '– no plugin or MCP surface' };
-  const rows = sums.map((a) => `| ${a.agent} | ${a.version.replace(/\|/gu, '/') || '?'} | ${mark[a.status]} | ${a.proof} | ${a.route} | ${a.failover} |`);
+  const way: Record<RouteState, string> = { connected: '✓ connected', registered: '✓ registered', installed: '✓ installed', failed: '✗ not yet', absent: '–', none: '–' };
+  const rows = sums.map((a) => `| ${a.agent} | ${a.version.replace(/\|/gu, '/') || '?'} | ${mark[a.status]} | ${way[a.plugin]} | ${way[a.mcp]} | ${a.failover} |`);
   const problems = sums.filter((a) => a.notes.length).flatMap((a) => [`**${a.agent}**`, ...a.notes.slice(0, 6).map((n) => `- ${n}`), '']);
   return [
     '# Install readiness',
@@ -166,7 +176,7 @@ export function evidenceMarkdown(cells: Cell[], meta: { run: string; ts: string;
     '- **proof**: *connected* where the agent\'s list command starts the MCP server (Claude, OpenCode, Cursor, Gemini); *registered* where it only shows the plugin or server as installed; *installed* where the agent has no way to list it back. Codex lists the server with `${CLAUDE_PLUGIN_ROOT}` unexpanded in its arguments; whether it expands at launch is not yet tested.',
     '- **failover**: with no Node, or Node 18, 20 or 22.12, the plugin\'s launcher fetches the standalone build (checked against a pinned sha256) and the same check passes. *covered where the agent starts* means the agent itself will not start on some of those Node states (it needs Node), so there is nothing for MM3 to fall back from there.',
     '',
-    '| agent | version tested | status | proof | route | failover below Node 22.13 |',
+    '| agent | version tested | status | plugin | MCP server | failover below Node 22.13 |',
     '|---|---|---|---|---|---|',
     ...rows,
     '',
