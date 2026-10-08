@@ -13,6 +13,9 @@ import type { RunResult, Runner } from '../../src/setup/runner.ts';
 import { runDoctor, runDoctorFile } from '../../src/verbs/doctor.ts';
 import { tempProject } from '../helpers/project.ts';
 
+// POSIX-only cases are skipped on Windows, each with its reason beside it (symlinks need a privilege there; chmod mode bits do not stop writes).
+const WINDOWS = process.platform === 'win32';
+
 function tmpXdg(): { XDG_CONFIG_HOME: string } {
   return { XDG_CONFIG_HOME: mkdtempSync(path.join(os.tmpdir(), 'mm3-doctor-')) };
 }
@@ -255,14 +258,14 @@ describe('doctor (P5)', () => {
       expect(r.text).toContain('cli: not on PATH → run "mm3 init" to install it');
     });
 
-    it('cli: a copy on PATH of a different version than the one running is flagged, with the fix', () => {
+    it.skipIf(WINDOWS)('cli: a copy on PATH of a different version than the one running is flagged, with the fix', () => { // skipped on Windows: the fake npm global install is a symlink
       const { pathDir } = fakeCliOnPath('0.0.1');
       const r = runDoctor({ PATH: pathDir }, undefined, undefined, { version: '9.9.9' });
       expect(r.text).toContain('cli: ');
       expect(r.text).toContain('⚠ version 0.0.1, this is 9.9.9 → run "mm3 init" to match them');
     });
 
-    it('cli: a copy on PATH of the same version says nothing extra', () => {
+    it.skipIf(WINDOWS)('cli: a copy on PATH of the same version says nothing extra', () => { // skipped on Windows: the fake npm global install is a symlink
       const { pathDir } = fakeCliOnPath('9.9.9');
       const r = runDoctor({ PATH: pathDir }, undefined, undefined, { version: '9.9.9' });
       expect(r.text).not.toContain('⚠ version');

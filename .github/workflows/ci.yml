@@ -1,3 +1,8 @@
+# CI for the native format (the npm package). `test` is the full gate on Linux x64 (Node 22 and 24). `native` runs the package on every
+# other platform GitHub's free runners offer, on its own native runner: Linux arm64, macOS Apple silicon and Intel, Windows x64 and arm64.
+# Per platform: npm ci, npm run build, then the unit/contract/golden tiers and the cli tier (the built CLI, end to end). Tests that are POSIX-only
+# (symlinks, chmod, sh scripts) skip themselves on win32 with the reason beside the test. The self-contained files are tested the same way,
+# on the same six runners, by standalone.yml. fail-fast is off so one platform's red never hides the others.
 name: ci
 
 on:
@@ -16,7 +21,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -40,3 +45,35 @@ jobs:
       - run: npm run check:pack
       - run: npm run check:plugin
       - run: npm run check:launcher   # launcher/checksums.json is there and names package.json's version
+
+  native:
+    name: npm package on ${{ matrix.runner }} / node ${{ matrix.node }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04-arm, macos-14, macos-15-intel, windows-2025, windows-11-arm]
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: contract and golden tiers
+        run: npx vitest run --project contract --project golden
+      - name: unit tier
+        if: ${{ !startsWith(matrix.runner, 'windows') }}
+        run: npx vitest run --project unit
+      # Windows: the unit tier was written on Linux and has never run on Windows. It reports here but does not fail the job until its first run
+      # is triaged (the POSIX-only tests found by reading already skip themselves on win32); contract, golden and cli gate.
+      - name: "unit tier (Windows: informational until its first run is triaged)"
+        if: ${{ startsWith(matrix.runner, 'windows') }}
+        continue-on-error: true
+        run: npx vitest run --project unit
+      - name: cli tier (the built CLI, end to end)
+        run: npx vitest run --project cli

@@ -30,7 +30,8 @@ function shimBin(): string {
 const HANDLER_TS =
   'export function findUser(req, res) {\n  const id = req.query.id;\n  const sql = `SELECT * FROM users WHERE id = ${id}`;\n  db.query(sql, (err, rows) => {\n    if (err) return res.status(500).send(err.message);\n    res.json(rows[0]);\n  });\n}\n';
 
-describe('README Quickstart, run for real', () => {
+// Skipped on Windows: the quickstart lines are POSIX shell run through a `#!/bin/sh` shim on a ':'-separated PATH (the Windows install is a .cmd shim, not this).
+describe.skipIf(process.platform === 'win32')('README Quickstart, run for real', () => {
   it('every line exits 0, in order', () => {
     const { root } = tempProject({ 'src/handlers/user.ts': HANDLER_TS });
     const bin = shimBin();

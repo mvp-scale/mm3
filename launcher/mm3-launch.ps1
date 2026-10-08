@@ -1,7 +1,7 @@
 # mm3-launch.ps1: the Windows twin of mm3-launch (POSIX sh); why it exists: launcher/README.md.
 # Same steps, same messages, same checksums.json:
 #   Node 22.13+ present  -> run node bin\mm3.mjs mcp
-#   otherwise            -> fetch the win-x64 file named in checksums.json, verify its sha256, install it, run `init --no-claude --no-key --yes`, run `mcp`
+#   otherwise            -> fetch the win-x64 or win-arm64 file named in checksums.json (by PROCESSOR_ARCHITECTURE), verify its sha256, install it, run `init --no-claude --no-key --yes`, run `mcp`
 # Messages go to stderr; stdout is the MCP protocol. Not done here (the sh launcher has them): the slow-install stub that answers
 # Claude Code's 30 s handshake while a slow download finishes, and the session-start message.
 # Called as `powershell -File mm3-launch.ps1 <mode> [why]` either by the sh launcher (Git Bash, which has already found that Node
@@ -45,13 +45,18 @@ Say "$problem. Using the self-contained MM3 build instead."
 
 if (-not (Test-Installed)) {
   $sums  = Get-Content (Join-Path $Here 'checksums.json') -Raw | ConvertFrom-Json
-  $asset = $sums.assets.'win-x64'
-  if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64' -or -not $asset) { Fail "no self-contained MM3 build for Windows on $($env:PROCESSOR_ARCHITECTURE) yet ($problem) -> install Node.js $MinNode or newer from https://nodejs.org, then restart Claude Code" }
+  # the machine's own CPU, not the process's: an x64 PowerShell on Windows 11 arm64 reports AMD64 in PROCESSOR_ARCHITECTURE, but the arm64 file is the right one there.
+  # OSArchitecture (X64, Arm64) is the OS; PROCESSOR_ARCHITEW6432 / PROCESSOR_ARCHITECTURE (AMD64, ARM64) is the fallback when that API is missing.
+  $arch  = try { [string][System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture } catch { if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE } }
+  $u     = $arch.ToUpper()
+  $key   = if ($u -eq 'AMD64' -or $u -eq 'X64') { 'win-x64' } elseif ($u -eq 'ARM64') { 'win-arm64' } else { "win-$($arch.ToLower())" }
+  $asset = $sums.assets.$key
+  if (-not $asset) { Fail "no self-contained MM3 build for $key ($problem) -> install Node.js $MinNode or newer from https://nodejs.org, then restart Claude Code" }
   $base  = if ($env:MM3_TEST_RELEASE_URL) { $env:MM3_TEST_RELEASE_URL } else { $sums.base }
   New-Item -ItemType Directory -Force -Path $Data | Out-Null
   Get-ChildItem -Path $Data -Filter "$($asset.file).part.*" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
   $part = Join-Path $Data "$($asset.file).part.$PID"
-  Say "downloading the self-contained MM3 $($sums.version) for win-x64 (about $([math]::Round($asset.bytes/1MB)) MB) from $base"
+  Say "downloading the self-contained MM3 $($sums.version) for $key (about $([math]::Round($asset.bytes/1MB)) MB) from $base"
   try {
     $curl = Get-Command curl.exe -ErrorAction SilentlyContinue                      # ships with Windows 10 1803+
     if ($curl) { & curl.exe -fsSL --connect-timeout 15 --speed-limit 1000 --speed-time 30 -o $part "$base/$($asset.file)"; if ($LASTEXITCODE -ne 0) { throw "curl exit $LASTEXITCODE" } }

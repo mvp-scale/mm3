@@ -1,18 +1,32 @@
-# The standalone (one self-contained MM3 file per OS), built in GitHub from the exact source commit so its origin is provable.
-# Runs on every merge to nightly (and by hand). It builds both files on one Linux runner (scripts/build-binary.ts writes the
-# Node blob with a Linux Node, so it is the build host for both targets; it checks the pinned Node archive against the pin in
-# the script AND the release's own SHASUMS256.txt), proves them (the smoke script on Linux and on a REAL Windows runner,
-# `npm run parity`, `npm run parity:install`), writes SHA256SUMS, and, when MM3_PUBLISH is 'true', signs a build-provenance
-# attestation for each file (`gh attestation verify <file> --repo <owner>/<repo>` proves which commit and workflow built it).
-# The files stay as an artifact named standalone-<version>; `npm run release -- main` verifies the attestation and attaches
-# them to the GitHub Release it creates (scripts/release.ts, promote). Nothing is published from here: no npm, no release.
-# The plugin launcher (launcher/mm3-launch) downloads these files on a machine without Node 22.13+ and checks them against
-# launcher/checksums.json, so this workflow also proves it: the build job checks the pin file against the built files while the version
-# has no GitHub Release yet; `windows-launcher` runs the launcher under real Claude Code on a real Windows runner, `linux-launcher` runs the
-# launcher tests and the real file under real Claude Code with no Node on the launcher's PATH, `macos-launcher` checks the one-line answer
-# on Apple silicon (there is no macOS build yet). Claude Code is installed with Anthropic's documented native installer.
-# TODO(macOS arm64): scripts/build-binary.ts has no darwin target yet (no Mach-O injection, no ad-hoc re-sign), so there is no
-# macOS job. When it does, add a macos-14 build+smoke job beside `windows` and list its file in `release-files`.
+# The standalone (one self-contained MM3 file per platform), built in GitHub from the exact source commit and tested on every platform.
+# Six platforms, each on its own native runner (GitHub's free ones for a public repo):
+#   linux-x64 ubuntu-24.04 | linux-arm64 ubuntu-24.04-arm | win-x64 windows-2025 | win-arm64 windows-11-arm | darwin-arm64 macos-14 | darwin-x64 macos-15-intel
+# Shape (GitHub's build -> upload-artifact -> test -> download-artifact pattern):
+#   meta       the version (package.json).
+#   build      one matrix leg per file, fail-fast off. scripts/build-binary.ts writes the Node blob and injects it into the target's official Node
+#              (checked against the pin in the script AND the release's own SHASUMS256.txt). The Linux and Windows files, arm64 ones included, are built
+#              on ubuntu-24.04 (postject edits ELF and PE anywhere); the two macOS files are built on a Mac, because the Mach-O steps need Apple's
+#              codesign (segment NODE_SEA, signature removed before injection, ad-hoc signature after). Each leg proves the build is reproducible
+#              (npm run check:binary-repro: a second build of the same commit on the same runner has the same sha256) and uploads bin-<key>.
+#              linux-x64 also runs `npm run parity` and `npm run parity:install` (Docker), which exist only there.
+#   test       one matrix leg per platform on that platform's native runner, with the file downloaded as an artifact (short retention, thrown away):
+#              SMOKE first (about a dozen checks, node hidden from PATH: scripts/smoke-standalone.sh / .ps1), then, only if smoke is green, DEEP:
+#              npm ci, then the repo's own harness against the file with MM3_BIN set: `npm run test:cli` (the cli tier, ~100 cases) and
+#              `sh scripts/flows.sh` (the offline tour of every verb), so the packed file must pass the same tests as the npm package.
+#   launchers  the plugin launcher (launcher/mm3-launch, mm3-launch.ps1), which downloads these files on a machine without Node 22.13+ and checks
+#              them against launcher/checksums.json: Linux x64 and arm64 (the launcher tests, then the real file under real Claude Code), macOS
+#              Apple silicon and Intel (a real install from a locally served file, scripts/smoke-launcher.sh), Windows x64 and arm64 (under real
+#              Claude Code, scripts/smoke-launcher.ps1).
+#   pin        launcher/checksums.json must pin all six files. While a version has no GitHub Release it is compared with this commit's builds; on a
+#              mismatch the job prints the complete file to commit (no machine can build all six, so this is where it is made).
+#   release-files  collects the six files, checks them against the hashes the builds recorded and that all six builds wrote the same blob, writes
+#              SHA256SUMS, and, when MM3_PUBLISH is 'true', attests each file (`gh attestation verify <file> --repo <owner>/<repo>` proves which
+#              commit and workflow built it). It runs only when every build, test, launcher and pin job is green. The files stay as the artifact
+#              standalone-<version>; `npm run release -- main` verifies the attestation and attaches them to the GitHub Release (scripts/release.ts).
+#              Nothing is published from here: no npm, no release.
+# Signing later (SignPath for Windows; not implemented, no secrets here): its GitHub action needs the unsigned file uploaded with
+# actions/upload-artifact first (the `bin-win-*` upload in `build` is that step) and passes github-artifact-id; see the marked spot in `build`.
+# Claude Code is installed with Anthropic's documented native installer. The npm package (native format) is tested on the same platforms by ci.yml.
 name: standalone
 
 on:
@@ -26,12 +40,29 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    runs-on: ubuntu-24.04   # parity:install copies this image's git into its containers, which are Ubuntu 24.04 too
+  meta:
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
-      linux_sha: ${{ steps.hash.outputs.linux }}
-      win_sha: ${{ steps.hash.outputs.win }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: version
+        run: echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build ${{ matrix.key }}
+    needs: meta
+    runs-on: ${{ matrix.runner }}   # parity:install copies this image's git into its containers, which are Ubuntu 24.04 too
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { key: linux-x64,    runner: ubuntu-24.04 }
+          - { key: linux-arm64,  runner: ubuntu-24.04 }      # cross-built: the file is the official arm64 Node plus the blob
+          - { key: win-x64,      runner: ubuntu-24.04 }
+          - { key: win-arm64,    runner: ubuntu-24.04 }
+          - { key: darwin-arm64, runner: macos-14 }          # Apple silicon, native
+          - { key: darwin-x64,   runner: macos-15-intel }    # Intel, native
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -39,80 +70,120 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - id: version
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-      - run: npm run build:binary -- --target linux-x64
-      - run: npm run build:binary -- --target win-x64
-      - name: The build is reproducible (two more builds from this commit give the same sha256 for both files)
-        run: npm run check:binary-repro
-      - name: launcher/checksums.json pins this build (checked while this version has no GitHub Release yet; once released it pins the published files)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          v=${{ steps.version.outputs.version }}
-          if gh release view "v$v" >/dev/null 2>&1; then
-            npm run check:launcher
-            echo "v$v is released: launcher/checksums.json names the published files, so this build is allowed to differ"
-          elif ! npm run check:launcher -- --against dist-binary; then
-            echo "::error::launcher/checksums.json does not match the files this commit builds. Take the file from this run's summary (or run npm run build:binary for both targets, then npm run gen:checksums) and commit it"
-            npm run gen:checksums
-            { echo '### launcher/checksums.json for this build'; echo '```json'; cat launcher/checksums.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
+      - run: npm run build:binary -- --target ${{ matrix.key }}
+      - name: The build is reproducible (two more builds from this commit on this runner give the same sha256; on a difference it prints the byte offsets)
+        run: npm run check:binary-repro -- --target ${{ matrix.key }}
       - name: The pinned Node archives match the release's own SHASUMS256.txt
+        if: runner.os == 'Linux'
         run: |
           cd dist-binary/cache
-          grep -E " node-v[0-9.]+-(linux-x64\.tar\.xz|win-x64\.zip)$" SHASUMS256-*.txt | sed 's/^[^:]*://' | sha256sum -c -
-      - name: Smoke test the Linux file with no Node on PATH
-        run: sh scripts/smoke-standalone.sh "dist-binary/mm3-${{ steps.version.outputs.version }}-linux-x64"
-      - run: npm run build
-      - run: npm run parity   # the npm build and the standalone give the same answers
-      - run: docker pull ubuntu:24.04
-      - run: npm run parity:install   # two clean containers, no network: npm channel vs standalone channel, and the transition stages
-      - id: hash
+          for f in node-v*; do grep -- "  $f\$" SHASUMS256-*.txt | sed 's/^[^:]*://'; done | sha256sum -c -
+      - name: parity (the npm build and the standalone give the same answers; linux-x64 only)
+        if: matrix.key == 'linux-x64'
         run: |
-          v=${{ steps.version.outputs.version }}
-          echo "linux=$(sha256sum "dist-binary/mm3-$v-linux-x64" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "win=$(sha256sum "dist-binary/mm3-$v-win-x64.exe" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          npm run build
+          npm run parity
+      - name: parity:install (two clean containers, no network; linux-x64 only)
+        if: matrix.key == 'linux-x64'
+        run: |
+          docker pull ubuntu:24.04
+          npm run parity:install
+      - name: Record the hashes this job built (release-files checks the bytes it ships against them)
+        run: cp dist-binary/SHA256SUMS "dist-binary/SHA256SUMS.${{ matrix.key }}"
+      # SIGNING SPOT (Windows, later; nothing is added now): the upload below is the UNSIGNED file, which is exactly what SignPath's
+      # signpath/github-action-submit-signing-request needs (it takes the id of an actions/upload-artifact upload as github-artifact-id and
+      # returns the signed file). A signing job would go here for `win-*`: needs this upload, submit it, download the signed .exe, upload it
+      # as bin-<key> in place of the unsigned one. The test jobs then test the signed file, release-files hashes and attests the signed file
+      # (the one that ships), and the file's new sha256 is what launcher/checksums.json must pin (the pin job's printout takes it from here).
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: standalone-build
+          name: bin-${{ matrix.key }}
           path: |
-            dist-binary/mm3-${{ steps.version.outputs.version }}-linux-x64
-            dist-binary/mm3-${{ steps.version.outputs.version }}-win-x64.exe
+            dist-binary/mm3-${{ needs.meta.outputs.version }}-${{ matrix.key }}
+            dist-binary/mm3-${{ needs.meta.outputs.version }}-${{ matrix.key }}.exe
+            dist-binary/SHA256SUMS.${{ matrix.key }}
+            dist-binary/blob-${{ matrix.key }}.sha256
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 7   # a working copy for the jobs below; the release copy is standalone-<version> (90 days)
 
-  windows:
-    needs: build
-    runs-on: windows-latest   # the Windows file has only ever run under Wine; this is its first real run
+  test:
+    name: test ${{ matrix.key }}
+    needs: [meta, build]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { key: linux-x64,    runner: ubuntu-24.04,     ext: '' }
+          - { key: linux-arm64,  runner: ubuntu-24.04-arm, ext: '' }
+          - { key: win-x64,      runner: windows-2025,     ext: '.exe' }
+          - { key: win-arm64,    runner: windows-11-arm,   ext: '.exe' }
+          - { key: darwin-arm64, runner: macos-14,         ext: '' }
+          - { key: darwin-x64,   runner: macos-15-intel,   ext: '' }
+    env:
+      MM3_FILE: built/mm3-${{ needs.meta.outputs.version }}-${{ matrix.key }}${{ matrix.ext }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: standalone-build
+          name: bin-${{ matrix.key }}
           path: built
-      - name: Smoke test the Windows file with PATH cut down to System32
+      # SMOKE: the file alone, node hidden (the scripts cut PATH themselves), the offline sample provider, no key, no spend.
+      - name: Smoke (POSIX)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x "$MM3_FILE"      # an artifact download drops the execute bit
+          sh scripts/smoke-standalone.sh "$MM3_FILE"
+      - name: Smoke (Windows, PATH cut down to System32)
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          ./scripts/smoke-standalone.ps1 -Bin "built/mm3-${{ needs.build.outputs.version }}-win-x64.exe"
+          ./scripts/smoke-standalone.ps1 -Bin "$env:MM3_FILE"
           if ($LASTEXITCODE -ne 0) { exit 1 }
+      # DEEP, only after smoke is green: the repo's own harness against the file (MM3_BIN makes it launch the file instead of node dist/cli.js).
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Deep, cli tier (POSIX)
+        if: runner.os != 'Windows'
+        run: MM3_BIN="$PWD/$MM3_FILE" npm run test:cli
+      - name: Deep, flows tour (POSIX)
+        if: runner.os != 'Windows'
+        run: MM3_BIN="$PWD/$MM3_FILE" sh scripts/flows.sh
+      - name: Deep, cli tier (Windows; POSIX-only cases skip themselves on win32)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:MM3_BIN = (Resolve-Path $env:MM3_FILE).Path
+          npm run test:cli
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: Deep, flows tour (Windows, through the runner's Git Bash)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: MM3_BIN="$(cygpath -u "$GITHUB_WORKSPACE")/$MM3_FILE" sh scripts/flows.sh
 
   windows-launcher:
-    needs: build
-    runs-on: windows-latest
+    name: launcher ${{ matrix.key }} (${{ matrix.case }})
+    needs: [meta, build]
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         # sh-visible: the committed plugin.json (command `sh`) with Git for Windows' bin folders on PATH
         # sh-default: the same plugin.json with only Git's cmd folder on PATH, which is what Git's installer sets by default (no sh)
         # powershell: the other candidate command (`powershell -File launcher/mm3-launch.ps1 mcp`); informational, never fails the job
+        runner: [windows-2025, windows-11-arm]
         case: [sh-visible, sh-default, powershell]
+        include:
+          - { runner: windows-2025, key: win-x64 }
+          - { runner: windows-11-arm, key: win-arm64 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: standalone-build
+          name: bin-${{ matrix.key }}
           path: built
       - name: Install Claude Code (Anthropic's documented native installer for Windows)
         shell: pwsh
@@ -124,12 +195,19 @@ jobs:
         shell: pwsh
         continue-on-error: ${{ matrix.case == 'powershell' }}
         run: |
-          ./scripts/smoke-launcher.ps1 -Bin "built/mm3-${{ needs.build.outputs.version }}-win-x64.exe" -Case ${{ matrix.case }}
+          ./scripts/smoke-launcher.ps1 -Bin "built/mm3-${{ needs.meta.outputs.version }}-${{ matrix.key }}.exe" -Case ${{ matrix.case }}
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
   linux-launcher:
-    needs: build
-    runs-on: ubuntu-24.04
+    name: launcher ${{ matrix.key }}
+    needs: [meta, build]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { key: linux-x64,   runner: ubuntu-24.04 }
+          - { key: linux-arm64, runner: ubuntu-24.04-arm }
     env:
       MM3_REQUIRE_LAUNCHER: '1'   # a skipped launcher test (claude or the file missing) fails here instead of passing silently
     steps:
@@ -141,7 +219,7 @@ jobs:
       - run: npm ci
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: standalone-build
+          name: bin-${{ matrix.key }}
           path: built
       - name: Install Claude Code (Anthropic's documented native installer for Linux)
         run: |
@@ -150,56 +228,105 @@ jobs:
           "$HOME/.local/bin/claude" --version
       - name: Launcher tests (sh logic against a fake release on 127.0.0.1), PATH without node
         run: npx vitest run --project unit test/unit/launcher.test.ts test/unit/check-launcher.test.ts
-      - name: The built Linux file under real Claude Code, PATH without node
-        run: MM3_BIN="$PWD/built/mm3-${{ needs.build.outputs.version }}-linux-x64" npx vitest run --project cli test/e2e/cli/launcher-claude.test.ts
+      - name: The built file under real Claude Code, PATH without node
+        run: |
+          chmod +x "built/mm3-${{ needs.meta.outputs.version }}-${{ matrix.key }}"
+          MM3_BIN="$PWD/built/mm3-${{ needs.meta.outputs.version }}-${{ matrix.key }}" npx vitest run --project cli test/e2e/cli/launcher-claude.test.ts
 
   macos-launcher:
-    runs-on: macos-14   # Apple silicon
+    name: launcher ${{ matrix.key }}
+    needs: [meta, build]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { key: darwin-arm64, runner: macos-14 }         # Apple silicon
+          - { key: darwin-x64,   runner: macos-15-intel }   # Intel
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: No Node, no macOS build yet - one clear line, exit 1, nothing downloaded
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bin-${{ matrix.key }}
+          path: built
+      - name: No Node on the launcher's PATH - a real install from a locally served file, twice (the second downloads nothing)
         run: |
-          [ "$(uname -m)" = arm64 ] || { echo "::error::this runner is not Apple silicon"; exit 1; }
-          if env -i PATH=/usr/bin:/bin sh -c 'command -v node' >/dev/null; then echo "::error::node is on the launcher's PATH"; exit 1; fi
-          mkdir -p "$RUNNER_TEMP/h"
-          set +e
-          out=$(env -i HOME="$RUNNER_TEMP/h" PATH=/usr/bin:/bin CLAUDE_PLUGIN_DATA="$RUNNER_TEMP/d" sh launcher/mm3-launch mcp </dev/null 2>&1 >/dev/null)
-          code=$?
-          set -e
-          echo "exit $code"; echo "$out"
-          [ "$code" = 1 ] || { echo "::error::expected exit 1"; exit 1; }
-          echo "$out" | grep -q "no self-contained MM3 build for darwin-arm64 yet (Node.js is not installed)" || { echo "::error::the clear message is missing"; exit 1; }
-          [ ! -e "$RUNNER_TEMP/d" ] && [ ! -e "$RUNNER_TEMP/h/.local" ] || { echo "::error::something was created"; exit 1; }
+          chmod +x "built/mm3-${{ needs.meta.outputs.version }}-${{ matrix.key }}"
+          sh scripts/smoke-launcher.sh "built/mm3-${{ needs.meta.outputs.version }}-${{ matrix.key }}"
+
+  pin:
+    needs: [meta, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: bin-*
+          merge-multiple: true
+          path: dist-binary
+      - name: launcher/checksums.json pins all six builds of this commit (checked while this version has no GitHub Release yet; once released it pins the published files)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=${{ needs.meta.outputs.version }}
+          if gh release view "v$v" >/dev/null 2>&1; then
+            npm run check:launcher
+            echo "v$v is released: launcher/checksums.json names the published files, so this build is allowed to differ"
+          elif ! npm run check:launcher -- --against dist-binary; then
+            echo "::error::launcher/checksums.json does not match the six files this commit builds. Take the file from this run's summary and commit it"
+            npm run gen:checksums
+            { echo '### launcher/checksums.json for this build'; echo '```json'; cat launcher/checksums.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
 
   release-files:
-    needs: [build, windows]
+    needs: [meta, build, test, windows-launcher, linux-launcher, macos-launcher, pin]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      id-token: write       # the attestation is signed with this run's identity
+      id-token: write           # the attestation is signed with this run's identity
       attestations: write
+      artifact-metadata: write  # actions/attest also writes the artifact storage record
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: standalone-build
+          pattern: bin-*
+          merge-multiple: true
           path: standalone
-      - name: The bytes are the ones the build job hashed and the smoke tests ran
+      - name: Six files, the bytes the builds hashed, and one blob (the same bytes from all six builds)
         run: |
           cd standalone
-          v=${{ needs.build.outputs.version }}
-          printf '%s  %s\n' "${{ needs.build.outputs.linux_sha }}" "mm3-$v-linux-x64" "${{ needs.build.outputs.win_sha }}" "mm3-$v-win-x64.exe" | sha256sum -c -
+          v=${{ needs.meta.outputs.version }}
+          for f in mm3-$v-linux-x64 mm3-$v-linux-arm64 mm3-$v-win-x64.exe mm3-$v-win-arm64.exe mm3-$v-darwin-arm64 mm3-$v-darwin-x64; do
+            [ -f "$f" ] || { echo "::error::$f is missing"; exit 1; }
+          done
+          set -- mm3-*; [ $# = 6 ] || { echo "::error::expected exactly six mm3-* files, got $#"; exit 1; }
+          cat SHA256SUMS.* | sha256sum -c -
+          set -- blob-*.sha256; [ $# = 6 ] || { echo "::error::expected six blob hashes, got $#"; exit 1; }
+          cat blob-*.sha256
+          [ "$(cat blob-*.sha256 | cut -d' ' -f1 | sort -u | wc -l)" = 1 ] || { echo "::error::the six builds did not write the same blob"; exit 1; }
+          rm SHA256SUMS.* blob-*.sha256
       - name: SHA256SUMS
         run: cd standalone && sha256sum mm3-* | LC_ALL=C sort -k2 > SHA256SUMS && cat SHA256SUMS
+      # Attest the files that ship: standalone/ holds exactly them. (Signing later: the signed .exe replaces the unsigned one in standalone/ before this step.)
+      # actions/attest is the supported action; actions/attest-build-provenance (used before) is now only a wrapper over it. Both sign with this workflow's
+      # identity, so `gh attestation verify --signer-workflow <repo>/.github/workflows/standalone.yml` in scripts/release.ts is unchanged.
       - name: Build provenance (signed only when publishing is switched on)
         if: vars.MM3_PUBLISH == 'true'
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             standalone/mm3-*
             standalone/SHA256SUMS
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: standalone-${{ needs.build.outputs.version }}
+          name: standalone-${{ needs.meta.outputs.version }}
           path: standalone/
           if-no-files-found: error
           retention-days: 90   # a release picks these up later, from the nightly build of the same commit

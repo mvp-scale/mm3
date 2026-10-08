@@ -33,7 +33,7 @@ mm3x() {
 
 KNOWN_BUGS=""
 
-now_ms() { date +%s%3N; }
+now_ms() { t=$(date +%s%3N); case $t in *[!0-9]*) echo $(($(date +%s) * 1000));; *) echo "$t";; esac; }   # macOS's date has no %N: whole seconds there
 TOTAL_START=$(now_ms)
 
 # run <mm3 args...>: mm3x "$@" (node "$CLI", or $MM3_BIN) under the current env, stdout+stderr merged into $OUT, code into $CODE.

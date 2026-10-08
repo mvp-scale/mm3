@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { NODE_VERSION, seaConfig, shasumFor, TARGETS } from '../../scripts/build-binary.ts';
+import { cannotBuildHere, hostTarget, NODE_VERSION, seaConfig, shasumFor, TARGETS } from '../../scripts/build-binary.ts';
 import { diffOffsets } from '../../scripts/check-binary-repro.ts';
 import { isStandalone, readPackageFile } from '../../src/util/embedded.ts';
 
@@ -14,6 +14,28 @@ describe('standalone build pins', () => {
       expect(t.sha256).toMatch(/^[0-9a-f]{64}$/);
       expect(t.archive).toContain(`v${NODE_VERSION}-`);
     }
+  });
+
+  it('all six platforms are targets, named os-cpu, and only the macOS ones need a Mac', () => {
+    expect(Object.keys(TARGETS).sort()).toEqual(['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64', 'win-arm64', 'win-x64']);
+    for (const [name, t] of Object.entries(TARGETS)) {
+      expect(t.archive).toContain(`-${name}.`);
+      expect(t.exe).toBe(name.startsWith('win-') ? '.exe' : '');
+      expect(Boolean(t.macho)).toBe(name.startsWith('darwin-'));
+      expect(cannotBuildHere(name, 'linux') === undefined).toBe(!name.startsWith('darwin-'));
+      expect(cannotBuildHere(name, 'darwin')).toBeUndefined();
+    }
+    expect(cannotBuildHere('linux-x64', 'win32')).toContain('Linux or macOS');
+    expect(TARGETS['darwin-arm64']!.member).toBe(`node-v${NODE_VERSION}-darwin-arm64/bin/node`);
+    expect(TARGETS['win-arm64']!.member).toBe(`node-v${NODE_VERSION}-win-arm64/node.exe`);
+  });
+
+  it('hostTarget maps this machine to the pinned Node that runs on it', () => {
+    expect(hostTarget('linux', 'x64')).toBe('linux-x64');
+    expect(hostTarget('linux', 'arm64')).toBe('linux-arm64');
+    expect(hostTarget('darwin', 'arm64')).toBe('darwin-arm64');
+    expect(hostTarget('darwin', 'x64')).toBe('darwin-x64');
+    expect(hostTarget('linux', 'riscv64')).toBeUndefined();
   });
 
   it('shasumFor reads the hash of one archive out of a SHASUMS256.txt body', () => {

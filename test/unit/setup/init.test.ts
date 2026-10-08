@@ -12,6 +12,9 @@ import { readInstallRecord } from '../../../src/setup/install-record.ts';
 import { type InitCtx, type InitFlags, runInit } from '../../../src/setup/init.ts';
 import type { RunResult, Runner } from '../../../src/setup/runner.ts';
 
+// POSIX-only cases are skipped on Windows, each with its reason beside it (symlinks need a privilege there; chmod mode bits do not stop writes).
+const WINDOWS = process.platform === 'win32';
+
 const PKG = { name: '@mvpscale/mm3', version: '0.0.0' };
 
 function fakeTty(): { input: PassThrough & { isTTY: boolean }; output: PassThrough & { isTTY: boolean } } {
@@ -121,7 +124,7 @@ describe('runInit: a fresh --yes --no-claude --key-stdin run, inside a git proje
     expect(readInstallRecord(ctx.env)).toMatchObject({ mode: 'local', projectDir: ctx.cwd });
   });
 
-  it('an explicit --global against an unwritable prefix never runs sudo — it stops that one step with a fix', async () => {
+  it.skipIf(WINDOWS)('an explicit --global against an unwritable prefix never runs sudo — it stops that one step with a fix', async () => {
     const { ctx, home } = baseCtx();
     if (process.getuid && process.getuid() === 0) return;
     const prefix = unwritablePrefix(home);
@@ -189,7 +192,7 @@ describe('runInit: outside a git project', () => {
 });
 
 describe('runInit: idempotent re-run', () => {
-  it('CLI already reachable, project already there: every line says so, nothing changes [C-099]', async () => {
+  it.skipIf(WINDOWS)('CLI already reachable, project already there: every line says so, nothing changes [C-099]', async () => {
     const { ctx, home } = baseCtx();
     mkdirSync(path.join(ctx.cwd, '.git'));
     // Pre-seed a layout npm itself would produce: <prefix>/bin/mm3 is a symlink into
@@ -220,7 +223,7 @@ describe('runInit: idempotent re-run', () => {
 });
 
 describe('runInit: a throwaway npx cache copy is never "already reachable"', () => {
-  it('mm3 resolved from inside npm\'s _npx cache still gets installed somewhere durable, not just reported as reachable', async () => {
+  it.skipIf(WINDOWS)('mm3 resolved from inside npm\'s _npx cache still gets installed somewhere durable, not just reported as reachable', async () => {
     const { ctx, home } = baseCtx();
     mkdirSync(path.join(ctx.cwd, '.git'));
     // Mimics npm's own npx cache layout closely enough for isPackageBin to recognize it as this package too —

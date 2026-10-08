@@ -10,6 +10,9 @@ import { type InitCtx, runInit } from '../../../src/setup/init.ts';
 import { readInstallRecord, writeInstallRecord } from '../../../src/setup/install-record.ts';
 import type { Runner } from '../../../src/setup/runner.ts';
 
+// POSIX-only cases are skipped on Windows, each with its reason beside it (symlinks need a privilege there; chmod mode bits do not stop writes).
+const WINDOWS = process.platform === 'win32';
+
 const g = globalThis as { __MM3_EMBEDDED__?: Record<string, string> };
 afterEach(() => {
   delete g.__MM3_EMBEDDED__;
@@ -38,7 +41,7 @@ const FLAGS = { key: 'no', claude: false, yes: true } as const;
 const binOf = (home: string): string => path.join(home, '.local', 'bin', 'mm3');
 
 describe('the standalone meets an npm install', () => {
-  it('leaves npm\'s link in place, says so in one · line, writes no plugin folder and no record, and exits 0', async () => {
+  it.skipIf(WINDOWS)('leaves npm\'s link in place, says so in one · line, writes no plugin folder and no record, and exits 0', async () => {
     g.__MM3_EMBEDDED__ = {};
     const home = mkdtempSync(path.join(os.tmpdir(), 'mm3-home-'));
     const pkg = path.join(home, '.local', 'lib', 'node_modules', '@mvpscale', 'mm3');

@@ -1,5 +1,5 @@
 # MM3 plugin launcher check on Windows (PowerShell). Usage:
-#   powershell -ExecutionPolicy Bypass -File scripts\smoke-launcher.ps1 -Bin C:\path\mm3-<version>-win-x64.exe -Case sh-visible|sh-default|powershell
+#   powershell -ExecutionPolicy Bypass -File scripts\smoke-launcher.ps1 -Bin C:\path\mm3-<version>-win-x64.exe|win-arm64.exe -Case sh-visible|sh-default|powershell
 # CI runs it on a real Windows runner (.github/workflows/standalone.yml). It installs the repo's plugin into Claude Code with an isolated
 # config and home, with NO Node on PATH, serves the built Windows file from 127.0.0.1 as the fake GitHub Release (the pin file is written
 # for that file), and requires `claude mcp list` to show the MM3 server connected after one download, and a second start to download nothing.
@@ -33,12 +33,14 @@ $plugin = Join-Path $W 'plugin'
 $null = New-Item -ItemType Directory -Path $plugin
 foreach ($d in '.claude-plugin','hooks','launcher','skills','bin') { Copy-Item -Recurse (Join-Path $Repo $d) (Join-Path $plugin $d) }
 $asset = Split-Path -Leaf $Bin
+$key   = [regex]::Match($asset, '-(win-(?:x64|arm64))\.exe$').Groups[1].Value   # the pin names the file under the key the launcher looks up on this CPU
+if (-not $key) { Fail "cannot tell which build $asset is (expected mm3-<version>-win-x64.exe or -win-arm64.exe)" }
 Copy-Item $Bin (Join-Path $W "rel\$asset")
 $port = 8700 + (Get-Random -Maximum 200)
 $pin = [ordered]@{
   version = $Pkg.version
   base    = "http://127.0.0.1:$port"
-  assets  = [ordered]@{ 'win-x64' = [ordered]@{ file = $asset; sha256 = (Get-FileHash -Algorithm SHA256 $Bin).Hash.ToLower(); bytes = (Get-Item $Bin).Length } }
+  assets  = [ordered]@{ $key = [ordered]@{ file = $asset; sha256 = (Get-FileHash -Algorithm SHA256 $Bin).Hash.ToLower(); bytes = (Get-Item $Bin).Length } }
 }
 $pin | ConvertTo-Json -Depth 5 | Set-Content -Encoding ascii (Join-Path $plugin 'launcher\checksums.json')
 if ($Case -eq 'powershell') {

@@ -7,6 +7,9 @@ import { expand } from '../../src/contract/layers.ts';
 import { createCodeResolver, readUnit } from '../../src/evidence/units.ts';
 import { tempProject } from '../helpers/project.ts';
 
+// POSIX-only cases are skipped on Windows, each with its reason beside it (symlinks need a privilege there; chmod mode bits do not stop writes).
+const WINDOWS = process.platform === 'win32';
+
 const HANDLERS = readFileSync('test/fixtures/code/handlers.ts', 'utf8');
 
 describe('createCodeResolver', () => {
@@ -48,7 +51,7 @@ describe('createCodeResolver', () => {
     ]);
   });
 
-  it.skipIf(process.getuid?.() === 0)('a file matching the pattern that can\'t be read is skipped, with a note; the rest still resolve', () => {
+  it.skipIf(process.getuid?.() === 0 || WINDOWS)('a file matching the pattern that can\'t be read is skipped, with a note; the rest still resolve', () => {
     const { root } = tempProject({ 'src/a.ts': 'export function f() {}\n', 'src/b.ts': 'export function g() {}\n' });
     const bPath = path.join(root, 'src/b.ts');
     chmodSync(bPath, 0o000); // real EACCES on read, with expandGlob's own walk still listing the file

@@ -7,6 +7,9 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { expectCleanStop, mm3, snapshot, snapshotLedgerAndBudget, type CliResult } from '../../helpers/cli.ts';
 import { tempProject, USER_TS } from '../../helpers/project.ts';
 
+// POSIX-only cases below are skipped on Windows (stated per test): chmod 0o555 on a folder does not stop writes there, so "not writable" cannot be set up.
+const WINDOWS = process.platform === 'win32';
+
 const CLASS_YAML = readFileSync('test/fixtures/requests/valid/class.yaml', 'utf8');
 
 /** Runs one misuse and checks that .mm3/ is byte-for-byte what it was before. */
@@ -250,7 +253,7 @@ describe('environment', () => {
     expect(mm3(bare, ['class', 'req.yaml'], { home: false }).status).toBe(0); // "mkdir .mm3" is enough
   });
 
-  it.skipIf(process.getuid?.() === 0)('.mm3/ not writable: exit 1, one clean line, nothing changed', () => {
+  it.skipIf(process.getuid?.() === 0 || WINDOWS)('.mm3/ not writable: exit 1, one clean line, nothing changed', () => {
     const root = projectWithRun();
     const dir = path.join(root, '.mm3');
     chmodSync(dir, 0o555);
@@ -264,7 +267,7 @@ describe('environment', () => {
     }
   });
 
-  it.skipIf(process.getuid?.() === 0)('a fresh, read-only .mm3/: exit 1, no budget file appears', () => {
+  it.skipIf(process.getuid?.() === 0 || WINDOWS)('a fresh, read-only .mm3/: exit 1, no budget file appears', () => {
     const { root } = tempProject();
     writeFileSync(path.join(root, 'req.yaml'), CLASS_YAML);
     const dir = path.join(root, '.mm3');

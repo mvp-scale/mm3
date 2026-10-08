@@ -11,12 +11,21 @@
  * published: build on the release commit, run gen:checksums, commit the file. launcher/ is not embedded in the standalone, so
  * writing the file does not change the hashes it records. The standalone workflow runs `--against` while a version has no GitHub
  * Release yet (once it has one, the file pins the published assets and the current build is allowed to move on).
+ *
+ * The file must pin ALL six builds (ASSET_KEYS). The standalone workflow builds each on its own runner, so no one machine has all
+ * six: its `pin` job downloads them together, runs `--against`, and on a mismatch prints the complete file to commit. A partial file
+ * (say, only the four a Linux machine can build) fails here and names the keys it lacks and the runner that builds each.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 export const CHECKSUMS_FILE = 'launcher/checksums.json';
+/** Every build the pin file must list (the keys of TARGETS in scripts/build-binary.ts; test/unit/check-launcher.test.ts keeps them equal), and the runner that builds each. */
+export const ASSET_KEYS: Record<string, string> = {
+  'linux-x64': 'ubuntu-24.04', 'linux-arm64': 'ubuntu-24.04', 'win-x64': 'ubuntu-24.04', 'win-arm64': 'ubuntu-24.04',
+  'darwin-arm64': 'macos-14', 'darwin-x64': 'macos-15-intel',
+};
 export interface Asset { file: string; sha256: string; bytes: number }
 export interface Checksums { version: string; base: string; assets: Record<string, Asset> }
 
@@ -43,7 +52,7 @@ export function renderChecksums(c: Checksums): string {
 
 /** Everything wrong with a pin file, one help-first line each; empty when it is fine. `built` (file name -> sha256) adds the hash check. */
 export function checksumsProblems(text: string | undefined, version: string, slug: string, built?: Record<string, string>): string[] {
-  const fix = '→ run "npm run build:binary -- --target linux-x64", "--target win-x64", then "npm run gen:checksums", and commit the result';
+  const fix = '→ build all six (npm run build:binary -- --target <key>; the macOS two only on a Mac), then "npm run gen:checksums", and commit the result; the standalone workflow\'s pin job prints the complete file';
   if (text === undefined) return [`✖ ${CHECKSUMS_FILE}: missing ${fix}`];
   let c: Checksums;
   try { c = JSON.parse(text) as Checksums; } catch { return [`✖ ${CHECKSUMS_FILE}: not valid JSON ${fix}`]; }
@@ -52,6 +61,9 @@ export function checksumsProblems(text: string | undefined, version: string, slu
   if (c.base !== releaseBase(slug, version)) problems.push(`✖ ${CHECKSUMS_FILE}: base is ${String(c.base)}, expected ${releaseBase(slug, version)} ${fix}`);
   const keys = Object.keys(c.assets ?? {});
   if (keys.length === 0) problems.push(`✖ ${CHECKSUMS_FILE}: lists no assets ${fix}`);
+  const missing = Object.keys(ASSET_KEYS).filter((k) => !keys.includes(k));
+  if (keys.length > 0 && missing.length > 0) problems.push(`✖ ${CHECKSUMS_FILE}: no asset pinned for ${missing.map((k) => `${k} (built on ${ASSET_KEYS[k]})`).join(', ')}; without it the launcher says "no self-contained MM3 build" there ${fix}`);
+  for (const k of keys) if (!(k in ASSET_KEYS)) problems.push(`✖ ${CHECKSUMS_FILE}: "${k}" is not one of ${Object.keys(ASSET_KEYS).join(', ')} ${fix}`);
   for (const k of keys) {
     const a = c.assets[k]!;
     if (assetKey(a.file, version) !== k) problems.push(`✖ ${CHECKSUMS_FILE}: "${k}" names file ${a.file}, expected mm3-${version}-${k}[.exe] ${fix}`);
@@ -85,11 +97,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   if (process.argv[2] === 'write') {
     const dir = arg('--from') ?? 'dist-binary';
     const files = builtFiles(dir, pkg.version);
-    if (Object.keys(files).length === 0) { console.error(`✖ ${dir}: no mm3-${pkg.version}-<os>-<cpu> files → run "npm run build:binary -- --target linux-x64" and "--target win-x64" first`); process.exit(1); }
+    if (Object.keys(files).length === 0) { console.error(`✖ ${dir}: no mm3-${pkg.version}-<os>-<cpu> files → run "npm run build:binary -- --target <key>" first (keys: ${Object.keys(ASSET_KEYS).join(', ')})`); process.exit(1); }
     const assets: Record<string, Asset> = {};
     for (const f of Object.values(files)) assets[assetKey(f.file, pkg.version)!] = f;
     writeFileSync(CHECKSUMS_FILE, renderChecksums({ version: pkg.version, base: releaseBase(slug, pkg.version), assets }));
     console.log(`wrote ${CHECKSUMS_FILE}: ${Object.keys(assets).join(', ')} for ${pkg.version}`);
+    const lacking = Object.keys(ASSET_KEYS).filter((k) => !(k in assets));
+    if (lacking.length > 0) console.log(`⚠ not in ${dir}: ${lacking.map((k) => `${k} (built on ${ASSET_KEYS[k]})`).join(', ')}; the file is incomplete and "npm run check:launcher" fails until they are added (the workflow's pin job has all six)`);
   } else {
     const dir = arg('--against');
     const built = dir ? Object.fromEntries(Object.values(builtFiles(dir, pkg.version)).map((f) => [f.file, f.sha256])) : undefined;

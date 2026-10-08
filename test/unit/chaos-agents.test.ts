@@ -8,6 +8,9 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { checkAgent } from '../chaos/agents.ts';
 
+// POSIX-only cases are skipped on Windows, each with its reason beside it (symlinks need a privilege there; chmod mode bits do not stop writes).
+const WINDOWS = process.platform === 'win32';
+
 describe('checkAgent skips a missing CLI without invoking one', () => {
   const originalPath = process.env.PATH;
   let dir: string | undefined;
@@ -18,7 +21,7 @@ describe('checkAgent skips a missing CLI without invoking one', () => {
     dir = undefined;
   });
 
-  it('reports both claude and gemini as not found on a PATH holding only node', () => {
+  it.skipIf(WINDOWS)('reports both claude and gemini as not found on a PATH holding only node', () => { // skipped on Windows: symlinkSync of node needs a privilege there
     dir = mkdtempSync(path.join(os.tmpdir(), 'mm3-chaos-path-'));
     // node itself is on this PATH (so "PATH containing only node" is literally true) — neither checkAgent
     // path needs node on PATH to run (this test is already running inside node); the point is that spawnSync

@@ -1,5 +1,5 @@
 #!/bin/sh
-# MM3 standalone smoke test (Linux, macOS). Usage: sh scripts/smoke-standalone.sh /path/to/mm3-file
+# MM3 standalone smoke test (Linux x64/arm64, macOS Intel/Apple silicon; plain POSIX tools only: no GNU date %N, no timeout). Usage: sh scripts/smoke-standalone.sh /path/to/mm3-file
 # Runs the one self-contained file in a throwaway folder with NO Node on PATH and the offline sample provider (no key,
 # no spend): help, doctor, a dry run and a real run of `class`, view, report, outcome, the SQLite graph, template, and
 # an MCP initialize over stdio. CI runs it on the built file (.github/workflows/standalone.yml); the owner can run it on a
@@ -44,8 +44,8 @@ YAML
 M="env -i HOME=$W PATH=/nonexistent $BIN"
 pass=0; fail=0
 check() { # name, expected-substring, command...
-  name="$1"; want="$2"; shift 2; s=$(date +%s%N); out=$($M "$@" 2>&1); rc=$?; ms=$(( ($(date +%s%N)-s)/1000000 ))
-  if [ $rc -eq 0 ] && printf '%s' "$out" | grep -q -- "$want"; then echo "PASS  ${ms}ms  $name"; pass=$((pass+1)); else echo "FAIL  $name (rc=$rc)"; printf '%s\n' "$out" | head -3 | sed 's/^/        /'; fail=$((fail+1)); fi; }
+  name="$1"; want="$2"; shift 2; s=$(date +%s); out=$($M "$@" 2>&1); rc=$?; secs=$(( $(date +%s)-s ))
+  if [ $rc -eq 0 ] && printf '%s' "$out" | grep -q -- "$want"; then echo "PASS  ${secs}s  $name"; pass=$((pass+1)); else echo "FAIL  $name (rc=$rc)"; printf '%s\n' "$out" | head -3 | sed 's/^/        /'; fail=$((fail+1)); fi; }
 echo "file: $BIN  ($(du -h "$BIN" | cut -f1))   folder: $W   node on your normal PATH: $(command -v node || echo none) (the checks below strip PATH anyway)"
 check "help prints"                       "MM3 turns"        help
 check "doctor"                            "doctor:"          doctor
@@ -58,6 +58,10 @@ check "outcome"                           "held"             outcome MM3-0001 he
 check "report problems (SQLite graph)"    "row"              report problems
 check "report graph (SQLite graph)"       "edges"            report graph place:src/a.ts
 check "template class (embedded)"         "mak:"             template class
-out=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' | (sleep 1; cat) | timeout 6 $M mcp 2>&1)
+# MCP initialize: stdin stays open 1 s after the request, then closes (the server exits on EOF); a watchdog kills it after 15 s.
+( printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}'; sleep 1 ) | $M mcp >"$W/mcp.out" 2>&1 & mcp=$!
+( sleep 15; kill $mcp 2>/dev/null ) & dog=$!
+wait $mcp; kill $dog 2>/dev/null
+out=$(cat "$W/mcp.out")
 if printf '%s' "$out" | grep -q '"serverInfo"'; then echo "PASS         MCP initialize over stdio"; pass=$((pass+1)); else echo "FAIL  MCP initialize"; fail=$((fail+1)); fi
 echo; echo "result: $pass passed, $fail failed"; [ $fail -eq 0 ]

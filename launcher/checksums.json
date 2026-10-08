@@ -2,7 +2,9 @@
   "version": "0.1.4",
   "base": "https://github.com/mvp-scale/mm3/releases/download/v0.1.4",
   "assets": {
+    "linux-arm64": { "file": "mm3-0.1.4-linux-arm64", "sha256": "f3c465bd50ed7b7952a4f92cbe514d7577d2ceb5d140299a43ce7a76b769d305", "bytes": 123866240 },
     "linux-x64": { "file": "mm3-0.1.4-linux-x64", "sha256": "8a85c17debf7fc24a9b372243d97448fbe706281ab1e6a8498bfe46ca0828175", "bytes": 127536320 },
+    "win-arm64": { "file": "mm3-0.1.4-win-arm64.exe", "sha256": "e48803e9e3d60334c0dd83bd29e59814dfde7332c6dcf2c2b5a5e610d048467d", "bytes": 82886144 },
     "win-x64": { "file": "mm3-0.1.4-win-x64.exe", "sha256": "c32fe67cc533c47cf44d614ef2225e1ae50aa0c43f52eb72a4d26e612675dca4", "bytes": 94584832 }
   }
 }

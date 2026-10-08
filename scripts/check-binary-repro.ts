@@ -1,12 +1,14 @@
 /**
- * `npm run check:binary-repro [-- --target linux-x64|win-x64|all]`: builds the standalone twice from the same checkout and
- * fails unless the two files are byte-identical (same sha256). When they differ it says how many bytes and the first
+ * `npm run check:binary-repro [-- --target <any build:binary target>|all]`: builds the standalone twice from the same checkout and
+ * fails unless the two files are byte-identical (same sha256). `all` means every target this machine can build (a Linux host: the
+ * Linux and Windows ones; a Mac: all six, the macOS ones included) and names the ones it skips. The standalone workflow runs it on each
+ * native runner for the targets that runner builds, so macOS's ad-hoc `codesign` output is measured, not assumed. When they differ it says how many bytes and the first
  * offsets, so the cause is a measurement, not a guess. Needs the network only for the first Node download (cached).
  */
 import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { buildBinary, TARGETS } from './build-binary.ts';
+import { buildBinary, cannotBuildHere, TARGETS } from './build-binary.ts';
 
 /** Byte offsets (0-based) where two buffers differ, plus a length mismatch counted as differing tail bytes. */
 export function diffOffsets(a: Buffer, b: Buffer, limit = 8): { count: number; first: number[] } {
@@ -39,7 +41,11 @@ async function checkTarget(name: string): Promise<boolean> {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const i = process.argv.indexOf('--target');
   const want = i >= 0 ? process.argv[i + 1] : 'all';
-  const names = want === 'all' ? Object.keys(TARGETS) : [want ?? ''];
+  const names = want === 'all' ? Object.keys(TARGETS).filter((n) => {
+    const why = cannotBuildHere(n);
+    if (why) console.log(`- ${n}: skipped on this machine (${why})`);
+    return !why;
+  }) : [want ?? ''];
   let ok = true;
   for (const n of names) {
     if (!TARGETS[n]) { console.error(`✖ --target: "${n}" is not one of ${Object.keys(TARGETS).join(', ')}, all → pass one of them`); process.exit(2); }

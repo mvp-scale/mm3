@@ -169,16 +169,29 @@ describe.skipIf(skip !== undefined).concurrent(`plugin launcher${skip ? ` (skipp
     expect(rel.requests).toHaveLength(1);
   }, 30_000);
 
-  it('[C-284] macOS on Apple silicon (no build listed): no download, one ✖ line that says what to do', async () => {
-    const { kit, rel, env } = await setup('none', { uname: { s: 'Darwin', m: 'arm64' }, pinKey: 'linux-x64' }); // the pin lists no darwin-arm64 build
+  it.each([
+    ['Linux', 'x86_64', 'linux-x64'], ['Linux', 'aarch64', 'linux-arm64'], ['Darwin', 'arm64', 'darwin-arm64'], ['Darwin', 'x86_64', 'darwin-x64'],
+  ])('[C-284] %s %s: asks for the %s build, checks it, installs it (the sh launcher maps uname to all four POSIX keys)', async (s, m, key) => {
+    const { kit, rel, env, asset } = await setup('none', { uname: { s, m }, pinKey: key });
+    const r = await runLauncher(kit, 'mcp', { stdin: INITIALIZE, env });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('FAKE-STANDALONE-MCP');
+    expect(r.stderr).toContain(`downloading the self-contained MM3 ${VERSION} for ${key}`);
+    expect(r.stderr).toContain('checked: sha256 matches the value pinned in the plugin');
+    expect(rel.requests).toEqual([`GET /${asset}`]);
+    expect(asset).toBe(`mm3-${VERSION}-${key}`);
+  }, 30_000);
+
+  it('[C-284] a machine with no build listed (here Linux riscv64): no download, one ✖ line that says what to do', async () => {
+    const { kit, rel, env } = await setup('none', { uname: { s: 'Linux', m: 'riscv64' }, pinKey: 'linux-x64' }); // the pin lists no linux-riscv64 build
     const r = await runLauncher(kit, 'mcp', { stdin: INITIALIZE, env });
     expect(r.code).toBe(1);
     expect(r.stdout).toBe('');
-    expect(r.stderr).toContain(`mm3: ✖ no self-contained MM3 build for darwin-arm64 yet (Node.js is not installed) → install Node.js ${MIN_NODE_LABEL} or newer from https://nodejs.org, then restart Claude Code`);
+    expect(r.stderr).toContain(`mm3: ✖ no self-contained MM3 build for linux-riscv64 (Node.js is not installed) → install Node.js ${MIN_NODE_LABEL} or newer from https://nodejs.org, then restart Claude Code`);
     expect(rel.requests).toEqual([]);
     expect(existsSync(kit.data)).toBe(false);
     const msg = await runLauncher(kit, 'session-start', { env });
-    expect(JSON.parse(msg.stdout).systemMessage).toContain('no self-contained MM3 build for darwin-arm64 yet');
+    expect(JSON.parse(msg.stdout).systemMessage).toContain('no self-contained MM3 build for linux-riscv64.');
     expect(rel.requests).toEqual([]);
   }, 30_000);
 
