@@ -10,8 +10,6 @@
 
 ## Install
 
-<p align="center"><img src="docs/assets/agents.svg" width="900" alt="Install it in your agent. Add the marketplace, install the plugin: plugin marketplace add mvp-scale/mm3, then plugin install mm3@mvp-scale. An agent without a plugin store registers mm3 mcp as a server. Tested, installed and registered through each agent's own commands: Claude Code, Codex, GitHub Copilot, Factory Droid, Gemini CLI, Goose, OpenCode, Amp and Cursor. Expected to work, following the same standards: Aider, Hermes, Cline, Kilo Code, Pi, OpenClaw, Kiro, Antigravity and any agent that reads AGENTS.md."></p>
-
 In your agent, add the marketplace and install the plugin:
 
 ```text
@@ -26,7 +24,9 @@ npm install -g @mvpscale/mm3
 mm3 init --agents
 ```
 
-Tested on nine agents so far, every tier-one agent among them; the rest follow the same standards and are expected to work. [Each agent's exact command, and what we tested](https://mm3lab.dev/agents), is one click away (the [checklist and ledger](docs/evidence/readiness.md) are on GitHub). Run it yourself, or let your agent do it: with an agent in the loop, the request YAML is written in seconds. First run (key and endpoint): the [config guide](docs/config-guide.md). Needs Node 22.13+, or the standalone build with its own Node: [Node version](docs/node-version.md).
+<p align="center"><img src="docs/assets/agents.svg" width="900" alt="Agents MM3 was tested on, and agents expected to work. Tested, installed and registered through each agent's own commands: Claude Code, Codex, GitHub Copilot, Factory Droid, Gemini CLI, Goose, OpenCode, Amp and Cursor. Expected to work, following the same standards: Aider, Hermes, Cline, Kilo Code, Pi, OpenClaw, Kiro, Antigravity and any agent that reads AGENTS.md."></p>
+
+[Each agent's exact command, and what we tested](https://mm3lab.dev/agents), is one click away; the [checklist and ledger](docs/evidence/readiness.md) are on GitHub. Then open your agent and ask it to use MM3: with an agent in the loop, the request YAML is written in seconds. MM3 tells it if no TypeSafe key is set (until then you get labelled sample answers); the [config guide](docs/config-guide.md) covers the key and endpoint. Needs Node 22.13+, or the standalone build with its own Node: [Node version](docs/node-version.md).
 
 **Status: beta.** It works well and we use it ourselves; formal benchmarks are coming. The plugin and the npm package are both out.
 
