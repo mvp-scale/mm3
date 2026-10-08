@@ -17,6 +17,7 @@
     "bin",
     "skills",
     "hooks",
+    "launcher",
     ".claude-plugin",
     "docs",
     ".github/workflows"
@@ -26,6 +27,7 @@
     "bin",
     "skills",
     "hooks",
+    "launcher",
     ".claude-plugin"
   ]
 }

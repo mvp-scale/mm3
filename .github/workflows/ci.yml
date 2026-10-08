@@ -39,3 +39,4 @@ jobs:
       - run: npx tsx scripts/check-readme.ts
       - run: npm run check:pack
       - run: npm run check:plugin
+      - run: npm run check:launcher   # launcher/checksums.json is there and names package.json's version

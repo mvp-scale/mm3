@@ -82,9 +82,9 @@ nvm-windows (<https://github.com/nvm-windows/nvm>) switches Node for the whole m
 - **From Claude Code:** the MM3 plugin starts MM3 with the `node` your shell finds, so start Claude Code from a terminal inside the pinned project. With fnm or Volta the right Node is already active there; with nvm run `nvm use` first. Volta also covers programs not started from a shell.
 - **For another agent or CI job:** give it the same version file, or run `node --version` as its first step and stop if it is below 22.13.
 
-## Claude Code's own install
+## Claude Code without Node
 
-Claude Code's own installer needs no Node. The MM3 plugin does: it runs `node`, so Node 22.13+ must still be on that `PATH`.
+Claude Code's own installer needs no Node, and the MM3 plugin does not require it either. The plugin starts MM3 through a small launcher (`launcher/mm3-launch`). With Node 22.13+ on `PATH` it runs MM3 exactly as before and downloads nothing. Without it (no Node, an older one, or one MM3 cannot start on) the launcher downloads the self-contained MM3 build for your machine once, from this repository's GitHub Release for the plugin's own version, and checks its sha256 against the value pinned in the plugin (`launcher/checksums.json`) before it installs it to `~/.local/bin/mm3`. A download that does not match is deleted and never run. It tells you in Claude Code's start-up message and in the server's log, and later starts download nothing. There is no self-contained build for macOS on Apple silicon yet; there the plugin stops with one line asking for Node 22.13+. To undo it, delete `~/.local/bin/mm3` and the plugin's data folder.
 
 ## Sources
 

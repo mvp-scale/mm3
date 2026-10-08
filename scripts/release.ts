@@ -14,6 +14,7 @@ import path from 'node:path';
 import readline from 'node:readline/promises';
 import { collectSurfaces, manifestOf } from '../test/helpers/guidance-surfaces.ts';
 import { ceremonyBrief } from './agentic/brief.ts';
+import { assetKey, checksumsProblems } from './check-launcher.ts';
 import { append, chainProblem, lastFormal, nextId, readLedger, type FinishedRecord, type LedgerRecord, type ReleaseRecord, type StartedRecord } from './agentic/ledger.ts';
 
 export interface Manifest {
@@ -489,6 +490,10 @@ function attachStandalone(m: Manifest, io: Io, v: string): string {
     const repo = io.gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']).trim();
     const files = readdirSync(dir).sort().map((f) => path.join(dir, f));
     if (files.length === 0) return `✖ standalone files: run ${run} left no files under standalone-${m.version}`;
+    // The plugin the release ships pins these files' hashes (launcher/checksums.json, from the same commit); a file it does not name, or a hash that differs, would make the launcher refuse the download for good.
+    const hashes = Object.fromEntries(files.filter((f) => assetKey(path.basename(f), m.version) !== undefined).map((f) => [path.basename(f), createHash('sha256').update(readFileSync(f)).digest('hex')]));
+    const pinProblems = checksumsProblems(show(io, built, 'launcher/checksums.json'), m.version, repo, hashes);
+    if (pinProblems.length > 0) return `✖ standalone files: not attached (${pinProblems[0]!.replace(/^✖ /u, '').split(' → ')[0]}) → on a new branch run "npm run build:binary" for each target and "npm run gen:checksums", merge that to nightly and release again`;
     for (const f of files) io.gh(['attestation', 'verify', f, '--repo', repo, '--signer-workflow', `${repo}/.github/workflows/standalone.yml`]);
     io.gh(['release', 'upload', v, ...files, '--clobber']);
     return `✔ standalone files: ${files.map((f) => path.basename(f)).join(', ')} attached, each verified as built by the standalone workflow (run ${run}) from ${built.slice(0, 7)}`;

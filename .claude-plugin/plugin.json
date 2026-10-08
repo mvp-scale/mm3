@@ -25,9 +25,9 @@
   },
   "mcpServers": {
     "mm3": {
-      "command": "node",
+      "command": "sh",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/bin/mm3.mjs",
+        "${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch",
         "mcp"
       ],
       "env": {

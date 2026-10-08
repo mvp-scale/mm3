@@ -1768,11 +1768,21 @@ The key's source (`env`, `keychain` or `file`) is carried alongside it. [C-097]
 
 **The plugin's nudge hook:**
 
-- The plugin ships one `PreToolUse` hook, declared in `hooks/hooks.json` (the documented plugin location, an event map under a top-level `"hooks"` key) and run by `node` from `${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs`. Enabling the plugin turns it on and disabling it turns it off. [C-268]
+- The plugin ships one `PreToolUse` hook, declared in `hooks/hooks.json` (the documented plugin location, an event map under a top-level `"hooks"` key) and run through the plugin launcher (`sh ${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch hook`), which runs `node ${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs` when Node 22.13+ is present. Enabling the plugin turns it on and disabling it turns it off. [C-268]
 - It fires before the `Agent` tool (and the older `Task` name), where a helper is about to be spawned, and before a `Bash` command that commits, merges, pushes or opens a PR (`git commit|merge|push`, `gh pr`). [C-268]
 - It nudges and never blocks: it prints one JSON object whose `additionalContext` is one line of at most 200 characters naming the next step (the helper moment points at `mm3 agent delegate`; the decision moment says to get a verdict, `view` then `class`, and to cite the `MM3-####` id), and it always exits 0. [C-268]
 - It speaks only when the project (the hook input's `cwd` or the project folder Claude Code names, or a folder above it) has `.mm3/`. It speaks once per agent per moment per session, kept by a marker file in a private folder (mode 0700, named for the user, checked to be a real folder the user owns) inside the temp folder. A marker that cannot be written, or a folder that is not safe to use, does not silence it. [C-268]
 - Garbage or empty input, another tool, another event, a command that decides nothing, or no `.mm3/` prints nothing and exits 0. [C-268]
+
+**The plugin launcher (a machine without Node 22.13+):**
+
+- The plugin's MCP server and its hooks start through one POSIX shell file, `launcher/mm3-launch`. With Node 22.13+ that can run MM3 it does exactly what the plugin did before: `node bin/mm3.mjs mcp` for the server and `node hooks/nudge.mjs` for the hook. It downloads nothing, writes nothing, and prints nothing on stderr. [C-280]
+- Without a usable Node (none, older than 22.13, or MM3 will not start on it) it downloads the self-contained MM3 for the machine's OS and CPU once, from the GitHub Release for the plugin's own version, and checks its sha256 against the value pinned in `launcher/checksums.json` before it installs anything. It says on stderr why it fell back, what it downloaded and from where, and that the check passed. [C-281]
+- A download whose hash differs from the pinned one, and a download that fails, install nothing and leave no partial file. It stops with one `✖` line that says what to do. [C-282]
+- The install is the same end state as `mm3 init` without a key (`~/.local/bin/mm3` and the config record), the downloaded file is made executable by the launcher itself, and every later start finds it and downloads nothing. [C-283]
+- A machine whose OS and CPU have no build listed in `launcher/checksums.json` (macOS on Apple silicon, today) downloads nothing and gets one `✖` line saying there is no self-contained build for it yet and to install Node.js 22.13 or newer. [C-284]
+- The Node floor the launcher checks is the same number as the one `mm3` itself enforces (C-106) and `package.json` `engines` states. A test fails when they differ. [C-285]
+- `launcher/checksums.json` is generated from the built files (`npm run gen:checksums`), never edited by hand. `npm run check:launcher` fails when it is missing, names a version other than `package.json`'s, points anywhere but this repository's GitHub Release for that version, or lists a file name the release does not use. [C-286]
 
 **Errors:**
 

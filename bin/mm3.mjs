@@ -7415,6 +7415,7 @@ var package_default = {
     "skills",
     ".claude-plugin",
     "hooks",
+    "launcher",
     "README.md",
     "LICENSE"
   ],
@@ -7443,6 +7444,8 @@ var package_default = {
     "check:trace": "tsx scripts/trace.ts",
     "check:pack": "tsx scripts/check-pack.ts",
     "check:plugin": "tsx scripts/check-plugin.ts",
+    "check:launcher": "tsx scripts/check-launcher.ts",
+    "gen:checksums": "tsx scripts/check-launcher.ts write",
     "check:hygiene": "tsx scripts/check-hygiene.ts",
     "check:binary-repro": "tsx scripts/check-binary-repro.ts",
     "check:readme": "npm run build && tsx scripts/check-readme.ts",
@@ -13061,6 +13064,7 @@ function pluginFiles(binPath) {
   files[".claude-plugin/plugin.json"] = `${JSON.stringify(manifest, null, 2)}
 `;
   const hooks = JSON.parse(files["hooks/hooks.json"]);
+  delete hooks.hooks.SessionStart;
   for (const groups of Object.values(hooks.hooks)) for (const group of groups) for (const h of group.hooks) Object.assign(h, { command: binPath, args: [HOOK_ARG] });
   files["hooks/hooks.json"] = `${JSON.stringify(hooks, null, 2)}
 `;

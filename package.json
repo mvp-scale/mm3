@@ -37,6 +37,7 @@
     "skills",
     ".claude-plugin",
     "hooks",
+    "launcher",
     "README.md",
     "LICENSE"
   ],
@@ -65,6 +66,8 @@
     "check:trace": "tsx scripts/trace.ts",
     "check:pack": "tsx scripts/check-pack.ts",
     "check:plugin": "tsx scripts/check-plugin.ts",
+    "check:launcher": "tsx scripts/check-launcher.ts",
+    "gen:checksums": "tsx scripts/check-launcher.ts write",
     "check:hygiene": "tsx scripts/check-hygiene.ts",
     "check:binary-repro": "tsx scripts/check-binary-repro.ts",
     "check:readme": "npm run build && tsx scripts/check-readme.ts",

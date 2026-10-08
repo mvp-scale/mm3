@@ -1,5 +1,5 @@
 {
-  "description": "MM3 nudge: one line, once per moment, before a helper is spawned and before a commit, merge, push or PR. Never blocks.",
+  "description": "MM3 nudge: one line, once per moment, before a helper is spawned and before a commit, merge, push or PR. Never blocks. A start-up message says so when MM3 runs from its self-contained build.",
   "hooks": {
     "PreToolUse": [
       {
@@ -7,8 +7,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs"],
+            "command": "sh",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch", "hook"],
             "timeout": 5
           }
         ]
@@ -18,9 +18,21 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs"],
+            "command": "sh",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch", "hook"],
             "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch", "session-start"],
+            "timeout": 10
           }
         ]
       }

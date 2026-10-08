@@ -10,7 +10,7 @@ import { installBinary, installPluginDir, pluginFiles, removeStandalone, standal
 const g = globalThis as { __MM3_EMBEDDED__?: Record<string, string> };
 const PLUGIN = JSON.stringify({ name: 'mm3', mcpServers: { mm3: { command: 'node', args: ['${CLAUDE_PLUGIN_ROOT}/bin/mm3.mjs', 'mcp'], env: { K: 'v' } } } });
 
-const HOOKS = JSON.stringify({ description: 'd', hooks: { PreToolUse: [{ matcher: 'Agent|Task', hooks: [{ type: 'command', command: 'node', args: ['${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs'], timeout: 5 }] }, { matcher: 'Bash', hooks: [{ type: 'command', command: 'node', args: ['${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs'], timeout: 5 }] }] } });
+const HOOKS = JSON.stringify({ description: 'd', hooks: { PreToolUse: [{ matcher: 'Agent|Task', hooks: [{ type: 'command', command: 'node', args: ['${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs'], timeout: 5 }] }, { matcher: 'Bash', hooks: [{ type: 'command', command: 'node', args: ['${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs'], timeout: 5 }] }], SessionStart: [{ hooks: [{ type: 'command', command: 'sh', args: ['${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch', 'session-start'], timeout: 10 }] }] } });
 
 let home: string;
 beforeEach(() => {
@@ -44,6 +44,11 @@ describe('plugin folder', () => {
     expect(got.description).toBe(want.description);
     expect(got.hooks.PreToolUse.map((g) => g.matcher)).toEqual(['Agent|Task', 'Bash']);
     for (const g of got.hooks.PreToolUse) expect(g.hooks).toEqual([{ type: 'command', command: bin, args: ['__hook'], timeout: 5 }]);
+  });
+
+  it('drops the launcher\'s SessionStart message: the standalone folder has no launcher, and the file is the server already', () => {
+    const got = JSON.parse(pluginFiles(standaloneBinPath(home, 'linux'))['hooks/hooks.json']!) as { hooks: Record<string, unknown> };
+    expect(Object.keys(got.hooks)).toEqual(['PreToolUse']);
   });
 
   it('is idempotent, and an update rewrites changed files and removes ones the new build no longer carries', () => {

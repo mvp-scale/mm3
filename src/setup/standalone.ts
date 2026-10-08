@@ -48,6 +48,7 @@ export function pluginFiles(binPath: string): Record<string, string> {
   server.args = ['mcp'];
   files['.claude-plugin/plugin.json'] = `${JSON.stringify(manifest, null, 2)}\n`;
   const hooks = JSON.parse(files['hooks/hooks.json']!) as { hooks: Record<string, Array<{ hooks: Array<{ command: string; args?: string[] }> }>> };
+  delete hooks.hooks.SessionStart; // the start-up message belongs to the plugin launcher (launcher/mm3-launch), which this folder does not carry
   for (const groups of Object.values(hooks.hooks)) for (const group of groups) for (const h of group.hooks) Object.assign(h, { command: binPath, args: [HOOK_ARG] });
   files['hooks/hooks.json'] = `${JSON.stringify(hooks, null, 2)}\n`;
   return files;

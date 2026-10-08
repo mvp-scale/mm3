@@ -41,11 +41,11 @@ const DECIDE_LINE = 'MM3 is set up here (.mm3/). Before you call this safe, done
 describe('hooks/hooks.json [C-268]', () => {
   const file = JSON.parse(readFileSync('hooks/hooks.json', 'utf8')) as Record<string, any>;
 
-  it('[C-268] is the documented shape: a top-level "hooks" event map, PreToolUse only, command handlers with documented fields', () => {
+  it('[C-268] is the documented shape: a top-level "hooks" event map, PreToolUse plus the launcher\'s SessionStart, command handlers with documented fields', () => {
     expect(Object.keys(file).sort()).toEqual(['description', 'hooks']);
-    expect(Object.keys(file.hooks)).toEqual(['PreToolUse']);
-    for (const group of file.hooks.PreToolUse) {
-      expect(Object.keys(group).sort()).toEqual(['hooks', 'matcher']);
+    expect(Object.keys(file.hooks)).toEqual(['PreToolUse', 'SessionStart']);
+    for (const group of [...file.hooks.PreToolUse, ...file.hooks.SessionStart]) {
+      expect(Object.keys(group).sort()).toEqual(group.matcher === undefined ? ['hooks'] : ['hooks', 'matcher']);
       for (const h of group.hooks) {
         expect(h.type).toBe('command');
         expect(Object.keys(h).every((k) => ['type', 'command', 'args', 'timeout'].includes(k))).toBe(true);
@@ -59,10 +59,12 @@ describe('hooks/hooks.json [C-268]', () => {
     expect(matchers).toEqual(['Agent|Task', 'Bash']);
     for (const group of file.hooks.PreToolUse) {
       const [h] = group.hooks;
-      expect(h.command).toBe('node');
-      expect(h.args).toEqual(['${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs']);
+      expect(h.command).toBe('sh');
+      expect(h.args).toEqual(['${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch', 'hook']); // the launcher runs `node hooks/nudge.mjs` when Node 22.13+ is there (test/unit/launcher.test.ts)
     }
+    expect(file.hooks.SessionStart[0].hooks[0].args).toEqual(['${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch', 'session-start']);
     expect(existsSync(SCRIPT)).toBe(true);
+    expect(existsSync('launcher/mm3-launch')).toBe(true);
   });
 });
 
