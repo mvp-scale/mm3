@@ -85,8 +85,8 @@ describe('a lock that is not a lock file', () => {
     writeFileSync(path.join(root, 'req.yaml'), CLASS_YAML);
     mkdirSync(path.join(root, '.mm3', 'lock'), { recursive: true });
     const start = Date.now();
-    const r = mm3(root, ['class', 'req.yaml'], { timeoutMs: 8000 });
-    expect(Date.now() - start).toBeLessThan(3000);
+    const r = mm3(root, ['class', 'req.yaml'], { timeoutMs: process.env.CI ? 30_000 : 8000 });
+    expect(Date.now() - start).toBeLessThan(process.env.CI ? 20_000 : 3000); // a stuck spin takes the whole timeout; a slow hosted runner does not
     expect(expectCleanStop(r, 1)).toBe('✖ files: .mm3/lock is not a lock file → remove it');
   });
 });

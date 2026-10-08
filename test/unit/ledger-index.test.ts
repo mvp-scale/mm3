@@ -8,7 +8,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, 
 import { afterEach, describe, expect, it } from 'vitest';
 import { generateLedgerRecords, toJsonl, writeSyntheticLedger } from '../gen/synthetic-ledger.ts';
 import { formatRunId } from '../../src/ledger/ids.ts';
-import { appendContractRun, findRun, isContractRun, isRun, nextRunNumber, readLedger } from '../../src/ledger/log.ts';
+import { appendContractRun, appendLookup, findRun, isContractRun, isRun, nextRunNumber, readLedger } from '../../src/ledger/log.ts';
 import { __testOnly, isSqliteExperimentalWarning, readRecordAt, sweepPlaces, withIndex } from '../../src/ledger/index.ts';
 import { exactReuse, lookupAnswers } from '../../src/ledger/reuse.ts';
 import { tempProject } from '../helpers/project.ts';
@@ -284,7 +284,7 @@ describe('the fallback path gives identical results to whatever engine is really
     };
 
     expect(b).toEqual(a);
-  });
+  }, 30_000); // slow hosted runners (Intel macOS) need more than the 5 s default
 
   it('familyCounts (family/section per category, indexed) agrees between the two engines', () => {
     const { paths } = tempProject({});
@@ -417,5 +417,31 @@ describe('generateLedgerRecords', () => {
     const contract = readLedger(paths).filter(isContractRun);
     expect(runs.length + contract.length).toBeGreaterThan(0);
     expect(new Set([...runs, ...contract].map((r) => r.id)).size).toBe(runs.length + contract.length); // ids unique, no gaps checked by nextRunNumber tests above
+  });
+});
+
+describe('an append keeps a current index current (no read-only reader falls back to a full scan)', () => {
+  it.skipIf(!hasNodeSqlite)('appending one lookup catches index.db up in place: same file (no rebuild), upto == log size, read-only reads stay indexed', async () => {
+    const { paths } = tempProject({});
+    writeSyntheticLedger(paths, { seed: 'append-fresh', runs: 60 });
+    withIndex(paths, (h) => h.runCount()); // writer path builds index.db
+    const inoBefore = statSync(paths.index).ino;
+    const { DatabaseSync } = await import('node:sqlite');
+    const upto = (): number => {
+      const db = new DatabaseSync(paths.index, { readOnly: true });
+      try {
+        return Number((db.prepare("SELECT value FROM meta WHERE key = 'upto'").get() as { value: string }).value);
+      } finally {
+        db.close();
+      }
+    };
+    expect(upto()).toBe(statSync(paths.log).size);
+
+    appendLookup(paths, { goal: 'src/user.ts', where: ['src/user.ts'], hit: false, reused: null });
+
+    expect(statSync(paths.index).ino).toBe(inoBefore); // caught up in place, not rebuilt
+    expect(upto()).toBe(statSync(paths.log).size); // so a readOnly reader sees it fresh and queries SQLite
+    expect(withIndex(paths, (h) => h.findOffset('MM3-0001'), { readOnly: true })).toBeGreaterThanOrEqual(0);
+    expect(statSync(paths.index).ino).toBe(inoBefore);
   });
 });

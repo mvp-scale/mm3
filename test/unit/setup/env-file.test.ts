@@ -98,7 +98,8 @@ describe('canQuote', () => {
 });
 
 describe('setEnvFileValue: updates one line in place, never touches the rest', () => {
-  it('creates the file at 0600 in a 0700 dir when it does not exist yet', () => {
+  // skipped on Windows: stat has no POSIX mode bits (it reports 0666), so 0600/0700 cannot be observed
+  it.skipIf(process.platform === 'win32')('creates the file at 0600 in a 0700 dir when it does not exist yet', () => {
     const env = tmpEnv();
     const file = envFilePath(env);
     setEnvFileValue(file, 'TYPESAFE_API_KEY', 'brand-new-key');
@@ -181,6 +182,8 @@ describe('looseFileModeWarning', () => {
   it('quiet at 0600 or tighter, a ✖ line otherwise', () => {
     expect(looseFileModeWarning('/x/env', 0o600)).toBeUndefined();
     expect(looseFileModeWarning('/x/env', 0o400)).toBeUndefined();
-    expect(looseFileModeWarning('/x/env', 0o644)).toMatch(/^✖ credentials: \/x\/env is mode 644, looser than 0600/u);
+    // Windows has no POSIX mode bits, so the warning is deliberately silent there (src/setup/env-file.ts)
+    if (process.platform === 'win32') expect(looseFileModeWarning('/x/env', 0o644)).toBeUndefined();
+    else expect(looseFileModeWarning('/x/env', 0o644)).toMatch(/^✖ credentials: \/x\/env is mode 644, looser than 0600/u);
   });
 });

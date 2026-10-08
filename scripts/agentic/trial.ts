@@ -4,7 +4,8 @@
 // run, with the same definition of success written before it starts and the same release report to read it back. It is never
 // formal and never counts toward the release gate: the ceremony does that, on the published nightly. The free path (the sample
 // provider, no key, no TypeSafe spend) is the default. `--paid` uses the live classifier, only with an explicit dollar cap on the
-// command line: MM3's own budget holds the cap in every trial project and the run stops when it is reached.
+// command line: MM3's own budget holds the cap in every trial project and the run stops when it is reached. `--bin <file>` (or
+// MM3_BIN, as in the test helpers) tests the standalone file instead of a packed npm copy: the agent's `mm3` runs it and its PATH has no Node.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import os from 'node:os';
@@ -13,7 +14,7 @@ import { collectSurfaces, manifestOf } from '../../test/helpers/guidance-surface
 import { decide, providerContradiction } from './decision.ts';
 import { append, chainProblem, definitionOf, nextId, readLedger, type FinishedRecord, type Spec, type StartedRecord } from './ledger.ts';
 import { toLedgerRows } from './record.ts';
-import { runFull, type FullScenario, type Rules } from './run.ts';
+import { describeStandalone, runFull, type FullScenario, type Rules } from './run.ts';
 import { addUsage, noUsage } from './claude.ts';
 
 export interface TrialArgs {
@@ -22,12 +23,13 @@ export interface TrialArgs {
   trials: number;
   route: 'cli' | 'mcp' | undefined;
   paid: { approvedUsd: number } | undefined;
+  bin: string | undefined; // the standalone file to test, from --bin or MM3_BIN
 }
 
 /** Reads the command line. Anything unclear is an error with the fix, not a guess. */
-export function parseTrialArgs(argv: string[]): TrialArgs {
+export function parseTrialArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): TrialArgs {
   const flag = (n: string): string | undefined => (argv.includes(n) ? argv[argv.indexOf(n) + 1] : undefined);
-  const job = argv.find((a) => !a.startsWith('--') && a !== flag('--model') && a !== flag('--trials') && a !== flag('--route') && a !== flag('--approve-usd'));
+  const job = argv.find((a) => !a.startsWith('--') && a !== flag('--model') && a !== flag('--trials') && a !== flag('--route') && a !== flag('--approve-usd') && a !== flag('--bin'));
   if (!job) throw new Error('✖ trial: name a job → npm run agentic:feature -- <job id> (npm run agentic:feature -- --list shows them)');
   const model = (flag('--model') ?? 'sonnet') as TrialArgs['model'];
   if (model !== 'haiku' && model !== 'sonnet') throw new Error(`✖ trial: --model ${model} is not a model → sonnet or haiku`);
@@ -40,7 +42,10 @@ export function parseTrialArgs(argv: string[]): TrialArgs {
   if (approve !== undefined && !argv.includes('--paid')) throw new Error('✖ trial: --approve-usd only means something with --paid → add --paid, or drop it for the free path');
   const usd = approve === undefined ? undefined : Number(approve);
   if (usd !== undefined && !(usd > 0)) throw new Error('✖ trial: --approve-usd must be a positive number of dollars → for example --approve-usd 0.50');
-  return { job, model, trials, route: route as TrialArgs['route'], paid: usd === undefined ? undefined : { approvedUsd: usd } };
+  const bin = flag('--bin') ?? (env.MM3_BIN || undefined);
+  if (argv.includes('--bin') && (bin === undefined || bin.startsWith('--'))) throw new Error('✖ trial: --bin needs the standalone file → --bin dist-binary/mm3-<version>-linux-x64');
+  if (bin !== undefined && route === 'mcp') throw new Error('✖ trial: the standalone is tested on the CLI route only → drop --route mcp (or unset MM3_BIN to test the plugin)');
+  return { job, model, trials, route: route as TrialArgs['route'], paid: usd === undefined ? undefined : { approvedUsd: usd }, bin };
 }
 
 /** True when `mm3 doctor`'s own output says a key resolves and the provider is not the sample one. Reads doctor's words, never a key. */
@@ -78,18 +83,22 @@ if (process.argv[1]?.endsWith('trial.ts')) {
   if (!job) throw new Error(`✖ trial: no job "${a.job}" → one of ${spec.full.map((s) => s.id).join(', ')}`);
   const broken = chainProblem();
   if (broken) throw new Error(broken);
-  const scoped: FullScenario = a.route ? { ...job, routes: [a.route] } : job;
+  const standalone = a.bin ? describeStandalone(a.bin) : undefined;
+  if (job.build === 'standalone' && !standalone) throw new Error(`✖ trial: ${job.id} tests the standalone file → give one with --bin <file> (or MM3_BIN)`);
+  const scoped: FullScenario = standalone ? { ...job, routes: ['cli'] } : a.route ? { ...job, routes: [a.route] } : job;
   const fixture = JSON.parse(readFileSync('test/agentic/fixture.json', 'utf8')) as { tag: string; sha: string };
   const head = sh('git', ['rev-parse', 'HEAD']);
   const dirty = sh('git', ['status', '--porcelain']) !== '';
-  const label = `local+${head.slice(0, 7)}${dirty ? '+dirty' : ''}`;
+  const label = `local+${head.slice(0, 7)}${dirty ? '+dirty' : ''}${standalone ? `+standalone-${standalone.sha256.slice(0, 8)}` : ''}`;
   const records = readLedger();
   const definition = definitionOf({ ...spec, full: [scoped] } as unknown as Spec, fixture);
   const started: StartedRecord = {
     kind: 'trial', phase: 'started', id: nextId(records, 'TRL'), ts: new Date().toISOString(), version: label, versionCommit: head.slice(0, 7), head: head.slice(0, 12), dirty,
     fingerprint: manifestOf(collectSurfaces()).fingerprint, guidance: { surfaces: Object.keys(collectSurfaces()).length, snapshot: 'test/golden/guidance/surfaces.txt' }, definition,
     environment: { node: process.version, vitest: /"vitest": "([^"]+)"/u.exec(readFileSync('package.json', 'utf8'))?.[1] ?? '?', claude: sh('claude', ['--version']), os: `${os.type()} ${os.release()} ${os.arch()}` },
-    artifact: { npmIntegrity: null, npmShasum: null, pluginCommit: head.slice(0, 7), note: 'a local build of the working tree: a packed copy for the CLI route, the tree itself as the plugin' },
+    artifact: standalone
+      ? { npmIntegrity: null, npmShasum: null, pluginCommit: null, note: `the standalone file ${path.basename(standalone.file)}, run directly: no npm package, no plugin, no Node on the agent's PATH`, standalone: { file: path.basename(standalone.file), sha256: standalone.sha256, size: standalone.size, version: standalone.version } }
+      : { npmIntegrity: null, npmShasum: null, pluginCommit: head.slice(0, 7), note: 'a local build of the working tree: a packed copy for the CLI route, the tree itself as the plugin' },
     mode: a.paid ? 'paid' : 'free', ...(a.paid ? { paid: a.paid } : {}), trialsOverride: a.trials, formal: false,
     formalReason: 'a development trial of one job on a local build: it never counts toward the release gate',
   };
@@ -111,11 +120,11 @@ if (process.argv[1]?.endsWith('trial.ts')) {
   }
   append(started);
   console.log(`AGENTIC FEATURE TRIAL ${started.id} · ${(job as { title?: string }).title ?? job.id} · ${a.model} × ${a.trials} · ${a.paid ? `PAID: up to $${a.paid.approvedUsd} of real TypeSafe spend, approved on the command line` : 'free path (sample provider, no key, no spend)'}`);
-  console.log(`  build: ${label} (the working tree)\n  success, stated before the run: ${(job as { success?: string }).success ?? job.goal}`);
+  console.log(`  build: ${label} (${standalone ? `the standalone ${path.basename(standalone.file)}, version ${standalone.version}, sha256 ${standalone.sha256}` : 'the working tree'})\n  success, stated before the run: ${(job as { success?: string }).success ?? job.goal}`);
   let closed = false;
   try {
-    const build = buildLocal(scoped.routes.includes('cli') || scoped.terminal === true);
-    const rows = runFull([scoped], label, spec.rules, (l) => console.log(l), undefined, { build, models: [a.model], trials: a.trials, ...(a.paid ? { paid: a.paid } : {}) });
+    const build = standalone ? undefined : buildLocal(scoped.routes.includes('cli') || scoped.terminal === true);
+    const rows = runFull([scoped], label, spec.rules, (l) => console.log(l), undefined, { ...(build ? { build } : {}), ...(standalone ? { standalone } : {}), models: [a.model], trials: a.trials, ...(a.paid ? { paid: a.paid } : {}) });
     const asked = rows.filter((r) => r.attempts.length > 0);
     const rate = asked.length ? asked.filter((r) => r.firstRequestAccepted).length / asked.length : 0;
     const usage = rows.map((r) => r.usage).reduce(addUsage, noUsage());

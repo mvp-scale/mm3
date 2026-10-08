@@ -2,6 +2,8 @@
 // settings or plugins, no skills, only the tools and the plugin (if any) the scenario names. Returns what the agent
 // did (its tool calls, in order, with the parent each belongs to), what it answered, and what the run cost in quota terms.
 import { spawnSync } from 'node:child_process';
+import { accessSync, constants } from 'node:fs';
+import path from 'node:path';
 
 export interface ClaudeCall {
   tool: string;
@@ -69,6 +71,20 @@ export const isolatedEnv = (extra: Record<string, string> = {}): Record<string, 
 /** Any server the agent had besides the plugin under test (the run's `mcp` list, `name:status`). A run with one is not a result. */
 export const strayServers = (mcp: readonly string[]): string[] => mcp.filter((m) => !m.startsWith('plugin:mm3:'));
 
+/** Where `claude` is on the harness's own PATH. The agent can be given a PATH without it (a Node-free run), and spawning looks `claude` up on the PATH it is given, so it is found here first. */
+export function claudeProgram(searchPath = process.env.PATH ?? ''): string {
+  for (const dir of searchPath.split(path.delimiter).filter(Boolean)) {
+    const file = path.join(dir, 'claude');
+    try {
+      accessSync(file, constants.X_OK);
+      return file;
+    } catch {
+      /* not in this folder */
+    }
+  }
+  return 'claude';
+}
+
 export function runClaude(o: ClaudeOptions): ClaudeRun {
   const args = ['-p', o.prompt, '--model', o.model, '--setting-sources', '', '--disable-slash-commands', '--no-session-persistence',
     '--output-format', 'stream-json', '--verbose', '--max-budget-usd', String(o.budgetUsd), '--tools', (o.tools ?? []).join(',') || ''];
@@ -77,7 +93,7 @@ export function runClaude(o: ClaudeOptions): ClaudeRun {
   if (o.strict) args.push('--permission-mode', 'dontAsk');
   if (o.pluginDir) args.push('--plugin-dir', o.pluginDir);
   else args.push('--strict-mcp-config');
-  const r = spawnSync('claude', args, { cwd: o.cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: o.timeoutMs ?? 600_000, env: isolatedEnv(o.env) });
+  const r = spawnSync(claudeProgram(), args, { cwd: o.cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: o.timeoutMs ?? 600_000, env: isolatedEnv(o.env) });
   const events = (r.stdout ?? '').split('\n').flatMap((l) => {
     try {
       return [JSON.parse(l) as Record<string, any>];

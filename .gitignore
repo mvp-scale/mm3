@@ -7,7 +7,12 @@ coverage/
 !.env.example
 .mm3/
 .claude/settings.local.json
-lab/
+# lab/ is private by default (raw notes, research, test binaries). lab/features/<feature>/ holds the formal,
+# curated write-up of each feature and is published to nightly. Never main: release.json is an allow-list
+# with no lab entry.
+/lab/*
+!/lab/features/
 CLAUDE.local.md
 site/dist/
 .superpowers/
+dist-binary/

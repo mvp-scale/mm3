@@ -5,14 +5,16 @@
 // already done, so a stage can be run again. nightly: everything merged to nightly since the last nightly release is published to npm as the plain
 // version. main: reviews that all of it was tested (CI, trials, a passed ceremony on the published build, an intact ledger), then squeezes the
 // tested commit down to the allow-list in release.json into one clean commit for main; the owner merges it, tags and publishes. Main is never worked in.
+// The one release asset step: promote verifies and attaches the standalone files .github/workflows/standalone.yml built from nightly's commit (attachStandalone).
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { collectSurfaces, manifestOf } from '../test/helpers/guidance-surfaces.ts';
 import { ceremonyBrief } from './agentic/brief.ts';
+import { assetKey, checksumsProblems } from './check-launcher.ts';
 import { append, chainProblem, lastFormal, nextId, readLedger, type FinishedRecord, type LedgerRecord, type ReleaseRecord, type StartedRecord } from './agentic/ledger.ts';
 
 export interface Manifest {
@@ -29,6 +31,7 @@ export interface Io {
   npmTags(): Record<string, string>;
   npmHead(version: string): string; // the commit npm recorded for that published version, or '' when it is not published
   npm(args: string[]): string;
+  npmTty(args: string[]): boolean; // an npm command that may ask the person something (a one-time password), run in this terminal
   sleep(ms: number): Promise<void>;
 }
 
@@ -269,7 +272,7 @@ const realIo = (): Io => {
     if (r.status !== 0) throw new Error(`✖ ${cmd} ${args.slice(0, 3).join(' ')}: ${(r.stderr || r.stdout).trim().split('\n')[0]?.slice(0, 200) ?? 'failed'}`);
     return r.stdout;
   };
-  return { gh: (a) => run('gh', a), git: (a) => run('git', a), npm: (a) => run('npm', a), npmTags: () => JSON.parse(run('npm', ['view', '@mvpscale/mm3', 'dist-tags', '--json', '--prefer-online'])) as Record<string, string>, npmHead: (v) => { const r = spawnSync('npm', ['view', `@mvpscale/mm3@${v}`, 'gitHead', '--prefer-online'], { encoding: 'utf8' }); return r.status === 0 ? r.stdout.trim() : ''; }, sleep: (ms) => new Promise((r) => setTimeout(r, ms)) };
+  return { gh: (a) => run('gh', a), git: (a) => run('git', a), npm: (a) => run('npm', a), npmTty: (a) => spawnSync('npm', a, { stdio: 'inherit' }).status === 0, npmTags: () => JSON.parse(run('npm', ['view', '@mvpscale/mm3', 'dist-tags', '--json', '--prefer-online'])) as Record<string, string>, npmHead: (v) => { const r = spawnSync('npm', ['view', `@mvpscale/mm3@${v}`, 'gitHead', '--prefer-online'], { encoding: 'utf8' }); return r.status === 0 ? r.stdout.trim() : ''; }, sleep: (ms) => new Promise((r) => setTimeout(r, ms)) };
 };
 
 async function approve(yes: boolean): Promise<boolean> {
@@ -399,30 +402,49 @@ export function surveyMain(m: Manifest, io: Io, ledger: LedgerRecord[], fingerpr
   const dead = deadLinks(io, head, m.include);
   steps.push({ id: 'no dead links in the README or CHANGELOG on main', state: dead.length === 0 ? 'done' : 'missing', detail: dead.length === 0 ? 'every relative link resolves' : `${dead.join('; ')} → add the target to "include" in release.json, or change the link` });
   const onMain = JSON.stringify(cleanLines(io, 'origin/main', m.include)) === JSON.stringify(cleanLines(io, head, m.include)) && io.git(['ls-tree', '-r', '--name-only', 'origin/main']).split('\n').filter(Boolean).every((f) => keeps(f, m.include));
-  steps.push({ id: 'main holds the clean copy', state: onMain ? 'done' : 'todo', detail: onMain ? 'main equals the clean copy of nightly' : 'will build one commit from nightly with only the "include" paths, push release/v' + m.version + ' and open a PR into main (you squash-merge it)' });
+  steps.push({ id: 'main holds the clean copy', state: onMain ? 'done' : 'todo', detail: onMain ? 'main equals the clean copy of nightly' : 'will build one commit from nightly with only the "include" paths, push release/v' + m.version + ' and open a PR into main' });
   return { steps, head, tested, todo: !onMain };
 }
 
 async function main(m: Manifest, io: Io, yes: boolean): Promise<number> {
   io.git(['fetch', '-q', '--tags', 'origin', 'main']);
+  const v = `v${m.version}`;
   const onMainNow = pkgVersion(show(io, 'origin/main', 'package.json'));
-  if (onMainNow === m.version && io.npmTags().latest === m.version && releases(io).some((r) => r.tagName === `v${m.version}`)) {
-    console.log(`nothing new: main is already ${m.version}, on npm latest and as a GitHub release. Release a new version from nightly first (bump it in a PR).`);
+  const targetOf = (): string => { try { return io.gh(['api', `repos/{owner}/{repo}/git/ref/tags/${v}`, '--jq', '.object.sha']).trim(); } catch { return ''; } };
+  if (onMainNow === m.version && io.npmTags().latest === m.version && targetOf() === io.git(['rev-parse', 'origin/main']).trim()) {
+    console.log(`nothing new: main is already ${m.version}, on npm latest and as the GitHub release. Release a new version from nightly first (bump it in a PR).`);
     return 0;
   }
   const { steps, head, tested, todo } = surveyMain(m, io, readLedger(), manifestOf(collectSurfaces()).fingerprint, chainProblem());
-  console.log([`RELEASE ${m.version} to main · clean copy of the tested nightly`, '', ...steps.map(stepLine)].join('\n'));
+  const candidate = targetOf(); // the release candidate nightly left: the same release, to be moved onto main's clean commit
+  const latest = io.npmTags().latest ?? '';
+  const after: Step[] = [
+    { id: 'squash-merge the clean copy into main', state: todo ? 'todo' : 'done', detail: todo ? 'one commit on main' : 'main already holds it', cost: 'free' },
+    { id: `npm latest becomes ${m.version}`, state: latest === m.version ? 'done' : 'todo', detail: latest === m.version ? 'already' : `npm dist-tag add @mvpscale/mm3@${m.version} latest: the package nightly published, as tested`, cost: 'free' },
+    { id: `GitHub release ${v}`, state: candidate !== '' && !todo && candidate === io.git(['rev-parse', 'origin/main']).trim() ? 'done' : 'todo', detail: candidate ? `moves from nightly's commit ${candidate.slice(0, 7)} to main's clean commit: the same release, one tag` : 'one release and tag on main\'s clean commit', cost: 'free' },
+  ];
+  const whoami = (): string => { try { return io.npm(['whoami']).trim(); } catch { return ''; } };
+  const who = whoami();
+  if (latest !== m.version) after.splice(1, 0, { id: 'npm login in this terminal', state: who ? 'done' : 'todo', detail: who ? `logged in as ${who}` : "npm's own login runs first, here, so nothing is merged unless it works (npm will not let a workflow move a tag; the script does it with your login)", cost: 'free' });
+  console.log([`RELEASE ${m.version} to main · clean copy of the tested nightly`, '', ...steps.map(stepLine), ...after.map(stepLine)].join('\n'));
   const missing = steps.filter((s) => s.state === 'missing');
   if (missing.length) {
     console.log(`\n✖ not ready for main: ${missing.map((s) => s.id).join('; ')}`);
     return 1;
   }
-  const v = `v${m.version}`;
-  if (todo) {
-    if (!(await approve(yes))) {
-      console.log('not run');
+  if (![...steps, ...after].some((s) => s.state === 'todo')) console.log('\nnothing to do: every step is done');
+  else if (!(await approve(yes))) {
+    console.log('not run');
+    return 1;
+  }
+  if (latest !== m.version && !who) {
+    spawnSync('npm', ['login'], { stdio: 'inherit' }); // npm's own login, in this terminal: before anything is merged, so a failed login leaves nothing half done
+    if (!whoami()) {
+      console.log('✖ npm login did not complete → nothing was merged or changed; run the command again');
       return 1;
     }
+  }
+  if (todo) {
     const tree = path.join(mkdtempSync(path.join(os.tmpdir(), 'mm3-main-')), 'tree');
     io.git(['worktree', 'add', '-q', '--detach', tree, 'origin/main']);
     try {
@@ -440,43 +462,69 @@ async function main(m: Manifest, io: Io, yes: boolean): Promise<number> {
       g('-c', 'core.hooksPath=/dev/null', 'commit', '-q', '-m', `release: ${v}, a clean copy of nightly ${head.slice(0, 7)} (${tested?.slice(0, 7)} was tested)`);
       g('push', '-q', '--force-with-lease', 'origin', `HEAD:refs/heads/release/${v}`);
       const existing = (JSON.parse(io.gh(['pr', 'list', '--head', `release/${v}`, '--base', 'main', '--json', 'number'])) as Array<{ number: number }>)[0]?.number;
-      const url = existing ? `PR #${existing} (already open, updated)` : io.gh(['pr', 'create', '--base', 'main', '--head', `release/${v}`, '--title', `release: ${v}`, '--body', `${m.title}\n\nA clean copy of nightly \`${head.slice(0, 7)}\`: only the paths in \`release.json\` "include". The code and tests are what the formal ceremony passed on (\`${tested?.slice(0, 7)}\`); nothing under those paths changed since. Squash-merge it.`]).trim();
-      console.log(`\nbuilt the clean copy: ${url}`);
-      console.log('you: gh pr merge <that PR> --squash   then run: npm run release -- main   again (it then promotes the same package to npm latest and creates the GitHub release)');
+      const pr = existing ?? Number(/\/pull\/(\d+)/u.exec(io.gh(['pr', 'create', '--base', 'main', '--head', `release/${v}`, '--title', `release: ${v}`, '--body', `${m.title}\n\nA clean copy of nightly \`${head.slice(0, 7)}\`: only the paths in \`release.json\` "include". The code and tests are what the formal ceremony passed on (\`${tested?.slice(0, 7)}\`); nothing under those paths changed since.`]))?.[1] ?? 0);
+      if (!pr) throw new Error('✖ could not open the clean-copy PR → look at release/' + v + ' on GitHub');
+      console.log(`\nbuilt the clean copy: PR #${pr}`);
+      await until(io, `PR #${pr} to be mergeable`, 12, 5000, () => { try { io.gh(['pr', 'merge', String(pr), '--squash']); return true; } catch { return undefined; } });
+      io.git(['fetch', '-q', '--tags', 'origin', 'main']);
+      console.log(`squash-merged into main: ${io.git(['rev-parse', '--short', 'origin/main']).trim()}`);
     } finally {
       io.git(['worktree', 'remove', '--force', tree]);
     }
-    return 0;
   }
-  return promote(m, io, yes, steps);
+  return promote(m, io, steps);
 }
 
-/** main already holds the clean copy: promote the package nightly published (npm takes a version once) to latest, and announce it with one GitHub release and tag. Reads both back before saying released. */
-async function promote(m: Manifest, io: Io, yes: boolean, steps: Step[]): Promise<number> {
+/** The attach point for the standalone files: the artifact `standalone-<version>` that .github/workflows/standalone.yml built from the commit npm's
+ *  nightly was built from (main's clean commit holds no scripts, so nightly's commit is the one the files can be proven to come from), each file's
+ *  build-provenance attestation verified first, then uploaded to the release `promote` just created. Returns one line; a file that does not verify is
+ *  never attached, and nothing here stops the release (the npm package and the tag are already done). */
+function attachStandalone(m: Manifest, io: Io, v: string): string {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'mm3-standalone-'));
+  try {
+    const built = io.npmHead(m.version);
+    if (!built) return `✖ standalone files: not attached (npm records no commit for ${m.version}) → run "gh release upload ${v} <files> --clobber" once they are built`;
+    const run = (JSON.parse(io.gh(['run', 'list', '--workflow', 'standalone.yml', '--branch', 'nightly', '--commit', built, '--status', 'success', '--limit', '1', '--json', 'databaseId'])) as Array<{ databaseId: number }>)[0]?.databaseId;
+    if (run === undefined) return `✖ standalone files: not attached (no green standalone run on ${built.slice(0, 7)}) → run the standalone workflow on nightly, then "gh release upload ${v} <files> --clobber"`;
+    io.gh(['run', 'download', String(run), '--name', `standalone-${m.version}`, '--dir', dir]);
+    const repo = io.gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']).trim();
+    const files = readdirSync(dir).sort().map((f) => path.join(dir, f));
+    if (files.length === 0) return `✖ standalone files: run ${run} left no files under standalone-${m.version}`;
+    // The plugin the release ships pins these files' hashes (launcher/checksums.json, from the same commit); a file it does not name, or a hash that differs, would make the launcher refuse the download for good.
+    const hashes = Object.fromEntries(files.filter((f) => assetKey(path.basename(f), m.version) !== undefined).map((f) => [path.basename(f), createHash('sha256').update(readFileSync(f)).digest('hex')]));
+    const pinProblems = checksumsProblems(show(io, built, 'launcher/checksums.json'), m.version, repo, hashes);
+    if (pinProblems.length > 0) return `✖ standalone files: not attached (${pinProblems[0]!.replace(/^✖ /u, '').split(' → ')[0]}) → on a new branch run "npm run build:binary" for each target and "npm run gen:checksums", merge that to nightly and release again`;
+    for (const f of files) io.gh(['attestation', 'verify', f, '--repo', repo, '--signer-workflow', `${repo}/.github/workflows/standalone.yml`]);
+    io.gh(['release', 'upload', v, ...files, '--clobber']);
+    return `✔ standalone files: ${files.map((f) => path.basename(f)).join(', ')} attached, each verified as built by the standalone workflow (run ${run}) from ${built.slice(0, 7)}`;
+  } catch (e) {
+    return `✖ standalone files: not attached (${(e as Error).message.split('\n')[0]}) → fix that, then "gh release upload ${v} <files> --clobber"`;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** main holds the clean copy: promote the package nightly published (npm takes a version once) to latest, and move the release candidate's one GitHub release and tag onto main's commit. Reads npm, the tag and main back before saying released. */
+async function promote(m: Manifest, io: Io, steps: Step[]): Promise<number> {
   const v = `v${m.version}`;
   const headMain = io.git(['rev-parse', 'origin/main']).trim();
-  const have = (): { latest: string; rel: Release | undefined } => ({ latest: io.npmTags().latest ?? '', rel: releases(io).find((r) => r.tagName === v) });
-  const now = have();
-  const todo: Step[] = [
-    { id: `npm latest is ${m.version}`, state: now.latest === m.version ? 'done' : 'todo', detail: now.latest === m.version ? 'already' : `npm dist-tag add @mvpscale/mm3@${m.version} latest: the package nightly published, tested as it is`, cost: 'free' },
-    { id: `GitHub release ${v} on main`, state: now.rel ? 'done' : 'todo', detail: now.rel ? `${now.rel.tagName}${now.rel.isLatest ? ', Latest' : ''}` : 'one release and tag, on main\'s clean commit, notes from the changelog', cost: 'free' },
-  ];
-  console.log(['', 'then:', ...todo.map(stepLine)].join('\n'));
-  if (todo.some((t) => t.state === 'todo')) {
-    if (!(await approve(yes))) {
-      console.log('not run');
-      return 1;
-    }
-    if (now.latest !== m.version) io.npm(['dist-tag', 'add', `@mvpscale/mm3@${m.version}`, 'latest']);
-    if (!now.rel) io.gh(['release', 'create', v, '--target', headMain, '--title', v, '--notes', releaseNotes(show(io, 'origin/main', 'CHANGELOG.md') ?? '', m.version) || m.title]);
+  if ((io.npmTags().latest ?? '') !== m.version && !io.npmTty(['dist-tag', 'add', `@mvpscale/mm3@${m.version}`, 'latest'])) {
+    console.log('✖ npm would not move latest (its one-time password, or no permission) → nothing else changed; run the command again and answer npm\'s prompt');
+    return 1;
   }
-  const after = have();
-  const target = ((): string => { try { return io.gh(['api', `repos/{owner}/{repo}/git/ref/tags/${v}`, '--jq', '.object.sha']).trim(); } catch { return ''; } })();
+  const targetOf = (): string => { try { return io.gh(['api', `repos/{owner}/{repo}/git/ref/tags/${v}`, '--jq', '.object.sha']).trim(); } catch { return ''; } };
+  if (targetOf() !== headMain) {
+    if (targetOf() !== '') io.gh(['release', 'delete', v, '--cleanup-tag', '--yes']); // the candidate nightly left is the same release, moved: a tag cannot be re-pointed
+    io.gh(['release', 'create', v, '--target', headMain, '--title', m.version, '--notes', releaseNotes(show(io, 'origin/main', 'CHANGELOG.md') ?? '', m.version) || m.title]);
+  }
+  console.log(attachStandalone(m, io, v));
+  const rel = releases(io).find((r) => r.tagName === v);
+  const latest = io.npmTags().latest ?? '';
   const checks: Check[] = [
-    { id: 'npm latest is a plain x.y.z version', ok: versionProblem(after.latest, 'npm latest') === undefined, detail: versionProblem(after.latest, 'npm latest') ?? after.latest },
-    { id: `npm latest is ${m.version}`, ok: after.latest === m.version, detail: after.latest },
-    { id: 'GitHub Release is a plain vx.y.z and the newest', ok: /^v\d+\.\d+\.\d+$/u.test(after.rel?.tagName ?? '') && after.rel?.isLatest === true, detail: after.rel ? `${after.rel.tagName}${after.rel.isLatest ? ' (Latest)' : ''}` : 'none' },
-    { id: "the tag is on main's clean commit", ok: target !== '' && target === headMain, detail: target ? `tag → ${target.slice(0, 7)}, main ${headMain.slice(0, 7)}` : 'no tag' },
+    { id: 'npm latest is a plain x.y.z version', ok: versionProblem(latest, 'npm latest') === undefined, detail: versionProblem(latest, 'npm latest') ?? latest },
+    { id: `npm latest is ${m.version}`, ok: latest === m.version, detail: latest },
+    { id: 'GitHub Release is a plain vx.y.z and the newest', ok: rel !== undefined && rel.isLatest === true && /^v\d+\.\d+\.\d+$/u.test(rel.tagName), detail: rel ? `${rel.tagName}${rel.isLatest ? ' (Latest)' : ''}` : 'none' },
+    { id: "the tag is on main's clean commit", ok: targetOf() === headMain, detail: `tag → ${targetOf().slice(0, 7) || 'none'}, main ${headMain.slice(0, 7)}` },
     { id: "main's package.json says the same", ok: pkgVersion(show(io, 'origin/main', 'package.json')) === m.version, detail: pkgVersion(show(io, 'origin/main', 'package.json')) ?? '?' },
   ];
   console.log(['', 'read back from GitHub and npm:', ...checks.map(checkLine)].join('\n'));
@@ -484,9 +532,10 @@ async function promote(m: Manifest, io: Io, yes: boolean, steps: Step[]): Promis
     console.log('\n✖ NOT released to main: the checks above did not all hold');
     return 1;
   }
-  const rec: ReleaseRecord = { kind: 'release', phase: 'released', id: nextId(readLedger(), 'REL'), ts: new Date().toISOString(), version: m.version, title: m.title, target: 'main', head: headMain, prs: [], npmVersion: after.latest, checks: [...steps.map((s) => ({ id: s.id, ok: s.state === 'done', detail: s.detail })), ...checks.map((c) => ({ id: c.id, ok: c.ok, detail: c.detail }))] };
-  if (!readLedger().some((r) => r.phase === 'released' && r.target === 'main' && r.npmVersion === after.latest)) append(rec);
-  console.log(`\nRELEASED to main: ${m.version} · npm latest ${after.latest} · GitHub Release ${v} (Latest) · receipt ${rec.id}\nnext: set the repo's default branch to main (a repo setting only you can change), so the plugin installer and README links resolve to the clean copy`);
+  const rec: ReleaseRecord = { kind: 'release', phase: 'released', id: nextId(readLedger(), 'REL'), ts: new Date().toISOString(), version: m.version, title: m.title, target: 'main', head: headMain, prs: [], npmVersion: latest, checks: [...steps.map((s) => ({ id: s.id, ok: s.state === 'done', detail: s.detail })), ...checks.map((c) => ({ id: c.id, ok: c.ok, detail: c.detail }))] };
+  const prior = readLedger().find((r): r is ReleaseRecord => r.phase === 'released' && r.target === 'main' && r.npmVersion === latest);
+  if (!prior) append(rec);
+  console.log(`\nRELEASED to main: ${m.version} · npm latest ${latest} · GitHub Release ${v} (Latest) on main's clean commit · receipt ${(prior ?? rec).id}\nnext: set the repo's default branch to main (a repo setting only you can change), so the plugin installer and README links resolve to the clean copy`);
   return 0;
 }
 

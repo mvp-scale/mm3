@@ -7,6 +7,16 @@ import { isSqliteExperimentalWarning } from '../../src/ledger/index.ts';
 
 export const CLI = path.resolve('dist/cli.js');
 
+/** MM3_BIN, when set, is the standalone binary (dist-binary/mm3-<version>-<target>): the whole harness then
+ *  launches that file directly instead of `node dist/cli.js` (and `node bin/mm3.mjs` for MCP). */
+export const MM3_BIN = process.env.MM3_BIN ? path.resolve(process.env.MM3_BIN) : undefined;
+
+/** The program and arguments that run MM3 with `args`: the standalone binary when MM3_BIN is set, else this
+ *  repo's own build under the running Node. */
+export function mm3Command(args: string[], entry: string = CLI): [string, string[]] {
+  return MM3_BIN ? [MM3_BIN, args] : [process.execPath, [entry, ...args]];
+}
+
 /** True when this test run's own Node has node:sqlite (>= 22.13) — the same test-running process the CLI
  *  subprocess inherits its `node` binary from, so this predicts whether a real run persists .mm3/index.db
  *  (SQLite) or leaves nothing on disk for the index (the Node < 22.13 fallback, e.g. this repo's Node 20 host).
@@ -45,7 +55,8 @@ export function cliEnv(root: string | undefined, extra: Record<string, string> =
 
 /** One run, synchronous. `root` is both the cwd and MM3_HOME unless `home: false`. */
 export function mm3(root: string, args: string[], o: { input?: string | Buffer; home?: boolean; env?: Record<string, string>; timeoutMs?: number } = {}): CliResult {
-  const r = spawnSync(process.execPath, [CLI, ...args], {
+  const [cmd, argv] = mm3Command(args);
+  const r = spawnSync(cmd, argv, {
     cwd: root,
     input: o.input ?? '',
     encoding: 'utf8',
@@ -58,7 +69,8 @@ export function mm3(root: string, args: string[], o: { input?: string | Buffer; 
 /** One run as a child process, for launching many at once. */
 export function mm3Async(root: string, args: string[], env: Record<string, string> = {}): Promise<CliResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [CLI, ...args], { cwd: root, env: cliEnv(root, env), stdio: ['ignore', 'pipe', 'pipe'] });
+    const [cmd, argv] = mm3Command(args);
+    const child = spawn(cmd, argv, { cwd: root, env: cliEnv(root, env), stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     child.stdout.setEncoding('utf8').on('data', (d: string) => (stdout += d));

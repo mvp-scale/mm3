@@ -4,9 +4,13 @@ import { defineConfig } from 'vitest/config';
 // install and live run only from test/docker/test.sh or by hand.
 // cli spawns the built binary a dozen times in one test, so it gets a longer timeout: a CPU-capped container
 // (test/docker/test.sh) runs it 2-3x slower than a laptop and the 5 s default flakes.
-const project = (name: string, include: string[], testTimeout?: number) => ({
-  test: { name, environment: 'node' as const, include, ...(testTimeout ? { testTimeout } : {}) },
-});
+// Hosted CI runners (Intel macOS, Windows, shared Linux) run 3-5x slower than a laptop and now and then stall for seconds:
+// on CI every test gets at least 20 s, so a slow runner is not read as a failing test. Locally nothing changes.
+const CI_FLOOR = process.env.CI ? 20_000 : 0;
+const project = (name: string, include: string[], testTimeout?: number) => {
+  const timeout = Math.max(testTimeout ?? 0, CI_FLOOR);
+  return { test: { name, environment: 'node' as const, include, ...(timeout ? { testTimeout: timeout } : {}) } };
+};
 
 export default defineConfig({
   test: {

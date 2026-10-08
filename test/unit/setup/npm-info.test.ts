@@ -7,8 +7,11 @@ import { describe, expect, it } from 'vitest';
 import { detectSelfSpec, findOnPath, isWritableDir, npmGlobalPrefix, type SelfSpec } from '../../../src/setup/npm-info.ts';
 import type { RunResult, Runner } from '../../../src/setup/runner.ts';
 
+// POSIX-only cases are skipped on Windows, each with its reason beside it (symlinks need a privilege there; chmod mode bits do not stop writes).
+const WINDOWS = process.platform === 'win32';
+
 describe('findOnPath', () => {
-  it('finds an existing file on PATH', () => {
+  it.skipIf(WINDOWS)('finds an existing file on PATH', () => { // skipped on Windows: a #!/bin/sh file with an exec bit is not a Windows program
     const dir = mkdtempSync(path.join(os.tmpdir(), 'mm3-path-'));
     const bin = path.join(dir, 'mm3');
     writeFileSync(bin, '#!/bin/sh\n');
@@ -39,7 +42,7 @@ describe('detectSelfSpec', () => {
       return JSON.stringify(lock);
     };
     const result: SelfSpec = detectSelfSpec(packageDir, pkg, readFile);
-    expect(result).toEqual({ spec: path.join('/fake', 'packages', 'mm3-0.0.0.tgz'), kind: 'tarball' });
+    expect(result).toEqual({ spec: path.resolve('/fake', 'packages', 'mm3-0.0.0.tgz'), kind: 'tarball' }); // resolve: on Windows a bare '/fake' gains the current drive
   });
 
   it('a registry-resolved entry (or no matching entry, or no lockfile) is the registry spec', () => {
@@ -71,7 +74,7 @@ describe('isWritableDir', () => {
     expect(isWritableDir(path.join(dir, 'lib', 'node_modules'))).toBe(true);
   });
 
-  it('a directory with no write permission is not writable', () => {
+  it.skipIf(WINDOWS)('a directory with no write permission is not writable', () => {
     if (process.getuid && process.getuid() === 0) return; // root ignores mode bits; skip under root (e.g. some CI)
     const dir = mkdtempSync(path.join(os.tmpdir(), 'mm3-readonly-'));
     const locked = path.join(dir, 'locked');

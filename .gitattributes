@@ -1,0 +1,10 @@
+# Why: tests, snapshots, the plugin bundle and the launcher's sh script are compared byte for byte, so every text file is checked out
+# with LF on every platform (a Windows runner's default autocrlf would hand them CRLF and fail the golden and contract tiers).
+* text=auto eol=lf
+# the one exception: the Windows launcher entry is a cmd batch file. cmd's label search (goto/call :label) is unreliable on LF-only files, so it is checked out with CRLF everywhere.
+launcher/mm3-launch.cmd text eol=crlf
+*.png binary
+*.ico binary
+*.jpg binary
+*.gif binary
+*.woff2 binary

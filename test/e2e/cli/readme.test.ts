@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { mm3Command } from '../../helpers/cli.ts';
 import { tempProject } from '../../helpers/project.ts';
 
 function quickstartCommands(): string[] {
@@ -17,8 +18,8 @@ function quickstartCommands(): string[] {
 /** A `mm3` shim on PATH that execs the built binary, so README's literal commands run unmodified. */
 function shimBin(): string {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'mm3-bin-'));
-  const cli = path.resolve('dist/cli.js');
-  writeFileSync(path.join(dir, 'mm3'), `#!/bin/sh\nexec "${process.execPath}" "${cli}" "$@"\n`);
+  const [cmd, argv] = mm3Command([]);
+  writeFileSync(path.join(dir, 'mm3'), `#!/bin/sh\nexec "${cmd}"${argv.map((a) => ` "${a}"`).join('')} "$@"\n`);
   chmodSync(path.join(dir, 'mm3'), 0o755);
   return dir;
 }
@@ -29,7 +30,8 @@ function shimBin(): string {
 const HANDLER_TS =
   'export function findUser(req, res) {\n  const id = req.query.id;\n  const sql = `SELECT * FROM users WHERE id = ${id}`;\n  db.query(sql, (err, rows) => {\n    if (err) return res.status(500).send(err.message);\n    res.json(rows[0]);\n  });\n}\n';
 
-describe('README Quickstart, run for real', () => {
+// Skipped on Windows: the quickstart lines are POSIX shell run through a `#!/bin/sh` shim on a ':'-separated PATH (the Windows install is a .cmd shim, not this).
+describe.skipIf(process.platform === 'win32')('README Quickstart, run for real', () => {
   it('every line exits 0, in order', () => {
     const { root } = tempProject({ 'src/handlers/user.ts': HANDLER_TS });
     const bin = shimBin();

@@ -9,6 +9,9 @@ import { adapters, setCap, shimMm3, spentUsd } from '../../scripts/agentic/run.t
 import { spawnSync } from 'node:child_process';
 import { keyFound, parseTrialArgs } from '../../scripts/agentic/trial.ts';
 import { tellRun } from '../../scripts/agentic/release-report.ts';
+// skipped on Windows: these build POSIX shell shims (#!/bin/sh) and a ':'-separated PATH, a Linux and macOS developer tool
+const WINDOWS = process.platform === 'win32';
+
 
 describe('trial arguments [C-267]', () => {
   it('[C-267] a job is all that is needed: Sonnet, one trial, the free path', () => {
@@ -76,7 +79,7 @@ describe('paid trials hold their cap [C-267]', () => {
 });
 
 describe('the install-health setup [C-266]', () => {
-  it('[C-266] the fake plugin record reaches MM3 alone: a shim sets CLAUDE_CONFIG_DIR and runs the real mm3, so Claude Code keeps its own login', () => {
+  it.skipIf(WINDOWS)('[C-266] the fake plugin record reaches MM3 alone: a shim sets CLAUDE_CONFIG_DIR and runs the real mm3, so Claude Code keeps its own login', () => {
     const root = mkdtempSync(path.join(os.tmpdir(), 'mm3-shim-'));
     const real = path.join(root, 'real');
     mkdirSync(real);

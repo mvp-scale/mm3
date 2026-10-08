@@ -10,6 +10,7 @@ import { runTemplate } from '../../src/verbs/template.ts';
 import { runReplay } from '../../src/verbs/replay.ts';
 import { runClass } from '../../src/verbs/class.ts';
 import { runScan } from '../../src/verbs/scan.ts';
+import { clip } from '../../src/util/text.ts';
 import { tempProject } from '../helpers/project.ts';
 import { sampleRun } from '../helpers/runs.ts';
 import { stubProvider } from '../helpers/stub-provider.ts';
@@ -262,7 +263,7 @@ describe('runTemplate', () => {
       const r = runTemplate('class', { from: file });
       expect(r).toEqual({
         exit: 2,
-        text: `✖ template: --from "${file}" has no mak: block → point at an MM3 request file\n→ see: mm3 agent template`,
+        text: `✖ template: --from "${clip(file, 60)}" has no mak: block → point at an MM3 request file\n→ see: mm3 agent template`,
       });
     });
 

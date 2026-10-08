@@ -6,6 +6,7 @@ import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { runCli, type CliCtx } from '../../src/cli.ts';
+import { clip } from '../../src/util/text.ts';
 import { tempProject } from '../helpers/project.ts';
 
 function ctxIn(cwd: string, env: Record<string, string | undefined> = {}): CliCtx {
@@ -31,7 +32,7 @@ describe('plain words at the boundary [C-197]', () => {
     for (const argv of [['class', '-'], ['view', 'src'], ['budget']]) {
       const r = await runCli(argv, ctxIn(root, { MM3_HOME: path.join(root, 'no', 'such', 'folder') }));
       expect(r.exit, argv.join(' ')).toBe(2);
-      expect(r.text).toMatch(/^✖ project: ".*no\/such\/folder" is not a folder → give an existing project folder \(MM3_HOME, or the plugin's project field\)\n→ see: mm3 agent \w+\n$/u);
+      expect(r.text).toMatch(/^✖ project: "(?:.*no[\\/]+such[\\/]+folder|.{79}…)" is not a folder → give an existing project folder \(MM3_HOME, or the plugin's project field\)\n→ see: mm3 agent \w+\n$/u);
       expect(r.text).not.toMatch(RAW);
     }
   });
@@ -51,6 +52,6 @@ describe('plain words at the boundary [C-197]', () => {
     writeFileSync(bad, 'mak:\n\tgoal: x\n');
     const r = await runCli(['template', 'class', '--from', bad], ctxIn(root, { MM3_HOME: root }));
     expect(r.exit).toBe(1);
-    expect(r.text).toBe(`✖ template: --from "${bad}" is not valid YAML → fix it (YAML indents with spaces, never tabs), or point at an MM3 request file\n→ see: mm3 agent template\n`);
+    expect(r.text).toBe(`✖ template: --from "${clip(bad, 60)}" is not valid YAML → fix it (YAML indents with spaces, never tabs), or point at an MM3 request file\n→ see: mm3 agent template\n`);
   });
 });

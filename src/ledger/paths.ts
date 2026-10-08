@@ -1,5 +1,5 @@
 /** Where the ledger lives: <root>/.mm3/. Root = MM3_HOME, else the nearest folder with .mm3 or .git. */
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 export interface Mm3Paths {
@@ -75,4 +75,17 @@ export function resolvePaths(cwd: string = process.cwd(), env: Record<string, st
   const home = env.MM3_HOME?.trim();
   const root = home ? path.resolve(home) : findRoot(cwd);
   return root === undefined ? undefined : pathsFor(root);
+}
+
+/** The project folder as a person is shown it: relative to where the command ran ('' when it is that folder). The OS can spell one
+ *  folder two ways (macOS: process.cwd() says /private/var/…, MM3_HOME said /var/…), which would show "../../.." for the folder
+ *  you are standing in, so the real paths are compared too and the shorter answer wins. */
+export function relativeToCwd(cwd: string, root: string): string {
+  const plain = path.relative(cwd, root);
+  try {
+    const real = path.relative(realpathSync(cwd), realpathSync(root));
+    return real.length < plain.length ? real : plain;
+  } catch {
+    return plain;
+  }
 }

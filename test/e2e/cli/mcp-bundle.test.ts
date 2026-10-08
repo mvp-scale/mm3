@@ -6,7 +6,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { describe, expect, it } from 'vitest';
-import { cliEnv } from '../../helpers/cli.ts';
+import { cliEnv, mm3Command } from '../../helpers/cli.ts';
 import { tempProject, USER_TS } from '../../helpers/project.ts';
 
 const BUNDLE = path.resolve('bin/mm3.mjs');
@@ -17,9 +17,10 @@ interface ToolResult {
   isError: boolean;
 }
 
-/** Starts `node bin/mm3.mjs mcp` in `root` and hands back `rpc` (one request, one response line) and `finish`. */
+/** Starts `node bin/mm3.mjs mcp` (or the standalone binary's `mcp` when MM3_BIN is set) in `root` and hands back `rpc` (one request, one response line) and `finish`. */
 function startServer(root: string) {
-  const child = spawn(process.execPath, [BUNDLE, 'mcp'], { cwd: root, env: cliEnv(root), stdio: ['pipe', 'pipe', 'pipe'] });
+  const [cmd, argv] = mm3Command(['mcp'], BUNDLE);
+  const child = spawn(cmd, argv, { cwd: root, env: cliEnv(root), stdio: ['pipe', 'pipe', 'pipe'] });
   let stderr = '';
   child.stderr.on('data', (c: Buffer) => (stderr += c.toString('utf8')));
   const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();

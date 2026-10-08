@@ -3,13 +3,14 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
-import { cliEnv } from './cli.ts';
+import { cliEnv, mm3Command } from './cli.ts';
 
 const BUNDLE = path.resolve('bin/mm3.mjs');
 
 /** One `mm3 mcp` process in `root`; `call` is the `mm3` tool, `instructions` the handshake's guidance text. */
 export async function overMcp(root: string, calls: Array<{ args: string[]; stdin?: string; extra?: Record<string, unknown> }>): Promise<{ instructions: string; texts: string[]; errors: boolean[] }> {
-  const child = spawn(process.execPath, [BUNDLE, 'mcp'], { cwd: root, env: cliEnv(root), stdio: ['pipe', 'pipe', 'pipe'] });
+  const [cmd, argv] = mm3Command(['mcp'], BUNDLE);
+  const child = spawn(cmd, argv, { cwd: root, env: cliEnv(root), stdio: ['pipe', 'pipe', 'pipe'] });
   const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
   let id = 0;
   const rpc = async (method: string, params?: unknown): Promise<{ result?: Record<string, unknown> }> => {

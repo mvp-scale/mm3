@@ -14,13 +14,21 @@ const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtur
 /** Runs `n` copies of a worker fixture with the same start time; resolves to their exit codes. */
 function workers(n: number, fixture: string, root: string, rounds: number): Promise<number[]> {
   const startAt = Date.now() + 1500; // after every worker has started
+  const errors: string[] = [];
   const one = (): Promise<number> =>
     new Promise((resolve) => {
-      spawn(process.execPath, ['--import', 'tsx', path.join(FIXTURES, fixture), root, String(rounds), String(startAt)], { stdio: 'ignore' }).on('exit', (code) =>
-        resolve(code ?? 1),
-      );
+      const child = spawn(process.execPath, ['--import', 'tsx', path.join(FIXTURES, fixture), root, String(rounds), String(startAt)], { stdio: ['ignore', 'ignore', 'pipe'] });
+      let err = '';
+      child.stderr.on('data', (d: Buffer) => (err += d.toString()));
+      child.on('exit', (code) => {
+        if (code !== 0 && err) errors.push(`worker exit ${code}: ${err.trim().slice(0, 600)}`); // a failing worker says why, instead of just 1
+        resolve(code ?? 1);
+      });
     });
-  return Promise.all(Array.from({ length: n }, one));
+  return Promise.all(Array.from({ length: n }, one)).then((codes) => {
+    if (errors.length > 0) console.error(errors.join('\n'));
+    return codes;
+  });
 }
 
 describe('races at the same instant', () => {

@@ -91,7 +91,7 @@ describe('index-backed reuse agrees with the linear oracle at scale', () => {
         expect(exactReuse(paths, who, keys)).toBe(linearExact(records, who, keys));
       }
     },
-    40_000,
+    120_000, // 40 s was not enough on Intel macOS and Windows hosted runners
   );
 
   it('an answer whose original run was later overruled is never reused, even reached through a chain', () => {

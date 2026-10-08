@@ -6,11 +6,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runConfigLoad } from '../../src/config/config.ts';
+import { __testOnly } from '../../src/ledger/index.ts';
 import { envFilePath, setEnvFileValue } from '../../src/setup/env-file.ts';
 import { writeInstallRecord } from '../../src/setup/install-record.ts';
 import type { RunResult, Runner } from '../../src/setup/runner.ts';
 import { runDoctor, runDoctorFile } from '../../src/verbs/doctor.ts';
 import { tempProject } from '../helpers/project.ts';
+
+// POSIX-only cases are skipped on Windows, each with its reason beside it (symlinks need a privilege there; chmod mode bits do not stop writes).
+const WINDOWS = process.platform === 'win32';
 
 function tmpXdg(): { XDG_CONFIG_HOME: string } {
   return { XDG_CONFIG_HOME: mkdtempSync(path.join(os.tmpdir(), 'mm3-doctor-')) };
@@ -89,7 +93,7 @@ describe('doctor (P5)', () => {
     expect(r.exit).toBe(0);
     expect(r.text).not.toContain('project: none');
     // Quoted: the value contains ": " (from "plugin enabled here:"), which emit()'s scalar() always quotes.
-    expect(r.text).toContain(`project: "${path.relative(process.cwd(), paths.root)} · plugin enabled here: no"`);
+    expect(r.text).toContain(`project: ${JSON.stringify(`${path.relative(process.cwd(), paths.root)} · plugin enabled here: no`)}`); // JSON-quoted, so a Windows path's backslashes are doubled
   });
 
   it('"plugin enabled here" is yes when the plugin is installed at project scope [C-102]', () => {
@@ -130,8 +134,23 @@ describe('doctor (P5)', () => {
       const r = runDoctor({}, undefined, 'v20.11.0');
       expect(r.exit).toBe(2);
       expect(r.text).toContain('doctor:'); // the full doc still renders — never just a bare ✖ line
-      expect(r.text).toContain('node: v20.11.0 ✖ too old → install Node 22.13+');
+      expect(r.text).toContain('node: v20.11.0 ✖ too old → pin Node 22.13+ for this project; see https://github.com/mvp-scale/mm3');
       expect(r.text).toContain('index: none (needs Node 22.13+)');
+    });
+
+    it('too old a Node inside a project that already has a ledger: doctor still renders instead of hitting the ledger backstop [C-106]', () => {
+      const { paths } = tempProject({});
+      mkdirSync(paths.dir, { recursive: true });
+      writeFileSync(paths.log, '{"kind":"lookup","id":"01M4C0STFQYDANNS01Z0XCZ3BF","uid":"01M4C0STFQYDANNS01Z0XCZ3BF","ts":"2026-10-07T20:27:34Z","goal":"g","where":["src/a.ts"],"hit":false,"reused":null}\n');
+      __testOnly.forceSqliteMissing = true;
+      try {
+        const r = runDoctor({}, paths, 'v20.11.0');
+        expect(r.exit).toBe(2);
+        expect(r.text).toContain('doctor:');
+        expect(r.text).toContain('node: v20.11.0 ✖ too old');
+      } finally {
+        __testOnly.forceSqliteMissing = false;
+      }
     });
 
     it('exactly 22.13.0 is new enough: exit 0, plain node value, no ✖', () => {
@@ -239,14 +258,14 @@ describe('doctor (P5)', () => {
       expect(r.text).toContain('cli: not on PATH → run "mm3 init" to install it');
     });
 
-    it('cli: a copy on PATH of a different version than the one running is flagged, with the fix', () => {
+    it.skipIf(WINDOWS)('cli: a copy on PATH of a different version than the one running is flagged, with the fix', () => { // skipped on Windows: the fake npm global install is a symlink
       const { pathDir } = fakeCliOnPath('0.0.1');
       const r = runDoctor({ PATH: pathDir }, undefined, undefined, { version: '9.9.9' });
       expect(r.text).toContain('cli: ');
       expect(r.text).toContain('⚠ version 0.0.1, this is 9.9.9 → run "mm3 init" to match them');
     });
 
-    it('cli: a copy on PATH of the same version says nothing extra', () => {
+    it.skipIf(WINDOWS)('cli: a copy on PATH of the same version says nothing extra', () => { // skipped on Windows: the fake npm global install is a symlink
       const { pathDir } = fakeCliOnPath('9.9.9');
       const r = runDoctor({ PATH: pathDir }, undefined, undefined, { version: '9.9.9' });
       expect(r.text).not.toContain('⚠ version');

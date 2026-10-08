@@ -83,6 +83,29 @@
       "matters": "If agents cannot do this, a new user's first minute with MM3 fails."
     },
     {
+      "id": "B1n-class-a-file-no-node",
+      "goal": "An agent asked a plain question about one file gets a recorded verdict and reports it with its run id, on a machine with no Node.",
+      "prompt": "Is routes/login.ts in this project safe to ship? Use MM3 to check it, and tell me the verdict and the MM3 run id.",
+      "model": "sonnet",
+      "routes": [
+        "cli"
+      ],
+      "promise": 3,
+      "checkpoints": [
+        "engaged",
+        "verdict-in-promise",
+        "last-request-accepted",
+        "answer-cites-run-id",
+        "run-id-in-ledger",
+        "stays-on-mm3"
+      ],
+      "build": "standalone",
+      "title": "Ask a plain question with no Node on the PATH",
+      "story": "The same developer question as the plain-question job, but the agent's machine has no Node at all: `mm3` is the standalone file and the PATH holds system tools only.",
+      "success": "MM3 gives the agent a recorded verdict within 3 tries, and the agent tells the developer the run id, which really exists, with no Node anywhere on its PATH.",
+      "matters": "The standalone exists so a user's Node stops mattering. If an agent cannot get a verdict from it with no Node, the file does not do its one job."
+    },
+    {
       "id": "B2-delegate",
       "goal": "A lead agent hands three files to three helpers; each helper gets the delegate card, gets a verdict, and reports its run id; the lead reports all of them.",
       "prompt": "Review routes/login.ts, routes/basket.ts and routes/search.ts for access-control problems. Hand each file to its own helper agent, use MM3, and report each MM3 run id.",

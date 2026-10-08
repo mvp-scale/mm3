@@ -11,7 +11,7 @@
  * So does StoreError: a filesystem failure under .mm3/ (not writable, a folder where a file should be),
  * turned into one clean line instead of a raw errno and a machine path.
  */
-import { closeSync, fstatSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeSync } from 'node:fs';
+import { closeSync, fstatSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeSync, type Stats } from 'node:fs';
 import path from 'node:path';
 
 export class LockError extends Error {
@@ -36,6 +36,22 @@ export function storeError(e: unknown, file: string, action: 'read' | 'write'): 
   const code = (e as NodeJS.ErrnoException | undefined)?.code;
   if (typeof code !== 'string') return e;
   return new StoreError(`✖ files: cannot ${action} ${shownStore(file)} (${code}) → make .mm3/ a writable folder, with log.jsonl and budget.json as files`);
+}
+
+/** A folder where a ledger file should be: POSIX fails the read with EISDIR on its own, Windows opens/stats it fine and reports size 0, so every path that sizes or opens the log says it the same way. */
+export const folderInPlaceOfFile = (): NodeJS.ErrnoException => Object.assign(new Error('EISDIR: illegal operation on a directory, read'), { code: 'EISDIR' });
+
+/** The log's stat, or undefined when there is no log yet. A folder is an EISDIR error (explicit check, not left to the platform). */
+export function statLog(file: string): Stats | undefined {
+  let st: Stats;
+  try {
+    st = statSync(file);
+  } catch (e) {
+    if (isAbsent(e)) return undefined;
+    throw e;
+  }
+  if (st.isDirectory()) throw folderInPlaceOfFile();
+  return st;
 }
 
 /** Runs fn, rethrowing an errno failure as a StoreError that names the file. */
@@ -68,7 +84,17 @@ const errno = (e: unknown): string | undefined => (e as NodeJS.ErrnoException | 
 
 /** True when a failed read means "no such file" (missing, or a parent that is not a folder): the one failure callers treat as an empty answer. */
 export const isAbsent = (e: unknown): boolean => errno(e) === 'ENOENT' || errno(e) === 'ENOTDIR';
+/** Windows reports a lock another run is deleting or still opening (delete-pending, sharing violation) as EPERM/EBUSY/EACCES, where POSIX says EEXIST or ENOENT: contention, not a failure. */
+const winBusy = (e: unknown): boolean => process.platform === 'win32' && ['EPERM', 'EBUSY', 'EACCES'].includes(errno(e) ?? '');
 const notALock = (lockPath: string): StoreError => new StoreError(`✖ files: ${shownStore(lockPath)} is not a lock file → remove it`);
+
+function isFolder(p: string): boolean {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 /** The lock's pid text and age, or undefined when it is gone. Anything but a readable regular file is a StoreError. */
 function readLock(lockPath: string): { body: string; ageMs: number } | undefined {
@@ -81,6 +107,7 @@ function readLock(lockPath: string): { body: string; ageMs: number } | undefined
   } catch (e) {
     if (e instanceof StoreError) throw e;
     if (errno(e) === 'ENOENT') return undefined;
+    if (winBusy(e) && !isFolder(lockPath)) return { body: '', ageMs: 0 }; // being deleted or written right now: not stale, wait
     throw notALock(lockPath);
   } finally {
     if (fd !== undefined) closeSync(fd);
@@ -105,7 +132,10 @@ function tryBreak(lockPath: string, staleMs: number): boolean {
   try {
     closeSync(openSync(breakPath, 'wx'));
   } catch (e) {
-    if (errno(e) !== 'EEXIST') throw storeError(e, breakPath, 'write');
+    if (errno(e) !== 'EEXIST') {
+      if (winBusy(e)) return false; // another breaker is deleting its lock.break right now
+      throw storeError(e, breakPath, 'write');
+    }
     try {
       if (Date.now() - statSync(breakPath).mtimeMs > ORPHAN_BREAK_MS) unlinkSync(breakPath); // a breaker died mid-break
     } catch {
@@ -120,6 +150,7 @@ function tryBreak(lockPath: string, staleMs: number): boolean {
     try {
       unlinkSync(lockPath);
     } catch (e) {
+      if (winBusy(e)) return false; // the owner is releasing it right now: let the caller retry
       if (errno(e) !== 'ENOENT') throw storeError(e, lockPath, 'write');
     }
     return true;
@@ -156,7 +187,8 @@ export function withLock<T>(lockPath: string, fn: () => T, opts: { timeoutMs?: n
       break;
     } catch (e) {
       if (e instanceof StoreError) throw e;
-      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw storeError(e, lockPath, 'write');
+      const contended = errno(e) === 'EEXIST' || winBusy(e); // a folder at the lock path is caught by readLock inside tryBreak
+      if (!contended) throw storeError(e, lockPath, 'write');
       if (tryBreak(lockPath, staleMs)) continue;
       if (Date.now() - start > timeoutMs) {
         throw new LockError(`✖ lock: ${shownStore(lockPath)} is locked → wait for the other run, or delete the lock file if no run is active`);
@@ -167,10 +199,19 @@ export function withLock<T>(lockPath: string, fn: () => T, opts: { timeoutMs?: n
   try {
     return fn();
   } finally {
+    releaseLock(lockPath);
+  }
+}
+
+/** Removes our lock file. On Windows a rival reading it at that instant makes the delete fail with EPERM/EBUSY: retry briefly, or the lock would stay until it ages out. */
+function releaseLock(lockPath: string): void {
+  for (let attempt = 0; ; attempt++) {
     try {
       unlinkSync(lockPath);
-    } catch {
-      /* already removed */
+      return;
+    } catch (e) {
+      if (!winBusy(e) || attempt >= 40) return; // already removed (or, after ~1 s, left for the stale rule)
+      sleepSync(25);
     }
   }
 }

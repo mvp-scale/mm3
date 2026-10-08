@@ -1,6 +1,6 @@
 {
-  "version": "0.1.3",
-  "title": "Agents get a verdict more reliably, and every agent test shows how it got there",
+  "version": "0.1.4",
+  "title": "MM3 runs with no Node installed, and stays fast at 100,000 runs",
   "accept": [],
   "include": [
     "README.md",
@@ -17,6 +17,7 @@
     "bin",
     "skills",
     "hooks",
+    "launcher",
     ".claude-plugin",
     "docs",
     ".github/workflows"
@@ -26,6 +27,7 @@
     "bin",
     "skills",
     "hooks",
+    "launcher",
     ".claude-plugin"
   ]
 }

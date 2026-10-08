@@ -19,6 +19,32 @@ describe('checkPackContents', () => {
   });
 });
 
+describe('the plugin launcher in the tarball', () => {
+  it('requires the Windows batch twin next to the POSIX launcher, and flags a launcher that lost its execute bit', () => {
+    expect(REQUIRED).toContain('launcher/mm3-launch.cmd');
+    const without = REQUIRED.filter((p) => p !== 'launcher/mm3-launch.cmd').map((path) => ({ path, size: 10 }));
+    expect(checkPackContents(without).some((p) => p.includes('launcher/mm3-launch.cmd'))).toBe(true);
+    const entry = (mode: number) => REQUIRED.map((path) => ({ path, size: 10, ...(path === 'launcher/mm3-launch' ? { mode } : {}) }));
+    expect(checkPackContents(entry(0o755))).toEqual([]);
+    expect(checkPackContents(entry(0o644)).some((p) => p.includes('execute bit'))).toBe(true);
+  });
+});
+
+describe('the plugin bundle', () => {
+  it('requires bin/mm3.mjs, because the plugin manifest launches it from the package folder', () => {
+    expect(REQUIRED).toContain('bin/mm3.mjs');
+    const entries = REQUIRED.filter((p) => p !== 'bin/mm3.mjs').map((path) => ({ path, size: 10 }));
+    expect(checkPackContents(entries).some((p) => p.includes('bin/mm3.mjs'))).toBe(true);
+  });
+
+  it('allows bin/mm3.mjs but nothing else under bin/', () => {
+    const entries = [...REQUIRED.map((path) => ({ path, size: 10 })), { path: 'bin/other.mjs', size: 5 }];
+    const problems = checkPackContents(entries);
+    expect(problems.some((p) => p.includes('bin/other.mjs'))).toBe(true);
+    expect(problems.some((p) => p.includes('"bin/mm3.mjs"'))).toBe(false);
+  });
+});
+
 describe('parsePackJson', () => {
   it("reads npm pack --json's array-of-one shape", () => {
     const raw = JSON.stringify([{ files: [{ path: 'dist/cli.js', size: 1, mode: 420 }] }]);

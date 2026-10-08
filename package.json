@@ -1,6 +1,6 @@
 {
   "name": "@mvpscale/mm3",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "MM3, make and model for coding agents: MAK³ uses what is proven, MDL³ learns what is missing, with compact yes/no checklists, a calibrated consensus, and a log that learns where agents go wrong.",
   "license": "Apache-2.0",
   "type": "module",
@@ -33,9 +33,11 @@
   },
   "files": [
     "dist",
+    "bin/mm3.mjs",
     "skills",
     ".claude-plugin",
     "hooks",
+    "launcher",
     "README.md",
     "LICENSE"
   ],
@@ -46,6 +48,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "build:plugin": "tsx scripts/build-plugin.ts",
+    "build:binary": "tsx scripts/build-binary.ts",
+    "parity": "tsx scripts/parity.ts",
+    "parity:install": "tsx scripts/parity-install.ts",
     "build:site": "tsx scripts/build-site.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --project unit --project contract --project golden",
@@ -61,7 +66,10 @@
     "check:trace": "tsx scripts/trace.ts",
     "check:pack": "tsx scripts/check-pack.ts",
     "check:plugin": "tsx scripts/check-plugin.ts",
+    "check:launcher": "tsx scripts/check-launcher.ts",
+    "gen:checksums": "tsx scripts/check-launcher.ts write",
     "check:hygiene": "tsx scripts/check-hygiene.ts",
+    "check:binary-repro": "tsx scripts/check-binary-repro.ts",
     "check:readme": "npm run build && tsx scripts/check-readme.ts",
     "judge:readme": "node bin/mm3.mjs class scripts/readme-judgment.yaml",
     "gen:evidence-index": "tsx scripts/evidence-index.ts",

@@ -16,8 +16,8 @@ import { formatRunId, ulid } from './ids.ts';
 // A deliberate two-way import with index.ts: log.ts calls withIndex/readRecordAt (only inside function bodies,
 // never at module load time), and index.ts calls back into isRecord/LedgerError/shownLog the same way. Safe in
 // ESM as long as neither side touches the other's exports before both modules finish loading, which holds here.
-import { normalizeRecordMdl, readRecordAt, withIndex } from './index.ts';
-import { isAbsent, onStore, withLock } from './lock.ts';
+import { catchUpAfterAppend, normalizeRecordMdl, readRecordAt, withIndex } from './index.ts';
+import { folderInPlaceOfFile, isAbsent, onStore, withLock } from './lock.ts';
 import { ensureDir, type Mm3Paths } from './paths.ts';
 import { redact, redactDeep, redactSecrets } from './redact.ts';
 
@@ -361,6 +361,8 @@ export function readLedger(paths: Mm3Paths, opts: { partialTail?: boolean } = {}
  * bytes, never the whole log — needs checking here, via a targeted read (openSync/readSync at `upto`, never
  * readFileSync of the whole file), with the exact readLedger wording and line number.
  */
+const folderInPlaceOfLog = folderInPlaceOfFile; // a folder where log.jsonl should be: see lock.ts
+
 function checkTail(paths: Mm3Paths, upto: number, lineCount: number): void {
   let fd: number;
   try {
@@ -371,7 +373,9 @@ function checkTail(paths: Mm3Paths, upto: number, lineCount: number): void {
   }
   let raw: string;
   try {
-    const size = fstatSync(fd).size;
+    const st = fstatSync(fd);
+    if (!st.isFile()) throw folderInPlaceOfLog();
+    const size = st.size;
     if (size <= upto) return;
     const buf = Buffer.alloc(size - upto);
     let got = 0;
@@ -439,7 +443,9 @@ function logEndsCleanly(logPath: string): boolean {
     throw e;
   }
   try {
-    const size = fstatSync(fd).size;
+    const st = fstatSync(fd);
+    if (!st.isFile()) throw folderInPlaceOfLog();
+    const size = st.size;
     if (size === 0) return true;
     const buf = Buffer.alloc(1);
     const got = readSync(fd, buf, 0, 1, size - 1);
@@ -454,6 +460,7 @@ function appendLine(paths: Mm3Paths, record: LedgerRecord): void {
     ensureDir(paths);
     const needsBreak = !logEndsCleanly(paths.log);
     appendFileSync(paths.log, `${needsBreak ? '\n' : ''}${JSON.stringify(record)}\n`);
+    catchUpAfterAppend(paths); // keep a current index current, so read-only readers never fall back to a full scan
   });
 }
 

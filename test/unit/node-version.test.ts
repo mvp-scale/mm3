@@ -47,7 +47,7 @@ describe('nodeVersionStop [C-106]', () => {
 
   it('the exact ✖ line, verbatim, on too old a Node', () => {
     expect(nodeVersionStop('v20.11.0')).toBe(
-      '✖ node: v20.11.0 is too old → install Node 22.13 or newer (it powers the ledger index); https://nodejs.org',
+      '✖ node: v20.11.0 is too old → pin Node 22.13+ for this project (nvm, fnm or Volta; no machine-wide change); see https://github.com/mvp-scale/mm3',
     );
   });
 });
@@ -58,7 +58,7 @@ describe('doctor-specific values [C-106]', () => {
   });
 
   it('doctorNodeValue names the problem, compactly, when it is not', () => {
-    expect(doctorNodeValue('v20.11.0')).toBe('v20.11.0 ✖ too old → install Node 22.13+');
+    expect(doctorNodeValue('v20.11.0')).toBe('v20.11.0 ✖ too old → pin Node 22.13+ for this project; see https://github.com/mvp-scale/mm3');
   });
 
   it('DOCTOR_INDEX_TOO_OLD is the exact index: value doctor shows on too old a Node', () => {

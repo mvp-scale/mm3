@@ -267,7 +267,7 @@ describe('mcp protocol: tools/call [C-103]', () => {
   });
 });
 
-const NODE_STOP_LINE = '✖ node: v20.11.0 is too old → install Node 22.13 or newer (it powers the ledger index); https://nodejs.org';
+const NODE_STOP_LINE = '✖ node: v20.11.0 is too old → pin Node 22.13+ for this project (nvm, fnm or Volta; no machine-wide change); see https://github.com/mvp-scale/mm3';
 
 describe('the Node ≥ 22.13 guard (owner ruling) [C-106]', () => {
   it('a normal command exits 2 with the exact ✖ line on too old a Node — template needs no project either', async () => {
@@ -289,7 +289,7 @@ describe('the Node ≥ 22.13 guard (owner ruling) [C-106]', () => {
     const r = await runCli(['doctor'], ctx);
     expect(r.exit).toBe(2);
     expect(r.text).toContain('doctor:');
-    expect(r.text).toContain('node: v20.11.0 ✖ too old → install Node 22.13+');
+    expect(r.text).toContain('node: v20.11.0 ✖ too old → pin Node 22.13+ for this project; see https://github.com/mvp-scale/mm3');
     expect(r.text).toContain('index: none (needs Node 22.13+)');
   });
 

@@ -1,5 +1,5 @@
 // git evidence: a ref that looks like a git option must never reach git (Review Focus #3).
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { currentCommitSha, hasGit, isGitOption, readGitEvidence, resolveRefSha } from '../../src/evidence/git.ts';
@@ -47,6 +47,22 @@ describe('readGitEvidence: an option-shaped ref never reaches git', () => {
     const ref = gitCommit(nested, 'nested commit');
     const r = readGitEvidence(root, ref, 'before', ['nested/src/a.ts']);
     expect(r).toEqual({ ok: true, files: { 'nested/src/a.ts': 'export const x = 1;\n' }, notes: ['reading whole files: line ranges may not match the parent run'] });
+  });
+});
+
+// macOS reaches its temp folder as /var/… while git prints /private/var/…: the same repo, spelled two ways. Emulated with a symlink.
+describe.skipIf(process.platform === 'win32')('readGitEvidence: a project reached through a symlink', () => {
+  it('reads the file at a ref when git reports the real path of a root the caller spelled through a link', (ctx) => {
+    if (!hasGit()) return ctx.skip();
+    const { root: real } = tempProject({});
+    const link = `${real}-link`;
+    symlinkSync(real, link);
+    mkdirSync(path.join(real, 'nested', 'src'), { recursive: true });
+    writeFileSync(path.join(real, 'nested', 'src', 'a.ts'), 'export const x = 1;\n');
+    gitInit(path.join(real, 'nested'));
+    const ref = gitCommit(path.join(real, 'nested'), 'nested commit');
+    const r = readGitEvidence(link, ref, 'before', ['nested/src/a.ts']);
+    expect(r.ok && r.files['nested/src/a.ts']).toBe('export const x = 1;\n');
   });
 });
 
