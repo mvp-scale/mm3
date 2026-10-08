@@ -1,6 +1,6 @@
 {
-  "run": "RDY-0001",
-  "ts": "2026-10-08T20:16:37.613Z",
+  "run": "RDY-0002",
+  "ts": "2026-10-08T20:36:09.228Z",
   "mm3": "0.1.4",
   "os": "ubuntu-24.04",
   "agents": [
@@ -54,12 +54,10 @@
       "status": "install-ready",
       "proof": "connected",
       "route": "mcp",
-      "plugin": "failed",
+      "plugin": "registered",
       "mcp": "connected",
       "failover": "covered where the agent starts",
-      "notes": [
-        "plugin route: Configuration file not found at the plugin folder/gemini-extension.json"
-      ]
+      "notes": []
     },
     {
       "agent": "goose",
