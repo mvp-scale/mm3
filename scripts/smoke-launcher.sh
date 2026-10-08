@@ -20,7 +20,16 @@ printf '{\n  "version": "%s",\n  "base": "http://127.0.0.1:%s",\n  "assets": {\n
   "$version" "$port" "$key" "$asset" "$(sha "$BIN")" "$(wc -c < "$BIN" | tr -d ' ')" > "$W/plugin/launcher/checksums.json"
 python3 -m http.server "$port" --bind 127.0.0.1 --directory "$W/rel" >"$W/server.log" 2>&1 & srv=$!
 trap 'kill $srv 2>/dev/null; rm -rf "$W"' EXIT
-sleep 2
+# wait until the fake release answers (a fixed sleep was not enough on the Intel runner: the first connect then timed out instead of being refused,
+# the system drops packets to a port nobody listens on yet); show the server's own log if it never comes up
+up=0; n=0
+while [ "$n" -lt 30 ]; do
+  kill -0 "$srv" 2>/dev/null || break
+  curl -s -o /dev/null --connect-timeout 1 --max-time 3 "http://127.0.0.1:$port/" 2>/dev/null && { up=1; break; }
+  sleep 1; n=$((n + 1))
+done
+[ "$up" = 1 ] || { cat "$W/server.log" 2>/dev/null; fail "the local fake release did not start answering on 127.0.0.1:$port (python3: $(command -v python3))"; }
+base=$(grep -c 'GET /' "$W/server.log" 2>/dev/null || true); base=${base:-0}    # the readiness request above is not a download
 LPATH=${MM3_SMOKE_PATH:-/usr/bin:/bin}   # override only to run this by hand on a machine whose /usr/bin has node
 env -i PATH="$LPATH" sh -c 'command -v node' >/dev/null 2>&1 && fail "node is on the launcher's PATH ($LPATH); the check needs a machine without Node"
 INIT='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}'
@@ -30,7 +39,7 @@ start() { # start <n> : one launcher start, stdin open 2 s after the request, a 
   ( sleep 120; kill $p 2>/dev/null ) & dog=$!
   wait $p; code=$?; kill $dog 2>/dev/null; return $code
 }
-gets() { grep -c 'GET /' "$W/server.log" 2>/dev/null || true; }
+gets() { c=$(grep -c 'GET /' "$W/server.log" 2>/dev/null || true); echo $((${c:-0} - base)); }
 echo "launcher smoke: $key on $(uname -sm), file $asset ($(du -h "$BIN" | cut -f1))"
 start 1 || { cat "$W/err.1"; fail "first start exited non-zero"; }
 cat "$W/err.1"

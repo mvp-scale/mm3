@@ -11,7 +11,7 @@
  * So does StoreError: a filesystem failure under .mm3/ (not writable, a folder where a file should be),
  * turned into one clean line instead of a raw errno and a machine path.
  */
-import { closeSync, fstatSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeSync } from 'node:fs';
+import { closeSync, fstatSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeSync, type Stats } from 'node:fs';
 import path from 'node:path';
 
 export class LockError extends Error {
@@ -36,6 +36,22 @@ export function storeError(e: unknown, file: string, action: 'read' | 'write'): 
   const code = (e as NodeJS.ErrnoException | undefined)?.code;
   if (typeof code !== 'string') return e;
   return new StoreError(`✖ files: cannot ${action} ${shownStore(file)} (${code}) → make .mm3/ a writable folder, with log.jsonl and budget.json as files`);
+}
+
+/** A folder where a ledger file should be: POSIX fails the read with EISDIR on its own, Windows opens/stats it fine and reports size 0, so every path that sizes or opens the log says it the same way. */
+export const folderInPlaceOfFile = (): NodeJS.ErrnoException => Object.assign(new Error('EISDIR: illegal operation on a directory, read'), { code: 'EISDIR' });
+
+/** The log's stat, or undefined when there is no log yet. A folder is an EISDIR error (explicit check, not left to the platform). */
+export function statLog(file: string): Stats | undefined {
+  let st: Stats;
+  try {
+    st = statSync(file);
+  } catch (e) {
+    if (isAbsent(e)) return undefined;
+    throw e;
+  }
+  if (st.isDirectory()) throw folderInPlaceOfFile();
+  return st;
 }
 
 /** Runs fn, rethrowing an errno failure as a StoreError that names the file. */

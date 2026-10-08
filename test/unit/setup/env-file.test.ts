@@ -182,6 +182,8 @@ describe('looseFileModeWarning', () => {
   it('quiet at 0600 or tighter, a ✖ line otherwise', () => {
     expect(looseFileModeWarning('/x/env', 0o600)).toBeUndefined();
     expect(looseFileModeWarning('/x/env', 0o400)).toBeUndefined();
-    expect(looseFileModeWarning('/x/env', 0o644)).toMatch(/^✖ credentials: \/x\/env is mode 644, looser than 0600/u);
+    // Windows has no POSIX mode bits, so the warning is deliberately silent there (src/setup/env-file.ts)
+    if (process.platform === 'win32') expect(looseFileModeWarning('/x/env', 0o644)).toBeUndefined();
+    else expect(looseFileModeWarning('/x/env', 0o644)).toMatch(/^✖ credentials: \/x\/env is mode 644, looser than 0600/u);
   });
 });

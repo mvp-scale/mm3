@@ -264,11 +264,15 @@ describe('log', () => {
 
   it('gives unique sequential ids when 4 processes append at once', async () => {
     const { root, paths } = tempProject({});
+    // a worker that fails reports its stderr in the assertion (a bare exit code told us nothing on the Windows runner)
     const runWorker = () =>
-      new Promise<number>((resolve) => {
-        spawn(process.execPath, ['--import', 'tsx', WORKER, root, '10'], { stdio: 'ignore' }).on('exit', (code) => resolve(code ?? 1));
+      new Promise<string>((resolve) => {
+        const child = spawn(process.execPath, ['--import', 'tsx', WORKER, root, '10'], { stdio: ['ignore', 'ignore', 'pipe'] });
+        let err = '';
+        child.stderr.on('data', (d: Buffer) => (err += d.toString()));
+        child.on('exit', (code) => resolve(code === 0 ? 'ok' : `exit ${code ?? 'none'}: ${err.trim().slice(0, 1500)}`));
       });
-    expect(await Promise.all([runWorker(), runWorker(), runWorker(), runWorker()])).toEqual([0, 0, 0, 0]);
+    expect(await Promise.all([runWorker(), runWorker(), runWorker(), runWorker()])).toEqual(['ok', 'ok', 'ok', 'ok']);
     const ids = readLedger(paths).filter(isRun).map((r) => r.id);
     expect(ids).toHaveLength(40);
     expect(new Set(ids).size).toBe(40);

@@ -52,7 +52,7 @@ import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync, ren
 import type { Category, Gate, Verb } from '../contract/types.ts';
 import { normalizeMdl } from '../contract/mdl-fields.ts';
 import { isContractRun, isRecord, LedgerError, notARecord, shownLog, type ConfigRecord, type ContractRun, type FailedRecord, type LedgerRecord, type OutcomeRecord, type RunRecord } from './log.ts';
-import { isAbsent, withLock } from './lock.ts';
+import { folderInPlaceOfFile, isAbsent, statLog, withLock } from './lock.ts';
 import { ensureDir, type Mm3Paths } from './paths.ts';
 import { LINKS } from '../help/links.ts';
 import { MIN_NODE_LABEL } from '../util/node-version.ts';
@@ -403,7 +403,9 @@ function openLog(logPath: string): { fd: number; st: Stats } | undefined {
     throw e;
   }
   try {
-    return { fd, st: fstatSync(fd) };
+    const st = fstatSync(fd);
+    if (st.isDirectory()) throw folderInPlaceOfFile();
+    return { fd, st };
   } catch (e) {
     closeSync(fd);
     throw e;
@@ -1389,7 +1391,7 @@ function tryOpenAndCheck(paths: Mm3Paths, Db: DatabaseSyncCtor): OpenCheck {
     if (!sizeLooksSane(db, paths.index) && !quickCheckOk(db)) return { ok: false, db };
     if (getMeta(db, 'schema_version') !== String(SCHEMA_VERSION)) return { ok: false, db };
     const { upto } = readMetaState(db);
-    const size = existsSync(paths.log) ? statSync(paths.log).size : 0;
+    const size = statLog(paths.log)?.size ?? 0;
     if (size < upto) return { ok: false, db };
     const fpStart = Number(getMeta(db, 'fp_start') ?? '0');
     const storedFp = getMeta(db, 'fingerprint') ?? '';
@@ -1499,7 +1501,7 @@ export function catchUpAfterAppend(paths: Mm3Paths): void {
  * `readOnly`: never persist a catch-up or rebuild to disk for this call — see ensureFreshDb's own comment.
  */
 export function withIndex<T>(paths: Mm3Paths, fn: (h: IndexHandle) => T, opts: { forceRebuild?: boolean; readOnly?: boolean } = {}): T {
-  const logStat = existsSync(paths.log) ? statSync(paths.log) : undefined;
+  const logStat = statLog(paths.log);
   if (!logStat || logStat.size === 0) return fn(handleFromMemory(emptyMemoryState()));
 
   return runSqlite(paths, fn, { forceRebuild: opts.forceRebuild ?? false, readOnly: opts.readOnly ?? false });

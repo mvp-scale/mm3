@@ -51,13 +51,13 @@
  * fallback for this tier (deliberately out of scope: "foundational only", and the hot tier's own fallback is a
  * different, already-solved problem for a different tier).
  */
-import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readSync } from 'node:fs';
 import type { MdlFieldOverride } from '../config/defaults.ts';
 import { resolveConfig } from '../config/load.ts';
 import type { Category } from '../contract/types.ts';
 import { getSqliteCtor, normalizeRecordMdl, readRecordAt, stripLines } from './index.ts';
 import { isContractRun, type ContractRun, type LedgerRecord, type OutcomeRecord } from './log.ts';
-import { withLock } from './lock.ts';
+import { statLog, withLock } from './lock.ts';
 import { ensureDir, type Mm3Paths } from './paths.ts';
 
 // Bumped to '2' (from '1') here: the PK (p, s, o, run) WITHOUT ROWID orders `triples` by predicate first, so
@@ -422,7 +422,7 @@ function catchUpGraph(paths: Mm3Paths, env: Record<string, string | undefined>):
     db.exec(META_TABLE_SQL);
     if (getMeta(db, 'graph_schema_version') !== GRAPH_SCHEMA_VERSION) resetGraphSchema(db);
     const upto = Number(getMeta(db, 'graph_upto') ?? '0');
-    const size = existsSync(paths.log) ? statSync(paths.log).size : 0;
+    const size = statLog(paths.log)?.size ?? 0;
     if (upto >= size) return; // another process already caught this up while we waited for the lock
     // Only the unread tail [upto, size), never the whole log: a one-line catch-up must not pull a 100k-run
     // ledger (hundreds of MB) into memory.
@@ -478,7 +478,7 @@ function catchUpGraph(paths: Mm3Paths, env: Record<string, string | undefined>):
  * no `index.db` — matching the hot tier's own "never touch disk before the first write" rule.
  */
 export function refreshGraph(paths: Mm3Paths, env: Record<string, string | undefined> = process.env): void {
-  const logStat = existsSync(paths.log) ? statSync(paths.log) : undefined;
+  const logStat = statLog(paths.log);
   if (!logStat || logStat.size === 0) return;
   if (!needsCatchUp(paths, logStat.size)) return;
   withLock(paths.lock, () => catchUpGraph(paths, env));

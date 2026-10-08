@@ -223,3 +223,9 @@ it('[C-285] the Node floor in the launcher (sh and PowerShell) is the one mm3 en
   expect(ps).toBe(MIN_NODE_LABEL);
   expect(engines).toBe(`>=${MIN_NODE_LABEL}`);
 });
+
+it('the PowerShell launcher computes sha256 with .NET, not Get-FileHash: Claude Code starts it with no PSModulePath, so module cmdlets are "not recognized"', () => {
+  const ps = readFileSync('launcher/mm3-launch.ps1', 'utf8').split('\n').filter((l) => !l.trimStart().startsWith('#')).join('\n');
+  expect(ps).not.toMatch(/Get-FileHash/u);
+  expect(ps).toMatch(/SHA256\]::Create\(\)/u);
+});

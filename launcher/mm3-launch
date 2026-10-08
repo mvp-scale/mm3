@@ -212,9 +212,10 @@ stub_and_handover() {
 
 # ---- Windows: Git Bash found `sh`; the fallback is handed to the PowerShell launcher --------------------------
 win_delegate() {
-  command -v powershell.exe >/dev/null 2>&1 || command -v pwsh >/dev/null 2>&1 || fail "Windows PowerShell not found → install Node.js $MIN_NODE or newer from https://nodejs.org"
+  ps=powershell.exe; command -v "$ps" >/dev/null 2>&1 || { ps=pwsh; command -v "$ps" >/dev/null 2>&1; } || fail "Windows PowerShell not found → install Node.js $MIN_NODE or newer from https://nodejs.org"
   ps1=$HERE/mm3-launch.ps1; command -v cygpath >/dev/null 2>&1 && ps1=$(cygpath -w "$ps1")
-  exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$ps1" "$1" "$NODE_WHY"
+  # the environment passes through untouched (PATH keeps Node hidden); the ps1 rebuilds a missing PSModulePath itself
+  exec "$ps" -NoProfile -ExecutionPolicy Bypass -File "$ps1" "$1" "$NODE_WHY"
 }
 
 case "$MODE" in

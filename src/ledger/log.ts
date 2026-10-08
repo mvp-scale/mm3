@@ -17,7 +17,7 @@ import { formatRunId, ulid } from './ids.ts';
 // never at module load time), and index.ts calls back into isRecord/LedgerError/shownLog the same way. Safe in
 // ESM as long as neither side touches the other's exports before both modules finish loading, which holds here.
 import { catchUpAfterAppend, normalizeRecordMdl, readRecordAt, withIndex } from './index.ts';
-import { isAbsent, onStore, withLock } from './lock.ts';
+import { folderInPlaceOfFile, isAbsent, onStore, withLock } from './lock.ts';
 import { ensureDir, type Mm3Paths } from './paths.ts';
 import { redact, redactDeep, redactSecrets } from './redact.ts';
 
@@ -361,8 +361,7 @@ export function readLedger(paths: Mm3Paths, opts: { partialTail?: boolean } = {}
  * bytes, never the whole log — needs checking here, via a targeted read (openSync/readSync at `upto`, never
  * readFileSync of the whole file), with the exact readLedger wording and line number.
  */
-/** A folder where log.jsonl should be: POSIX fails the read with EISDIR on its own, Windows opens it and reports size 0, so say it the same way. */
-const folderInPlaceOfLog = (): NodeJS.ErrnoException => Object.assign(new Error('EISDIR: illegal operation on a directory, read'), { code: 'EISDIR' });
+const folderInPlaceOfLog = folderInPlaceOfFile; // a folder where log.jsonl should be: see lock.ts
 
 function checkTail(paths: Mm3Paths, upto: number, lineCount: number): void {
   let fd: number;

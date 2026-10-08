@@ -95,7 +95,7 @@ describe('runReport', () => {
       expect(lines[1]).toContain('· stale');
       expect(r.text).toContain('… 5 more not shown'); // 35 rows, ROW_LIMIT 30
     }
-  });
+  }, 30_000); // 35 appends under the lock: well over 5 s on a Windows runner
 
   it('[C-164] patterns: no runs yet says so plainly, else groups by question set with pass/fail/places/outcomes', () => {
     const { paths } = tempProject({});

@@ -9,6 +9,10 @@
 param([string]$Mode = 'mcp', [string]$Why = '')
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'            # Windows PowerShell 5.1 downloads are very slow with the progress bar on
+# Claude Code starts MCP servers with a small environment: no PSModulePath, so PowerShell cannot auto-load modules and any cmdlet that lives in
+# a module (the hash cmdlet) is "not recognized". Two guards: the cmdlets used below are the built-in ones (Management/Utility snap-ins) or plain .NET,
+# and PSModulePath is rebuilt from the standard folders when it is missing, so nothing here depends on the caller's environment.
+if (-not $env:PSModulePath) { $env:PSModulePath = "$HOME\Documents\WindowsPowerShell\Modules;$env:ProgramFiles\WindowsPowerShell\Modules;$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules" }
 function Say($m)  { [Console]::Error.WriteLine("mm3: $m") }
 function Fail($m) { [Console]::Error.WriteLine("mm3: x $m"); exit 1 }
 
@@ -20,6 +24,11 @@ $BinDir    = Join-Path $HOME '.local\bin'
 $Installed = Join-Path $BinDir 'mm3.exe'
 $Min       = [version]$MinNode
 
+function Get-Sha256([string]$Path) {                                              # .NET, streaming (the built-in hash cmdlet is a module cmdlet)
+  $stream = [System.IO.File]::OpenRead($Path)
+  try { $algo = [System.Security.Cryptography.SHA256]::Create(); try { $bytes = $algo.ComputeHash($stream) } finally { $algo.Dispose() } } finally { $stream.Dispose() }
+  return ([System.BitConverter]::ToString($bytes) -replace '-','').ToLower()
+}
 function Get-NodeProblem([bool]$Probe) {
   $node = Get-Command node -ErrorAction SilentlyContinue
   if (-not $node) { return 'Node.js is not installed' }
@@ -62,7 +71,7 @@ if (-not (Test-Installed)) {
     if ($curl) { & curl.exe -fsSL --connect-timeout 15 --speed-limit 1000 --speed-time 30 -o $part "$base/$($asset.file)"; if ($LASTEXITCODE -ne 0) { throw "curl exit $LASTEXITCODE" } }
     else       { Invoke-WebRequest -UseBasicParsing -Uri "$base/$($asset.file)" -OutFile $part }
   } catch { Remove-Item -Force $part -ErrorAction SilentlyContinue; Fail "could not download $base/$($asset.file) -> check your internet connection (or proxy) and restart Claude Code; nothing was installed. Or install Node.js $MinNode+ and restart" }
-  $got = (Get-FileHash -Algorithm SHA256 $part).Hash.ToLower()
+  $got = Get-Sha256 $part
   if ($got -ne $asset.sha256.ToLower()) { Remove-Item -Force $part; Fail "the download does not match the checksum pinned in this plugin (expected $($asset.sha256), got $got) -> NOT installed. Do not use it; reinstall the plugin or report this at https://github.com/mvp-scale/mm3/issues" }
   Say 'checked: sha256 matches the value pinned in the plugin'
   $staged = Join-Path $Data $asset.file

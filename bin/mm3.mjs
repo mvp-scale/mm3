@@ -7369,7 +7369,7 @@ var require_dist = __commonJS({
 
 // src/cli.ts
 var import_yaml6 = __toESM(require_dist(), 1);
-import { readFileSync as readFileSync24, realpathSync as realpathSync9, statSync as statSync5 } from "node:fs";
+import { readFileSync as readFileSync24, realpathSync as realpathSync9, statSync as statSync4 } from "node:fs";
 import os3 from "node:os";
 import path27 from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
@@ -8123,6 +8123,18 @@ function storeError(e, file, action) {
   if (typeof code !== "string") return e;
   return new StoreError(`\u2716 files: cannot ${action} ${shownStore(file)} (${code}) \u2192 make .mm3/ a writable folder, with log.jsonl and budget.json as files`);
 }
+var folderInPlaceOfFile = () => Object.assign(new Error("EISDIR: illegal operation on a directory, read"), { code: "EISDIR" });
+function statLog(file) {
+  let st;
+  try {
+    st = statSync(file);
+  } catch (e) {
+    if (isAbsent(e)) return void 0;
+    throw e;
+  }
+  if (st.isDirectory()) throw folderInPlaceOfFile();
+  return st;
+}
 function onStore(file, action, fn) {
   try {
     return fn();
@@ -8491,7 +8503,7 @@ function readLedger(paths, opts = {}) {
   });
   return records;
 }
-var folderInPlaceOfLog = () => Object.assign(new Error("EISDIR: illegal operation on a directory, read"), { code: "EISDIR" });
+var folderInPlaceOfLog = folderInPlaceOfFile;
 function checkTail(paths, upto, lineCount) {
   let fd;
   try {
@@ -8832,7 +8844,9 @@ function openLog(logPath) {
     throw e;
   }
   try {
-    return { fd, st: fstatSync3(fd) };
+    const st = fstatSync3(fd);
+    if (st.isDirectory()) throw folderInPlaceOfFile();
+    return { fd, st };
   } catch (e) {
     closeSync3(fd);
     throw e;
@@ -9510,7 +9524,7 @@ function tryOpenAndCheck(paths, Db) {
     if (!sizeLooksSane(db, paths.index) && !quickCheckOk(db)) return { ok: false, db };
     if (getMeta(db, "schema_version") !== String(SCHEMA_VERSION)) return { ok: false, db };
     const { upto } = readMetaState(db);
-    const size = existsSync3(paths.log) ? statSync2(paths.log).size : 0;
+    const size = statLog(paths.log)?.size ?? 0;
     if (size < upto) return { ok: false, db };
     const fpStart = Number(getMeta(db, "fp_start") ?? "0");
     const storedFp = getMeta(db, "fingerprint") ?? "";
@@ -9568,7 +9582,7 @@ function catchUpAfterAppend(paths) {
   }
 }
 function withIndex(paths, fn, opts = {}) {
-  const logStat = existsSync3(paths.log) ? statSync2(paths.log) : void 0;
+  const logStat = statLog(paths.log);
   if (!logStat || logStat.size === 0) return fn(handleFromMemory(emptyMemoryState()));
   return runSqlite(paths, fn, { forceRebuild: opts.forceRebuild ?? false, readOnly: opts.readOnly ?? false });
 }
@@ -16130,7 +16144,7 @@ async function runLoop(text, ctx) {
 }
 
 // src/ledger/graph.ts
-import { closeSync as closeSync7, existsSync as existsSync15, openSync as openSync7, readSync as readSync3, statSync as statSync4 } from "node:fs";
+import { closeSync as closeSync7, existsSync as existsSync15, openSync as openSync7, readSync as readSync3 } from "node:fs";
 var GRAPH_SCHEMA_VERSION = "2";
 var GRAPH_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS nodes (
@@ -16366,7 +16380,7 @@ function catchUpGraph(paths, env) {
     db.exec(META_TABLE_SQL);
     if (getMeta2(db, "graph_schema_version") !== GRAPH_SCHEMA_VERSION) resetGraphSchema(db);
     const upto = Number(getMeta2(db, "graph_upto") ?? "0");
-    const size = existsSync15(paths.log) ? statSync4(paths.log).size : 0;
+    const size = statLog(paths.log)?.size ?? 0;
     if (upto >= size) return;
     const buf = Buffer.alloc(size - upto);
     const fd = openSync7(paths.log, "r");
@@ -16411,7 +16425,7 @@ function catchUpGraph(paths, env) {
   }
 }
 function refreshGraph(paths, env = process.env) {
-  const logStat = existsSync15(paths.log) ? statSync4(paths.log) : void 0;
+  const logStat = statLog(paths.log);
   if (!logStat || logStat.size === 0) return;
   if (!needsCatchUp(paths, logStat.size)) return;
   withLock(paths.lock, () => catchUpGraph(paths, env));
@@ -18351,7 +18365,7 @@ var UsageStop = class extends Error {
 };
 var isFolder2 = (p) => {
   try {
-    return statSync5(p).isDirectory();
+    return statSync4(p).isDirectory();
   } catch {
     return false;
   }
@@ -18390,7 +18404,7 @@ function readRequest(file, stdinSource, maxBytes = DEFAULT_REQUEST_MAX_BYTES) {
   let bytes;
   try {
     if (file !== "-") {
-      const st = statSync5(file);
+      const st = statSync4(file);
       if (st.isDirectory()) return { stop: `\u2716 request: ${shown2} is a folder \u2192 pass a request file, or - to read stdin` };
       if (st.size > maxBytes) return { stop: tooBig(maxBytes) };
     }
