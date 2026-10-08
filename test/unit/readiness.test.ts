@@ -55,7 +55,8 @@ describe('readiness summary', () => {
       cell('x', 'failover', 'none', { boots: 'fail', l1: 'skip', l2: 'skip', agentVersion: "/usr/bin/env: 'node': No such file" }),
       ...['stock', '20', '22.12'].map((n) => cell('x', 'failover', n, { variant: 'failover' })),
     ];
-    expect(summarize(cells)).toEqual([expect.objectContaining({ agent: 'x', version: '1.2.3', status: 'install-ready', route: 'plugin', failover: 'covered where the agent starts' })]);
+    expect(summarize(cells, [{ id: 'x', version: '', routes: [{ name: 'plugin', steps: [], list: 'l', expect: 'e', starts: true }] }])).toEqual([expect.objectContaining({ agent: 'x', version: '1.2.3', status: 'install-ready', proof: 'connected', route: 'plugin', failover: 'covered where the agent starts' })]);
+    expect(summarize(cells)[0]?.proof).toBe('registered');
   });
 
   it('marks an agent with no route as no-surface and one whose list cannot be read as install-only', async () => {
@@ -63,5 +64,6 @@ describe('readiness summary', () => {
     const none = cell('a', 'primary', '24', { route: 'none', boots: 'skip', l1: 'n/a', l2: 'n/a', firstError: 'no surface' });
     const g = ['22.13', '24'].map((n) => cell('g', 'primary', n, { l2: 'n/a' }));
     expect(summarize([none, ...g]).map((a) => [a.agent, a.status])).toEqual([['a', 'no-surface'], ['g', 'install-only']]);
+    expect(summarize([none, ...g]).map((a) => a.proof)).toEqual(['none', 'installed']);
   });
 });

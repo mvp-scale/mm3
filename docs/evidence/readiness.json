@@ -8,36 +8,34 @@
       "agent": "claude",
       "version": "2.1.294",
       "status": "install-ready",
+      "proof": "connected",
       "route": "plugin",
       "failover": "covered",
-      "notes": [
-        "plugin route on no Node: Installed plugins:"
-      ]
+      "notes": []
     },
     {
       "agent": "codex",
       "version": "0.161.0",
       "status": "install-ready",
+      "proof": "registered",
       "route": "plugin",
       "failover": "covered where the agent starts",
-      "notes": [
-        "plugin route (agent does not start) on no Node: /usr/bin/env: 'node': No such file or directory"
-      ]
+      "notes": []
     },
     {
       "agent": "copilot",
       "version": "1.0.93",
       "status": "install-ready",
+      "proof": "registered",
       "route": "plugin",
       "failover": "covered where the agent starts",
-      "notes": [
-        "plugin route (agent does not start) on no Node: /usr/bin/env: 'node': No such file or directory"
-      ]
+      "notes": []
     },
     {
       "agent": "droid",
       "version": "0.236.0",
       "status": "install-ready",
+      "proof": "registered",
       "route": "plugin",
       "failover": "covered",
       "notes": []
@@ -46,27 +44,18 @@
       "agent": "gemini",
       "version": "0.63.0",
       "status": "install-ready",
+      "proof": "connected",
       "route": "mcp",
       "failover": "covered where the agent starts",
       "notes": [
-        "plugin route (agent does not start) on no Node: /usr/bin/env: 'node': No such file or directory",
-        "mcp route (agent does not start) on no Node: /usr/bin/env: 'node': No such file or directory",
-        "plugin route (agent does not start) on Node stock: file:///usr/local/lib/node_modules/@google/gemini-cli/bundle/chunk-HFRGWL72.js:9656",
-        "mcp route (agent does not start) on Node stock: file:///usr/local/lib/node_modules/@google/gemini-cli/bundle/chunk-HFRGWL72.js:9656",
-        "plugin route on Node 20: Configuration file not found at /mkt/gemini-extension.json",
-        "plugin route on Node 20: Configuration file not found at /mktl/gemini-extension.json",
-        "plugin route on Node 22.12: Configuration file not found at /mkt/gemini-extension.json",
-        "plugin route on Node 22.12: Configuration file not found at /mktl/gemini-extension.json",
-        "plugin route on Node 22.13: Configuration file not found at /mktl/gemini-extension.json",
-        "plugin route on Node 22.13: Configuration file not found at /mkt/gemini-extension.json",
-        "plugin route on Node 24: Configuration file not found at /mktl/gemini-extension.json",
-        "plugin route on Node 24: Configuration file not found at /mkt/gemini-extension.json"
+        "plugin route: Configuration file not found at the plugin folder/gemini-extension.json"
       ]
     },
     {
       "agent": "goose",
       "version": "1.53.0",
       "status": "install-only",
+      "proof": "installed",
       "route": "plugin",
       "failover": "covered",
       "notes": []
@@ -75,22 +64,16 @@
       "agent": "opencode",
       "version": "1.18.35",
       "status": "install-ready",
+      "proof": "connected",
       "route": "mcp",
       "failover": "covered",
-      "notes": [
-        "mcp route on no Node: the list command printed nothing",
-        "plugin route on no Node: └  Done",
-        "plugin route on Node stock: └  Done",
-        "plugin route on Node 20: └  Done",
-        "plugin route on Node 22.12: └  Done",
-        "plugin route on Node 22.13: └  Done",
-        "plugin route on Node 24: └  Done"
-      ]
+      "notes": []
     },
     {
       "agent": "amp",
       "version": "0.0.1791476260-g06c5ed",
       "status": "install-ready",
+      "proof": "registered",
       "route": "mcp",
       "failover": "covered",
       "notes": []
@@ -99,16 +82,16 @@
       "agent": "cursor-agent",
       "version": "2026.10.01-e373342",
       "status": "install-ready",
+      "proof": "connected",
       "route": "mcp",
       "failover": "covered",
-      "notes": [
-        "mcp route on no Node: mm3: Error: Connection failed"
-      ]
+      "notes": []
     },
     {
       "agent": "aider",
       "version": "",
       "status": "no-surface",
+      "proof": "none",
       "route": "-",
       "failover": "not shown",
       "notes": [

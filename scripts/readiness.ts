@@ -25,7 +25,7 @@ const IMAGE = 'mm3-readiness:ubuntu-24.04';
 const SCHEMA = 1;
 const MAX_PARALLEL = 3; // AGENTS.md rule 1: stay light on shared machines
 
-interface Route { name: string; steps: string[]; list: string | null; expect: string | null }
+interface Route { name: string; steps: string[]; list: string | null; expect: string | null; starts?: boolean }
 interface Agent { id: string; version: string; routes: Route[] }
 export interface NodeState { id: string; dir?: string; label: string }
 export type Level = 'ok' | 'fail' | 'skip' | 'n/a';
@@ -70,7 +70,7 @@ export function cellScript(node: NodeState, agent: Agent, route: Route, src: str
     'echo "@@node $(node -v 2>/dev/null || echo none)"',
     `o=$(timeout 25 sh -c ${sq(agent.version)} 2>&1 </dev/null); c=$?; echo "@@boot $c $(echo "$o" | head -1 | cut -c1-120)"; echo "$o" | grep -q -E "SyntaxError|cannot read|node:internal|No such file" && echo "@@bootbad"`,
   ];
-  steps.forEach((s, i) => L.push(`o=$(timeout 70 sh -c ${sq(s)} 2>&1 </dev/null); c=$?; echo "@@step ${i} $c $(echo "$o" | grep -v "^$" | tail -1 | cut -c1-140)"; [ $c -ne 0 ] && exit 0`));
+  steps.forEach((s, i) => L.push(`o=$(timeout 70 sh -c ${sq(s)} 2>&1 </dev/null); c=$?; echo "@@step ${i} $c $(echo "$o" | grep -v -E "^[^[:alnum:]]*(Done)?$" | tail -1 | cut -c1-140)"; [ $c -ne 0 ] && exit 0`));
   if (route.list !== null) {
     const list = `timeout 70 sh -c ${sq(fill(route.list, src, variant))} 2>&1 </dev/null`;
     L.push('echo "@@list"', list, 'echo "@@end"');
@@ -119,15 +119,16 @@ export function table(cells: Cell[], nodes: NodeState[]): string {
 }
 
 export type Status = 'install-ready' | 'install-only' | 'not-ready' | 'no-surface';
-export interface AgentSummary { agent: string; version: string; status: Status; route: string; failover: 'covered' | 'covered where the agent starts' | 'agent needs Node' | 'partial' | 'not shown'; notes: string[] }
+export type Proof = 'connected' | 'registered' | 'installed' | 'none';
+export interface AgentSummary { agent: string; version: string; status: Status; proof: Proof; route: string; failover: 'covered' | 'covered where the agent starts' | 'agent needs Node' | 'partial' | 'not shown'; notes: string[] }
 const OLD = ['none', 'stock', '20', '22.12']; // the Node states below MM3's floor (22.13), where the failover has to take over
 
 /** One line of truth per agent from a run's cells: the best route at Node 22.13+ (primary), and whether the failover covers the states below the floor. */
-export function summarize(cells: Cell[]): AgentSummary[] {
+export function summarize(cells: Cell[], catalog: Agent[] = []): AgentSummary[] {
   return [...new Set(cells.map((c) => c.agent))].map((agent) => {
     const mine = cells.filter((c) => c.agent === agent);
     const version = /\d+(?:\.\d+)+[\w.-]*/u.exec(mine.find((c) => c.boots === 'ok' && c.agentVersion)?.agentVersion ?? '')?.[0]?.replace(/\.$/u, '') ?? ''; // the number, without the agent's own name around it
-    if (mine.every((c) => c.route === 'none')) return { agent, version, status: 'no-surface' as const, route: '-', failover: 'not shown' as const, notes: [mine[0]?.firstError ?? ''] };
+    if (mine.every((c) => c.route === 'none')) return { agent, version, status: 'no-surface' as const, proof: 'none' as const, route: '-', failover: 'not shown' as const, notes: [mine[0]?.firstError ?? ''] };
     const routes = [...new Set(mine.map((c) => c.route))].filter((r) => r !== 'none');
     const at = (route: string, variant: Cell['variant'], ids: string[]): Cell[] => mine.filter((c) => c.route === route && c.variant === variant && ids.includes(c.nodeId));
     const ready = routes.find((r) => at(r, 'primary', ['22.13', '24']).every((c) => c.l1 === 'ok' && c.l2 === 'ok'));
@@ -137,16 +138,19 @@ export function summarize(cells: Cell[]): AgentSummary[] {
     const old = at(route, 'failover', OLD);
     const runs = old.filter((c) => c.boots === 'ok'); // where the agent itself starts; where it does not, there is nothing to fall back from
     const failover = status === 'not-ready' ? 'not shown' : !runs.length ? 'agent needs Node' : runs.every((c) => c.l1 === 'ok' && (c.l2 === 'ok' || c.l2 === 'n/a')) ? (runs.length < old.length ? 'covered where the agent starts' : 'covered') : 'partial';
-    const notes = [...new Set(mine.filter((c) => c.route !== 'none' && (c.l1 === 'fail' || c.l2 === 'fail' || c.boots === 'fail') && c.firstError).map((c) => `${c.route} route${c.l1 === 'skip' ? ' (agent does not start)' : ''} on ${c.nodeId === 'none' ? 'no Node' : `Node ${c.nodeId}`}: ${c.firstError}`))];
-    return { agent, version, status, route, failover, notes };
+    const starts = catalog.find((a) => a.id === agent)?.routes.find((r) => r.name === route)?.starts === true;
+    const proof: Proof = status === 'install-ready' ? (starts ? 'connected' : 'registered') : status === 'install-only' ? 'installed' : 'none';
+    // what failed at Node 22.13 and up (below that, failures are the Node floor, not the agent), once per route, in plain words
+    const notes = [...new Set(mine.filter((c) => c.route !== 'none' && ['22.13', '24'].includes(c.nodeId) && c.variant === 'primary' && (c.l1 === 'fail' || c.l2 === 'fail') && c.firstError && !/^[^A-Za-z]*(Done)?$/u.test(c.firstError)).map((c) => `${c.route} route: ${c.firstError.replace(/\/mktl?\//gu, 'the plugin folder/')}`))];
+    return { agent, version, status, proof, route, failover, notes };
   });
 }
 
 /** docs/evidence/readiness.md: the GitHub-facing checklist, written from a run (`--report --write`). */
-export function evidenceMarkdown(cells: Cell[], meta: { run: string; ts: string; mm3: string }): string {
-  const sums = summarize(cells);
+export function evidenceMarkdown(cells: Cell[], meta: { run: string; ts: string; mm3: string }, catalog: Agent[] = []): string {
+  const sums = summarize(cells, catalog);
   const mark: Record<Status, string> = { 'install-ready': '✅ install-ready', 'install-only': '🟡 install-only', 'not-ready': '❌ not ready', 'no-surface': '– no plugin or MCP surface' };
-  const rows = sums.map((a) => `| ${a.agent} | ${a.version.replace(/\|/gu, '/') || '?'} | ${mark[a.status]} | ${a.route} | ${a.failover} |`);
+  const rows = sums.map((a) => `| ${a.agent} | ${a.version.replace(/\|/gu, '/') || '?'} | ${mark[a.status]} | ${a.proof} | ${a.route} | ${a.failover} |`);
   const problems = sums.filter((a) => a.notes.length).flatMap((a) => [`**${a.agent}**`, ...a.notes.slice(0, 6).map((n) => `- ${n}`), '']);
   return [
     '# Install readiness',
@@ -155,11 +159,11 @@ export function evidenceMarkdown(cells: Cell[], meta: { run: string; ts: string;
     '',
     '- **install-ready**: the marketplace/plugin install (or MCP registration) ran without error on Node 22.13 and 24, and the agent\'s own list command shows it (L1 + L2).',
     '- **install-only**: it installed, but the agent has no command to read it back.',
-    '- **What L2 proves differs by agent**: Claude, OpenCode, Cursor and Gemini start the server when they list it, so L2 there means *connected*; for the others it means *registered*. Codex lists the server with `${CLAUDE_PLUGIN_ROOT}` unexpanded in its arguments; whether it expands at launch is not yet tested.',
+    '- **proof**: *connected* where the agent\'s list command starts the MCP server (Claude, OpenCode, Cursor, Gemini); *registered* where it only shows the plugin or server as installed; *installed* where the agent has no way to list it back. Codex lists the server with `${CLAUDE_PLUGIN_ROOT}` unexpanded in its arguments; whether it expands at launch is not yet tested.',
     '- **failover**: with no Node, or Node 18, 20 or 22.12, the plugin\'s launcher fetches the standalone build (checked against a pinned sha256) and the same check passes. *covered where the agent starts* means the agent itself will not start on some of those Node states (it needs Node), so there is nothing for MM3 to fall back from there.',
     '',
-    '| agent | version tested | status | route | failover below Node 22.13 |',
-    '|---|---|---|---|---|',
+    '| agent | version tested | status | proof | route | failover below Node 22.13 |',
+    '|---|---|---|---|---|---|',
     ...rows,
     '',
     '## Every cell',
@@ -217,6 +221,7 @@ function prepare(tmp: string, version: string): { mkt: string; mktl: string; bin
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const opt = (n: string): string | undefined => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : undefined; };
+  const catalog = (JSON.parse(readFileSync('scripts/readiness/agents.json', 'utf8')) as { agents: Agent[] }).agents;
   if (argv.includes('--report')) {
     const rows = readRows();
     const run = [...rows].reverse().find((r) => r.kind === 'cell')?.run;
@@ -226,13 +231,12 @@ async function main(): Promise<void> {
     if (argv.includes('--write')) {
       const started = rows.find((r) => r.phase === 'started' && r.run === run) as { mm3?: string } | undefined;
       const meta = { run, ts: cells[0]?.ts ?? '', mm3: started?.mm3 ?? '?' };
-      writeFileSync('docs/evidence/readiness.md', evidenceMarkdown(cells, meta));
-      writeFileSync('docs/evidence/readiness.json', `${JSON.stringify({ ...meta, os: 'ubuntu-24.04', agents: summarize(cells) }, null, 2)}\n`);
+      writeFileSync('docs/evidence/readiness.md', evidenceMarkdown(cells, meta, catalog));
+      writeFileSync('docs/evidence/readiness.json', `${JSON.stringify({ ...meta, os: 'ubuntu-24.04', agents: summarize(cells, catalog) }, null, 2)}\n`);
       console.log('wrote docs/evidence/readiness.md and readiness.json (then: npx tsx scripts/evidence-index.ts)');
     }
     return;
   }
-  const catalog = (JSON.parse(readFileSync('scripts/readiness/agents.json', 'utf8')) as { agents: Agent[] }).agents;
   const only = opt('--agents')?.split(',');
   const agents = catalog.filter((a) => !only || only.includes(a.id));
   const nodeIds = opt('--nodes')?.split(',');
