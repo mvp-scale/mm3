@@ -136,6 +136,11 @@ td code { display: block; width: max-content; margin-bottom: .3rem; font-weight:
 
 .plain { padding-left: 1.2rem; }
 .plain li { margin: .7rem 0; }
+.tablewrap { overflow-x: auto; }
+.limits-table { width: 100%; border-collapse: collapse; }
+.limits-table th, .limits-table td { text-align: left; vertical-align: top; padding: .65rem .85rem; border-bottom: 1px solid var(--line); }
+.limits-table th { color: var(--muted); font-weight: 600; font-size: .85rem; }
+.limits-table td:first-child { font-weight: 600; width: 32%; }
 
 /* footer */
 .foot { border-top: 1px solid var(--line); background: var(--surface); margin-top: 2rem; }

@@ -141,14 +141,19 @@
 
 <section class="wrap limits" id="limits" aria-labelledby="limits-h">
   <h2 id="limits-h">Limits and alternatives</h2>
-  <ul class="plain">
-    <li><strong>Advice, not action: it gives the odds, you make the call.</strong> Delete, deploy, drop and pay stay human.</li>
-    <li><strong>A pass is a probability: a <a href="https://github.com/mvp-scale/mm3/blob/main/docs/numbers.md#what-calibrated-means">calibrated</a> 0.9 is wrong one time in ten.</strong> <code>unsure</code> is a real answer, and <code>mm3 outcome</code> shows which verdicts held.</li>
-    <li><strong>Run linters, scanners and tests first: they&rsquo;re free and exact.</strong> MM3 takes the questions they can&rsquo;t ask, like &ldquo;does this handler check the caller?&rdquo;</li>
-    <li><strong>First principles still apply: map your architecture first.</strong> A few cheap checks name the layers (tag requests with <code>mdl.uses</code>) and <code>mm3 report graph</code> draws them. Every later question then lands in a known place, and reading it back is free.</li>
-    <li><strong>Use a full review for open questions.</strong> A model that reads the whole codebase answers anything. MM3 answers yes/no.</li>
-    <li><strong>Beta: works well in our own use and on an intentionally vulnerable app (OWASP NodeGoat).</strong> Formal benchmarks are coming.</li>
-  </ul>
+  <div class="tablewrap">
+    <table class="limits-table">
+      <thead><tr><th scope="col">Where it stops</th><th scope="col">What to do</th></tr></thead>
+      <tbody>
+        <tr><td>It advises, it does not act</td><td>You make the call. Delete, deploy, drop and pay stay human.</td></tr>
+        <tr><td>A pass is a probability</td><td>A <a href="https://github.com/mvp-scale/mm3/blob/main/docs/numbers.md#what-calibrated-means">calibrated</a> 0.9 is wrong one time in ten. <code>unsure</code> is a real answer, and <code>mm3 outcome</code> shows which verdicts held.</td></tr>
+        <tr><td>It answers yes or no, not open questions</td><td>Use a full review: a model that reads the whole codebase answers anything.</td></tr>
+        <tr><td>Linters, scanners and tests are free and exact</td><td>Run them first. MM3 takes the questions they can&rsquo;t ask, like &ldquo;does this handler check the caller?&rdquo;</td></tr>
+        <tr><td>It is only as good as your map</td><td>Map your architecture first. Tag requests with <code>mdl.uses</code> and <code>mm3 report graph</code> draws the layers, so every later question lands in a known place.</td></tr>
+        <tr><td>It is beta</td><td>Works well in our own use and on an intentionally vulnerable app (OWASP NodeGoat). Formal benchmarks are coming.</td></tr>
+      </tbody>
+    </table>
+  </div>
 </section>
 </main>
 

@@ -193,12 +193,14 @@ Add `--dry-run` to any request to validate it and count its questions without a 
 
 ## Limits and alternatives
 
-- **Advice, not action: it gives the odds, you make the call.** Delete, deploy, drop and pay stay human.
-- **A pass is a probability: a [calibrated](docs/numbers.md#what-calibrated-means) 0.9 is wrong one time in ten.** `unsure` is a real answer, and `mm3 outcome` shows which verdicts held.
-- **Run linters, scanners and tests first: they're free and exact.** MM3 takes the questions they can't ask, like "does this handler check the caller?"
-- **First principles still apply: map your architecture first.** A few cheap checks name the layers (tag requests with `mdl.uses`) and `mm3 report graph` draws them. Every later question then lands in a known place, and reading it back is free.
-- **Use a full review for open questions.** A model that reads the whole codebase answers anything. MM3 answers yes/no.
-- **Beta: works well in our own use and on an intentionally vulnerable app (OWASP NodeGoat).** Formal benchmarks are coming.
+| Where it stops | What to do |
+|---|---|
+| It advises, it does not act | You make the call. Delete, deploy, drop and pay stay human. |
+| A pass is a probability | A [calibrated](docs/numbers.md#what-calibrated-means) 0.9 is wrong one time in ten. `unsure` is a real answer, and `mm3 outcome` shows which verdicts held. |
+| It answers yes or no, not open questions | Use a full review: a model that reads the whole codebase answers anything. |
+| Linters, scanners and tests are free and exact | Run them first. MM3 takes the questions they can't ask, like "does this handler check the caller?" |
+| It is only as good as your map | Map your architecture first. Tag requests with `mdl.uses` and `mm3 report graph` draws the layers, so every later question lands in a known place. |
+| It is beta | Works well in our own use and on an intentionally vulnerable app (OWASP NodeGoat). Formal benchmarks are coming. |
 
 ## Docs and contributing
 
