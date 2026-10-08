@@ -38,7 +38,7 @@
  *     reusedFrom), self-compacting — one row per (who, key) ever asked, overwritten on every later touch.
  *   outcomes(run_id PK, outcome, ts, by): latest outcome per run.
  *   places(kind, val, run_id): one row per `where` entry (kind 'where') or legacy tag (kind 'tag'), literal
- *     values only (no prefix expansion at write time — `placeCandidates` below does a LIKE-prefix read instead).
+ *     values only (no prefix expansion at write time — `placeCandidates` below does a range-prefix read instead).
  *   categories(run_id, name, section, family, gate): one row per category a run's own ask carried — one-subject
  *     (`ask.categories`) or a sweep's own layers (`ask.layers[].categories`), never both — so `mm3 report`
  *     can `GROUP BY family` with a plain indexed query instead of a JSON blob (the "family per category
@@ -52,8 +52,9 @@ import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync, ren
 import type { Category, Gate, Verb } from '../contract/types.ts';
 import { normalizeMdl } from '../contract/mdl-fields.ts';
 import { isContractRun, isRecord, LedgerError, notARecord, shownLog, type ConfigRecord, type ContractRun, type FailedRecord, type LedgerRecord, type OutcomeRecord, type RunRecord } from './log.ts';
-import { isAbsent, withLock } from './lock.ts';
+import { folderInPlaceOfFile, isAbsent, statLog, withLock } from './lock.ts';
 import { ensureDir, type Mm3Paths } from './paths.ts';
+import { LINKS } from '../help/links.ts';
 import { MIN_NODE_LABEL } from '../util/node-version.ts';
 
 const whoKey = (who: { adapter: string; model: string }): string => `${who.adapter}|${who.model}`;
@@ -151,6 +152,25 @@ interface ReuseHit {
 
 type Candidate = { id: string; offset: number };
 
+/** What `view <place>` shows besides the runs themselves: how many runs touched a place (every run for null), how
+ *  they split by adapter and latest outcome (the rehearsal split is the caller's, by adapter name), and the newest
+ *  few. Counts only, no record is read to produce it. */
+interface PlaceRunStats {
+  total: number;
+  breakdown: { adapter: string; outcome: OutcomeRecord['outcome'] | null; n: number }[];
+  /** Newest first, at most the requested limit. */
+  newest: Candidate[];
+}
+
+/** One row of `newestPerWherePlace`: a `where` place, its newest candidate run, and (when the index can vouch for
+ *  it) that run's complete `{category: gate}` map as rows. */
+interface NewestPlaceRun {
+  place: string;
+  id: string;
+  offset: number;
+  categories?: { name: string; gate: string }[];
+}
+
 /** What log.ts/reuse.ts/view.ts can ask the index, regardless of which engine answered it. Every method is a
  *  point read or a small bounded query — never a full-ledger scan on the SQLite path. */
 export interface IndexHandle {
@@ -169,6 +189,17 @@ export interface IndexHandle {
    *  append order, by offset) — matching the order view.ts's byPlace has always shown its "newest N" from. A
    *  candidate SET ONLY — callers still verify against the real record, so a false positive here is harmless. */
   placeCandidates(place: string): Candidate[];
+  /** For `mm3 report hits`: for EVERY distinct `where` place, its newest candidate run — exactly
+   *  `placeCandidates(place).at(-1)` — in one set-based query instead of one candidate list (all of its runs, only
+   *  the last wanted) plus one record read per place. `categories` is present only when the index itself can vouch
+   *  for the complete answer: every category gate of that run read back from the `categories` table, proven
+   *  complete against the key count the run's own `mdl` column carries (`Object.keys(rec.categories)`). Absent
+   *  means "read the record" (a sweep, a Plan 1 run, or a run whose categories the index cannot vouch for). */
+  newestPerWherePlace(): NewestPlaceRun[];
+  /** For `view <place>`: the same candidate set as `placeCandidates(place)` (null: every run), counted and split in
+   *  SQL instead of listed, plus its newest `limit` members. A candidate SET ONLY, like placeCandidates: callers
+   *  re-verify the few records they actually show. */
+  placeRunStats(place: string | null, limit: number): PlaceRunStats;
   /** Every run whose `parent` is exactly this id, oldest first (append order) — view's lineage walk "down". A
    *  candidate set only, same discipline as placeCandidates: callers re-verify against the real record. */
   childrenOf(parentId: string): Candidate[];
@@ -372,11 +403,61 @@ function openLog(logPath: string): { fd: number; st: Stats } | undefined {
     throw e;
   }
   try {
-    return { fd, st: fstatSync(fd) };
+    const st = fstatSync(fd);
+    if (st.isDirectory()) throw folderInPlaceOfFile();
+    return { fd, st };
   } catch (e) {
     closeSync(fd);
     throw e;
   }
+}
+
+/**
+ * Opens log.jsonl once and returns a reader over it, for a caller that reads many records in one go (report's
+ * newest-run-per-place pass): the same bytes-by-offset read `readRecordAt` does — one open, one size, a reused
+ * descriptor — without paying an open/fstat/close per record. `read(offset)` has `readRecordAt`'s contract: the
+ * parsed record, or undefined for a missing log, an offset at or past the size seen at open time, or bytes that
+ * do not parse as JSON (a stale offset, never a crash). Always `close()` it.
+ */
+export function openRecordReader(logPath: string): { read(offset: number): LedgerRecord | undefined; close(): void } {
+  let fd: number | undefined;
+  let size = 0;
+  try {
+    fd = openSync(logPath, 'r');
+    size = fstatSync(fd).size;
+  } catch {
+    if (fd !== undefined) closeSync(fd);
+    fd = undefined;
+  }
+  return {
+    read(offset: number): LedgerRecord | undefined {
+      if (fd === undefined || offset < 0 || offset >= size) return undefined; // missing log, or a stale offset
+      try {
+        let chunkSize = Math.min(4096, size - offset);
+        for (;;) {
+          const buf = Buffer.alloc(chunkSize);
+          const got = readSync(fd, buf, 0, chunkSize, offset);
+          if (got <= 0) return undefined;
+          const nl = buf.subarray(0, got).indexOf(0x0a);
+          const complete = nl !== -1 ? buf.toString('utf8', 0, nl) : offset + got >= size ? buf.toString('utf8', 0, got) : null;
+          if (complete !== null) {
+            try {
+              return normalizeRecordMdl(JSON.parse(complete) as LedgerRecord);
+            } catch {
+              return undefined; // garbled at this offset: stale, not a crash
+            }
+          }
+          chunkSize = Math.min(chunkSize * 2, size - offset);
+        }
+      } catch {
+        return undefined;
+      }
+    },
+    close(): void {
+      if (fd !== undefined) closeSync(fd);
+      fd = undefined;
+    },
+  };
 }
 
 /**
@@ -387,36 +468,11 @@ function openLog(logPath: string): { fd: number; st: Stats } | undefined {
  * exponentially from 4 KiB so a normal-sized line costs one small read, not one read of the whole file.
  */
 export function readRecordAt(logPath: string, offset: number): LedgerRecord | undefined {
-  if (offset < 0) return undefined;
-  let fd: number;
+  const reader = openRecordReader(logPath);
   try {
-    fd = openSync(logPath, 'r');
-  } catch {
-    return undefined;
-  }
-  try {
-    const size = fstatSync(fd).size;
-    if (offset >= size) return undefined; // a stale offset: the log is shorter than the index claims
-    let chunkSize = Math.min(4096, size - offset);
-    for (;;) {
-      const buf = Buffer.alloc(chunkSize);
-      const got = readSync(fd, buf, 0, chunkSize, offset);
-      if (got <= 0) return undefined; // shouldn't happen given the bounds check above, but never trust it blindly
-      const nl = buf.subarray(0, got).indexOf(0x0a);
-      const complete = nl !== -1 ? buf.toString('utf8', 0, nl) : offset + got >= size ? buf.toString('utf8', 0, got) : null;
-      if (complete !== null) {
-        try {
-          return normalizeRecordMdl(JSON.parse(complete) as LedgerRecord);
-        } catch {
-          return undefined; // garbled at this offset: stale, not a crash
-        }
-      }
-      chunkSize = Math.min(chunkSize * 2, size - offset);
-    }
-  } catch {
-    return undefined;
+    return reader.read(offset);
   } finally {
-    closeSync(fd);
+    reader.close();
   }
 }
 
@@ -440,7 +496,7 @@ interface MemoryState {
   spend: Map<string, { ts: string; cost: number }>;
   /** Every run, oldest first, regardless of adapter/model — `recentReplays`/`patternCounts` need a global view
    *  `candidatesByWho` (scoped per adapter+model) can't give them. */
-  allRuns: { id: string; offset: number; verb: Verb; gate: Gate | null; pattern: string | null }[];
+  allRuns: { id: string; offset: number; verb: Verb; gate: Gate | null; pattern: string | null; adapter: string }[];
   runCount: number;
   upto: number;
   lineCount: number;
@@ -458,7 +514,7 @@ function memorySink(state: MemoryState): Sink {
       state.runCount += 1;
       if (countsTowardBudget(rec)) state.spend.set(rec.id, { ts: rec.ts, cost: rec.costUsd ?? 0 });
       state.runOffset.set(rec.id, offset);
-      state.allRuns.push({ id: rec.id, offset, verb: rec.verb, gate: isContractRun(rec) ? rec.gate : null, pattern: patternFingerprint(rec) });
+      state.allRuns.push({ id: rec.id, offset, verb: rec.verb, gate: isContractRun(rec) ? rec.gate : null, pattern: patternFingerprint(rec), adapter: rec.adapter });
       const parent = rec.parent ?? null;
       if (parent) {
         if (!state.childrenByParent.has(parent)) state.childrenByParent.set(parent, []);
@@ -493,6 +549,21 @@ function memorySink(state: MemoryState): Sink {
   };
 }
 
+/** The linear engine's placeCandidates: every run whose recorded where entries are `place` or below it, or whose
+ *  tag is `place`, oldest first. Shared by placeCandidates and placeRunStats. */
+function memoryPlaceCandidates(state: MemoryState, place: string): Candidate[] {
+  const prefix = `${place}/`;
+  const ids = new Set<string>();
+  for (const p of state.places) {
+    const hit = p.kind === 'tag' ? p.val === place : p.val === place || p.val.startsWith(prefix);
+    if (hit) ids.add(p.runId);
+  }
+  return [...ids]
+    .map((id) => ({ id, offset: state.runOffset.get(id) }))
+    .filter((c): c is Candidate => c.offset !== undefined)
+    .sort((a, b) => a.offset - b.offset);
+}
+
 function handleFromMemory(state: MemoryState): IndexHandle {
   return {
     findOffset: (id) => state.runOffset.get(id),
@@ -507,17 +578,44 @@ function handleFromMemory(state: MemoryState): IndexHandle {
       return offset === undefined ? undefined : { ...hit, offset, blocked: state.blocked.has(hit.runId) };
     },
     candidates: (adapter, model) => (state.candidatesByWho.get(whoKey({ adapter, model })) ?? []).filter((c) => !state.blocked.has(c.id)),
-    placeCandidates: (place) => {
-      const prefix = `${place}/`;
-      const ids = new Set<string>();
+    placeCandidates: (place) => memoryPlaceCandidates(state, place),
+    newestPerWherePlace: () => {
+      // Same answer as placeCandidates(place).at(-1) for every distinct where place, in one pass: each recorded
+      // place string credits its newest run to itself and to every ancestor directory ("a/b/c.ts" -> "a/b/c.ts",
+      // "a/b", "a"); a tag equal to a where place credits that place too (placeCandidates' tag branch).
+      const wherePlaces = new Set<string>();
+      for (const p of state.places) if (p.kind === 'where') wherePlaces.add(p.val);
+      const newest = new Map<string, { id: string; offset: number }>();
+      const credit = (place: string, runId: string): void => {
+        if (!wherePlaces.has(place)) return;
+        const offset = state.runOffset.get(runId);
+        if (offset === undefined) return;
+        const cur = newest.get(place);
+        if (!cur || offset > cur.offset) newest.set(place, { id: runId, offset });
+      };
       for (const p of state.places) {
-        const hit = p.kind === 'tag' ? p.val === place : p.val === place || p.val.startsWith(prefix);
-        if (hit) ids.add(p.runId);
+        if (p.kind === 'tag') {
+          credit(p.val, p.runId);
+          continue;
+        }
+        credit(p.val, p.runId);
+        for (let i = p.val.indexOf('/'); i !== -1; i = p.val.indexOf('/', i + 1)) credit(p.val.slice(0, i), p.runId);
       }
-      return [...ids]
-        .map((id) => ({ id, offset: state.runOffset.get(id) }))
-        .filter((c): c is Candidate => c.offset !== undefined)
-        .sort((a, b) => a.offset - b.offset);
+      return [...newest.entries()].map(([place, n]) => ({ place, id: n.id, offset: n.offset }));
+    },
+    placeRunStats: (place, limit) => {
+      const adapterOf = new Map(state.allRuns.map((r) => [r.id, r.adapter]));
+      const cands = place === null ? state.allRuns.map((r) => ({ id: r.id, offset: r.offset })) : memoryPlaceCandidates(state, place);
+      const byKey = new Map<string, { adapter: string; outcome: OutcomeRecord['outcome'] | null; n: number }>();
+      for (const c of cands) {
+        const adapter = adapterOf.get(c.id) ?? '';
+        const outcome = state.outcomes.get(c.id)?.outcome ?? null;
+        const key = `${adapter}\u0000${outcome ?? ''}`;
+        const cur = byKey.get(key);
+        if (cur) cur.n += 1;
+        else byKey.set(key, { adapter, outcome, n: 1 });
+      }
+      return { total: cands.length, breakdown: [...byKey.values()], newest: cands.slice(-limit).reverse() };
     },
     childrenOf: (parentId) => state.childrenByParent.get(parentId) ?? [],
     outcomesFor: (ids) => {
@@ -950,10 +1048,43 @@ function writeMetaStateCatchUp(db: SqliteDb, logPath: string, before: { upto: nu
   setMeta(db, 'fingerprint', fingerprintNow(logPath, result.lastLineStart, result.upto));
 }
 
-/** Escapes a place for a LIKE pattern (the value itself, not a wildcard): `%`, `_` and the escape char itself. */
-function escapeLike(s: string): string {
-  return s.replace(/[\\%_]/gu, (c) => `\\${c}`);
-}
+/** The place queries, as text: module-level so test/unit/ledger-place-plan.test.ts can EXPLAIN QUERY PLAN the exact
+ *  statements the handle runs and fail the day one of them goes back to scanning every `places` row.
+ *
+ *  - candidates: three indexed branches, not one OR/LIKE: the OR form made SQLite scan every kind='where' row
+ *    (MULTI-INDEX OR with a kind-only first leg). The prefix leg is a plain range ("a/" <= val < "a0": '0' is the
+ *    byte after '/'), which is exactly "starts with place/" and, unlike LIKE, case-sensitive, matching the linear
+ *    engine's startsWith. UNION de-duplicates a run that matches by more than one leg. Params: place, place/,
+ *    place0, place.
+ *  - newest: report hits, each distinct where place's newest candidate run (the same three legs, the last two
+ *    seeded from the distinct places), plus that run's category gates and the key count its mdl column carries.
+ *    "Newest" is the largest places.rowid: rows are inserted as the log is applied, in append order, never deleted
+ *    (rebuild and catch-up both walk the log forward), so rowid order IS offset order, and picking the winner needs
+ *    no join with `runs` per row (a random read of the wide runs table for every place row: 0.2 s at 100k). `runs`
+ *    is joined once per place, for the winner only. Each leg reads covering index entries only.
+ *  - breakdown / spanNewest: view <place>, the candidate set counted by adapter and latest outcome, and its
+ *    newest few, without listing every candidate. Same params as candidates plus the limit for spanNewest. */
+export const PLACE_SQL = {
+  candidates:
+    `SELECT r.id AS id, r.offset AS offset FROM places p JOIN runs r ON r.id = p.run_id WHERE p.kind = 'where' AND p.val = ? ` +
+    `UNION SELECT r.id, r.offset FROM places p JOIN runs r ON r.id = p.run_id WHERE p.kind = 'where' AND p.val >= ? AND p.val < ? ` +
+    `UNION SELECT r.id, r.offset FROM places p JOIN runs r ON r.id = p.run_id WHERE p.kind = 'tag' AND p.val = ? ORDER BY offset ASC`,
+  newest:
+    `WITH dp AS (SELECT DISTINCT val FROM places WHERE kind = 'where'), ` +
+    `hit(place, rid) AS (` +
+    `SELECT val, MAX(rowid) FROM places WHERE kind = 'where' GROUP BY val ` +
+    `UNION ALL SELECT dp.val, (SELECT MAX(p.rowid) FROM places p WHERE p.kind = 'where' AND p.val >= dp.val || '/' AND p.val < dp.val || '0') FROM dp ` +
+    `UNION ALL SELECT dp.val, (SELECT MAX(p.rowid) FROM places p WHERE p.kind = 'tag' AND p.val = dp.val) FROM dp), ` +
+    `newest(place, rid) AS (SELECT place, MAX(rid) FROM hit GROUP BY place) ` +
+    `SELECT n.place AS place, r.id AS id, r.offset AS offset, json_array_length(json_extract(r.mdl, '$.categories')) AS keyCount, c.name AS cname, c.gate AS cgate ` +
+    `FROM newest n JOIN places p ON p.rowid = n.rid JOIN runs r ON r.id = p.run_id LEFT JOIN categories c ON c.run_id = r.id AND c.gate IS NOT NULL`,
+  breakdown:
+    `WITH hit(run_id) AS (SELECT run_id FROM places WHERE kind = 'where' AND val = ? UNION SELECT run_id FROM places WHERE kind = 'where' AND val >= ? AND val < ? UNION SELECT run_id FROM places WHERE kind = 'tag' AND val = ?) ` +
+    `SELECT r.adapter AS adapter, o.outcome AS outcome, COUNT(*) AS n FROM hit h JOIN runs r ON r.id = h.run_id LEFT JOIN outcomes o ON o.run_id = r.id GROUP BY r.adapter, o.outcome`,
+  spanNewest:
+    `WITH hit(run_id) AS (SELECT run_id FROM places WHERE kind = 'where' AND val = ? UNION SELECT run_id FROM places WHERE kind = 'where' AND val >= ? AND val < ? UNION SELECT run_id FROM places WHERE kind = 'tag' AND val = ?) ` +
+    `SELECT r.id AS id, r.offset AS offset FROM hit h JOIN runs r ON r.id = h.run_id ORDER BY r.offset DESC LIMIT ?`,
+};
 
 function handleFromSql(db: SqliteDb): IndexHandle {
   const stFindOffset = db.prepare('SELECT offset FROM runs WHERE id = ?');
@@ -962,10 +1093,14 @@ function handleFromSql(db: SqliteDb): IndexHandle {
     'SELECT ak.run_id AS runId, ak.qid AS qid, r.offset AS offset, r.blocked AS blocked FROM answer_keys ak JOIN runs r ON r.id = ak.run_id WHERE ak.adapter = ? AND ak.model = ? AND ak.key = ?',
   );
   const stCandidates = db.prepare('SELECT id, offset FROM runs WHERE adapter = ? AND model = ? AND blocked = 0 ORDER BY rowid DESC');
-  const stPlaces = db.prepare(
-    `SELECT DISTINCT r.id AS id, r.offset AS offset FROM places p JOIN runs r ON r.id = p.run_id ` +
-      `WHERE (p.kind = 'where' AND (p.val = ? OR p.val LIKE ? ESCAPE '\\')) OR (p.kind = 'tag' AND p.val = ?) ORDER BY r.offset ASC`,
+  const stPlaces = db.prepare(PLACE_SQL.candidates);
+  const stNewestPlaces = db.prepare(PLACE_SQL.newest);
+  const stPlaceBreakdown = db.prepare(PLACE_SQL.breakdown);
+  const stPlaceNewest = db.prepare(PLACE_SQL.spanNewest);
+  const stAllBreakdown = db.prepare(
+    'SELECT r.adapter AS adapter, o.outcome AS outcome, COUNT(*) AS n FROM runs r LEFT JOIN outcomes o ON o.run_id = r.id GROUP BY r.adapter, o.outcome',
   );
+  const stAllNewest = db.prepare('SELECT id, offset FROM runs ORDER BY offset DESC LIMIT ?');
   const stEverHeld = db.prepare('SELECT 1 FROM answer_keys WHERE adapter = ? AND model = ? AND key = ?');
   const stLatestOutcome = db.prepare('SELECT outcome, uid, ts, by FROM outcomes WHERE run_id = ?');
   const stChildren = db.prepare('SELECT id, offset FROM runs WHERE parent = ? ORDER BY offset ASC');
@@ -1021,7 +1156,29 @@ function handleFromSql(db: SqliteDb): IndexHandle {
       }
       return stCandidates.all(adapter, model).map((r) => ({ id: String(r.id), offset: Number(r.offset) }));
     },
-    placeCandidates: (place) => stPlaces.all(place, `${escapeLike(place)}/%`, place).map((r) => ({ id: String(r.id), offset: Number(r.offset) })),
+    placeCandidates: (place) => stPlaces.all(place, `${place}/`, `${place}0`, place).map((r) => ({ id: String(r.id), offset: Number(r.offset) })),
+    newestPerWherePlace: () => {
+      const byPlace = new Map<string, NewestPlaceRun & { keyCount: number; rows: { name: string; gate: string }[] }>();
+      for (const r of stNewestPlaces.all()) {
+        const place = String(r.place);
+        let cur = byPlace.get(place);
+        if (!cur) {
+          cur = { place, id: String(r.id), offset: Number(r.offset), keyCount: r.keyCount === null ? -1 : Number(r.keyCount), rows: [] };
+          byPlace.set(place, cur);
+        }
+        if (r.cname !== null) cur.rows.push({ name: String(r.cname), gate: String(r.cgate) });
+      }
+      // The index vouches for a run's gates only when it holds as many gated category rows as the run's own
+      // `categories` map has keys (and at least one): anything else (a sweep, whose map is {}, a Plan 1 run, a
+      // run whose map differs from its ask) is left for the caller to read.
+      return [...byPlace.values()].map(({ keyCount, rows, ...n }) => (rows.length > 0 && rows.length === keyCount ? { ...n, categories: rows } : n));
+    },
+    placeRunStats: (place, limit) => {
+      const rows = place === null ? stAllBreakdown.all() : stPlaceBreakdown.all(place, `${place}/`, `${place}0`, place);
+      const breakdown = rows.map((r) => ({ adapter: String(r.adapter), outcome: r.outcome === null ? null : (String(r.outcome) as OutcomeRecord['outcome']), n: Number(r.n) }));
+      const newest = (place === null ? stAllNewest.all(limit) : stPlaceNewest.all(place, `${place}/`, `${place}0`, place, limit)).map((r) => ({ id: String(r.id), offset: Number(r.offset) }));
+      return { total: breakdown.reduce((sum, b) => sum + b.n, 0), breakdown, newest };
+    },
     childrenOf: (parentId) => stChildren.all(parentId).map((r) => ({ id: String(r.id), offset: Number(r.offset) })),
     outcomesFor: (ids) => {
       const out = new Map<string, OutcomeRecord['outcome']>();
@@ -1234,7 +1391,7 @@ function tryOpenAndCheck(paths: Mm3Paths, Db: DatabaseSyncCtor): OpenCheck {
     if (!sizeLooksSane(db, paths.index) && !quickCheckOk(db)) return { ok: false, db };
     if (getMeta(db, 'schema_version') !== String(SCHEMA_VERSION)) return { ok: false, db };
     const { upto } = readMetaState(db);
-    const size = existsSync(paths.log) ? statSync(paths.log).size : 0;
+    const size = statLog(paths.log)?.size ?? 0;
     if (size < upto) return { ok: false, db };
     const fpStart = Number(getMeta(db, 'fp_start') ?? '0');
     const storedFp = getMeta(db, 'fingerprint') ?? '';
@@ -1302,6 +1459,34 @@ function ensureFreshDb(paths: Mm3Paths, Db: DatabaseSyncCtor, opts: { forceRebui
 // ---------------------------------------------------------------------------------------------------------------
 
 /**
+ * Called by log.ts's appendLine, under the ledger lock, right after it appended a line: if an on-disk index.db
+ * existed and passes the normal open check (schema, size, fingerprint of the last indexed line) but is merely
+ * behind the log by pure growth, catch it up over just the new bytes, in place — exactly what the next writer
+ * would do under the same lock, done one append earlier. Without this every read-only reader (view, report,
+ * findRun, reuse) finds the index one line behind and — by design — never writes it, so it falls back to a full
+ * in-memory scan of the whole log (7 to 10 s and ~150 MB extra at 100k runs) on every call after any append,
+ * including the lookup line `view` itself appends. Never creates, rebuilds or heals anything (a missing, stale
+ * or suspect index is left for the next writer's own self-heal), and never throws: the index is disposable and
+ * the append it follows has already succeeded.
+ */
+export function catchUpAfterAppend(paths: Mm3Paths): void {
+  if (__testOnly.forceFallback || !existsSync(paths.index)) return;
+  let db: SqliteDb | undefined;
+  try {
+    const Db = getSqliteCtor();
+    if (!Db) return;
+    const check = tryOpenAndCheck(paths, Db);
+    db = check.db;
+    if (!check.ok || check.fresh) return;
+    catchUpInPlace(check.db, paths);
+  } catch {
+    /* disposable index: the next writer's self-heal covers it */
+  } finally {
+    if (db) safeClose(db);
+  }
+}
+
+/**
  * Opens (self-healing) the index, calls `fn` with an IndexHandle, closes it, and returns fn's result. A project
  * with no ledger yet (log.jsonl missing or empty) never touches disk: `fn` sees a handle over an empty in-memory
  * index — dry runs, view, and any command before the first write create nothing. Otherwise tries node:sqlite
@@ -1316,7 +1501,7 @@ function ensureFreshDb(paths: Mm3Paths, Db: DatabaseSyncCtor, opts: { forceRebui
  * `readOnly`: never persist a catch-up or rebuild to disk for this call — see ensureFreshDb's own comment.
  */
 export function withIndex<T>(paths: Mm3Paths, fn: (h: IndexHandle) => T, opts: { forceRebuild?: boolean; readOnly?: boolean } = {}): T {
-  const logStat = existsSync(paths.log) ? statSync(paths.log) : undefined;
+  const logStat = statLog(paths.log);
   if (!logStat || logStat.size === 0) return fn(handleFromMemory(emptyMemoryState()));
 
   return runSqlite(paths, fn, { forceRebuild: opts.forceRebuild ?? false, readOnly: opts.readOnly ?? false });
@@ -1335,7 +1520,7 @@ export function budgetRollup(paths: Mm3Paths, sinceIso: string, opts: { readOnly
 // since the test hook forces this path on a perfectly good Node too; the fact reported is "sqlite is
 // unavailable," which is true either way, not "your Node happens to be old" (cli.ts's own nodeVersionStop
 // already covers that half for the real CLI/MCP paths, which stop long before ever reaching here). [C-107]
-const NODE_TOO_OLD_LEDGER_MESSAGE = `✖ ledger: node:sqlite is unavailable → install Node ${MIN_NODE_LABEL} or newer (it powers the ledger index); https://nodejs.org`;
+const NODE_TOO_OLD_LEDGER_MESSAGE = `✖ ledger: node:sqlite is unavailable → pin Node ${MIN_NODE_LABEL}+ for this project; see ${LINKS.nodeVersion}`;
 
 function runSqlite<T>(paths: Mm3Paths, fn: (h: IndexHandle) => T, opts: { forceRebuild: boolean; readOnly: boolean }): T {
   // __testOnly.forceFallback: the one intentional, silent fallback left — proving the two engines agree

@@ -49,7 +49,7 @@ import {
   undeclaredFieldSamples,
   mdlRows,
 } from '../ledger/graph.ts';
-import { readRecordAt, stripLines, sweepPlaces, withIndex, type PatternRow } from '../ledger/index.ts';
+import { openRecordReader, readRecordAt, stripLines, sweepPlaces, withIndex, type PatternRow } from '../ledger/index.ts';
 import { isContractRun, isRun, type ContractRun, type LedgerRecord } from '../ledger/log.ts';
 import type { Mm3Paths } from '../ledger/paths.ts';
 import { realRunner, type Runner } from '../setup/runner.ts';
@@ -106,7 +106,11 @@ interface HitRow {
   category: string;
   gate: string;
   runId: string;
-  goal: string;
+  /** Where the run's record starts in the log: read lazily, only for the rows that survive the ROW_LIMIT cap. */
+  offset: number;
+  /** Set when this row was derived from the record itself (a sweep item, or a run the index could not vouch for);
+   *  absent for a row the index answered from its own `categories` table. */
+  goal?: string;
   /** Present only for a one-subject row — the record to re-check staleness against, deferred until we know
    *  this row survives the ROW_LIMIT cap (C-163: never a full-ledger, or full-result, re-read). undefined for
    *  a sweep item's row, which is never marked stale. */
@@ -115,41 +119,106 @@ interface HitRow {
 
 const GATE_RANK: Record<string, number> = { fail: 0, unsure: 1, pass: 2 };
 
+const compareHits = (a: HitRow, b: HitRow): number => GATE_RANK[a.gate]! - GATE_RANK[b.gate]! || a.place.localeCompare(b.place) || a.category.localeCompare(b.category);
+
+/** The `k` smallest rows by `cmp`, sorted: the head of a full sort without sorting every row (a ledger with a
+ *  hundred thousand places has that many rows). `cmp` is a total order here (place x category is unique). */
+function smallest<T>(rows: readonly T[], k: number, cmp: (a: T, b: T) => number): T[] {
+  const top: T[] = [];
+  for (const row of rows) {
+    if (top.length >= k && cmp(row, top[top.length - 1]!) >= 0) continue;
+    let lo = 0;
+    let hi = top.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (cmp(row, top[mid]!) < 0) hi = mid;
+      else lo = mid + 1;
+    }
+    top.splice(lo, 0, row);
+    if (top.length > k) top.pop();
+  }
+  return top;
+}
+
+/** The newest run's gate per place x category. Set-based: one index query names every place's newest run, and
+ *  (via the `categories` table) its gates; only a run the index cannot vouch for (a sweep, whose rows are per item,
+ *  or a Plan 1 run) is read back from the log, each at most once. The displayed rows' goal and staleness need the
+ *  record, so only the capped rows are read for those. The index's vouching rests on the contract's own rule that a
+ *  run with `items` records `categories: {}` (docs/contract.md); the displayed records are checked against it, and
+ *  one that breaks it sends the whole report down the record-by-record path instead (`vouch` false), so an
+ *  out-of-contract ledger costs time, never a different answer. */
 function reportHits(paths: Mm3Paths): VerbResult {
-  const rows = withIndex(
-    paths,
-    (handle) => {
-      const out: HitRow[] = [];
-      const places = handle.distinctPlaces().filter((p) => p.kind === 'where');
-      for (const { val: place } of places) {
-        const newest = handle.placeCandidates(place).at(-1); // oldest-first: the last one is the newest
-        if (!newest) continue;
-        const rec = readRecordAt(paths.log, newest.offset);
-        if (!rec || !isContractRun(rec)) continue;
-        if (rec.items === null) {
-          for (const [category, gate] of Object.entries(rec.categories)) {
-            out.push({ place, category, gate, runId: rec.id, goal: rec.goal, rec });
+  const reader = openRecordReader(paths.log);
+  const recAt = new Map<number, LedgerRecord | undefined>();
+  const readOnce = (offset: number): LedgerRecord | undefined => {
+    if (!recAt.has(offset)) recAt.set(offset, reader.read(offset));
+    return recAt.get(offset);
+  };
+  const collect = (vouch: boolean): HitRow[] =>
+    withIndex(
+      paths,
+      (handle) => {
+        const out: HitRow[] = [];
+        for (const n of handle.newestPerWherePlace()) {
+          const { place } = n;
+          if (vouch && n.categories) {
+            for (const { name, gate } of n.categories) out.push({ place, category: name, gate, runId: n.id, offset: n.offset });
+            continue;
           }
-        } else {
-          for (const item of Object.values(rec.items)) {
-            if (item.unit?.path !== place) continue;
-            for (const [category, gate] of Object.entries(item.categories)) out.push({ place, category, gate, runId: rec.id, goal: rec.goal });
+          const rec = readOnce(n.offset);
+          if (!rec || !isContractRun(rec)) continue;
+          if (rec.items === null) {
+            for (const [category, gate] of Object.entries(rec.categories)) {
+              out.push({ place, category, gate, runId: rec.id, offset: n.offset, goal: rec.goal, rec });
+            }
+          } else {
+            for (const item of Object.values(rec.items)) {
+              if (item.unit?.path !== place) continue;
+              for (const [category, gate] of Object.entries(item.categories)) out.push({ place, category, gate, runId: rec.id, offset: n.offset, goal: rec.goal });
+            }
           }
         }
+        return out;
+      },
+      { readOnly: true },
+    );
+  /** The capped output for `rows`, or undefined when a displayed index-answered row's record breaks the contract. */
+  const render = (rows: readonly HitRow[]): string[] | undefined => {
+    // C-163: the goal and the stale re-read only ever run for rows that actually make it into the capped output
+    // below. A shown row the index answered whose record can no longer be read as a contract run is dropped, as the
+    // per-record read used to drop it.
+    let total = rows.length;
+    const lines: string[] = [];
+    for (const r of smallest(rows, ROW_LIMIT, compareHits)) {
+      let { rec, goal } = r;
+      if (goal === undefined) {
+        const read = readOnce(r.offset);
+        if (!read || !isContractRun(read)) {
+          total -= 1;
+          continue;
+        }
+        if (read.items !== null) return undefined;
+        rec = read;
+        goal = read.goal;
       }
-      return out;
-    },
-    { readOnly: true },
-  );
-  if (!rows.length) return { exit: 0, text: 'mm3 report hits · no runs yet → "mm3 class <request>" starts one' };
-  rows.sort((a, b) => GATE_RANK[a.gate]! - GATE_RANK[b.gate]! || a.place.localeCompare(b.place) || a.category.localeCompare(b.category));
-  // C-163: the stale re-read only ever runs for rows that actually make it into the capped output below.
-  const shown = rows.slice(0, ROW_LIMIT);
-  const lines = shown.map((r) => {
-    const stale = r.rec ? isStale(paths.root, r.rec, r.category) : false;
-    return `${clip(r.place, 50)} · ${r.category} ${r.gate} · ${r.runId} "${clip(r.goal, 40)}"${stale ? ' · stale' : ''}`;
-  });
-  return { exit: 0, text: [heading('hits', rows.length, 'row'), ...withCap(lines, rows.length)].join('\n') };
+      const stale = rec ? isStale(paths.root, rec, r.category) : false;
+      lines.push(`${clip(r.place, 50)} · ${r.category} ${r.gate} · ${r.runId} "${clip(goal, 40)}"${stale ? ' · stale' : ''}`);
+    }
+    return [heading('hits', total, 'row'), ...withCap(lines, total)];
+  };
+  try {
+    let rows = collect(true);
+    if (!rows.length) return { exit: 0, text: 'mm3 report hits · no runs yet → "mm3 class <request>" starts one' };
+    let text = render(rows);
+    if (!text) {
+      rows = collect(false);
+      if (!rows.length) return { exit: 0, text: 'mm3 report hits · no runs yet → "mm3 class <request>" starts one' };
+      text = render(rows)!;
+    }
+    return { exit: 0, text: text.join('\n') };
+  } finally {
+    reader.close();
+  }
 }
 
 function reportPatterns(paths: Mm3Paths): VerbResult {

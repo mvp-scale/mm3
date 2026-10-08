@@ -1,0 +1,37 @@
+{
+  "name": "mm3",
+  "displayName": "MM3",
+  "description": "MM3, make and model for coding agents: MAK³ uses what is proven, MDL³ learns what is missing, with compact yes/no checklists, a calibrated consensus, and a log that learns where agents go wrong.",
+  "author": {
+    "name": "mvp-scale"
+  },
+  "homepage": "https://github.com/mvp-scale/mm3",
+  "repository": "https://github.com/mvp-scale/mm3",
+  "license": "Apache-2.0",
+  "keywords": [
+    "decision-support",
+    "checklist",
+    "consensus",
+    "knowledge"
+  ],
+  "userConfig": {
+    "typesafe_api_key": {
+      "type": "string",
+      "title": "TypeSafe API key: press Enter here, then paste",
+      "description": "Press Enter, paste your key, press Enter, then choose \"Save configuration\". Stored masked in Claude Code's secure storage. No key: sample answers only.",
+      "sensitive": true,
+      "required": false
+    }
+  },
+  "mcpServers": {
+    "mm3": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/launcher/mm3-launch",
+      "args": [
+        "mcp"
+      ],
+      "env": {
+        "TYPESAFE_API_KEY": "${user_config.typesafe_api_key}"
+      }
+    }
+  }
+}

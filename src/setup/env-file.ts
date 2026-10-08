@@ -141,6 +141,7 @@ export function removeEnvFileValue(file: string, name: EnvFileName): 'removed' |
 
 /** Quiet at 0600 or tighter; a ✖-style warning line otherwise. */
 export function looseFileModeWarning(file: string, mode: number): string | undefined {
+  if (process.platform === 'win32') return undefined; // Windows has no POSIX mode bits (stat reports 0666 for every file); the profile folder's ACL is what keeps it private
   if ((mode & 0o077) === 0) return undefined;
   return `✖ credentials: ${file} is mode ${mode.toString(8)}, looser than 0600 → chmod 600 ${file}`;
 }

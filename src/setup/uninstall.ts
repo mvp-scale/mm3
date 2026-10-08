@@ -23,6 +23,7 @@ import { findOnPath, npmGlobalPrefix } from './npm-info.ts';
 import { marketplaceExists, pluginCacheDir, pluginStatus, removeMarketplace, removePluginCacheDir, uninstallPlugin } from './plugin.ts';
 import { confirm, type PromptIO } from './prompt.ts';
 import type { Runner } from './runner.ts';
+import { removeStandalone, standaloneBinPath, standalonePluginDir } from './standalone.ts';
 
 export interface UninstallFlags {
   /** Also remove the per-user parts: the stored key, the CLI itself, every plugin scope (not just this
@@ -66,7 +67,16 @@ function detectInstallMode(ctx: UninstallCtx): { mode: InstallMode; npmPrefix?: 
   } catch {
     real = onPath;
   }
-  const under = (dir: string): boolean => real === dir || real.startsWith(dir.endsWith(path.sep) ? dir : `${dir}${path.sep}`);
+  const within = (dir: string): boolean => real === dir || real.startsWith(dir.endsWith(path.sep) ? dir : `${dir}${path.sep}`);
+  // `real` has symlinks resolved (macOS: /private/var/… for a /var/… home or temp folder), so the folder is also tried the same way
+  const under = (dir: string): boolean => {
+    if (within(dir)) return true;
+    try {
+      return within(realpathSync(dir));
+    } catch {
+      return false;
+    }
+  };
   if (under(path.join(ctx.cwd, 'node_modules'))) return { mode: 'local', projectDir: ctx.cwd };
   const globalPrefix = npmGlobalPrefix(ctx.runner);
   if (globalPrefix && under(globalPrefix)) return { mode: 'global', npmPrefix: globalPrefix };
@@ -180,12 +190,36 @@ async function stepData(flags: UninstallFlags, ctx: UninstallCtx, manual: string
   return [line('done', 'project', 'removed .mm3/')];
 }
 
+/** The standalone's removal: the one file and the plugin folder `init` placed, then the record. Where the system
+ *  will not delete a running program (Windows), the file is named in the manual backup block instead. */
+async function stepCliStandalone(binPath: string, pluginDir: string, flags: UninstallFlags, ctx: UninstallCtx, manual: string[]): Promise<string[]> {
+  const remove = await ask(`Found the standalone installed at ${binPath}. Remove it?`, true, flags, ctx.io);
+  if (!remove) {
+    manual.push(`cli: the standalone is at ${binPath} (plugin folder ${pluginDir}) — remove them yourself when ready`);
+    return [line('skipped', 'cli', 'skipped (kept)')];
+  }
+  const left = removeStandalone(binPath, pluginDir);
+  if (left.length) {
+    manual.push(`cli: rm -rf ${left.join(' ')}`);
+    return [line('problem', 'cli', `could not remove ${left.join(' and ')} → remove ${left.length > 1 ? 'them' : 'it'} by hand: rm -rf ${left.join(' ')}`)];
+  }
+  clearInstallRecord(ctx.env);
+  const lines = [line('done', 'cli', 'uninstalled (was standalone)')];
+  const stillOnPath = findOnPath('mm3', ctx.env, ctx.platform);
+  if (stillOnPath) {
+    lines.push(line('problem', 'cli', `still resolves on PATH at ${stillOnPath} → a stale PATH entry or a second copy elsewhere; remove it by hand if a shell still finds it`));
+    manual.push(`cli: still on PATH at ${stillOnPath} — check for a second install or a stale shell hash`);
+  }
+  return lines;
+}
+
 /** Per user, shared across every project — only touched with `--all`. Falls back to `detectInstallMode` when
  *  there's no `install.json`, so a real, path-detectable install still gets a real removal attempt instead of
  *  immediately handing back manual commands; re-checks PATH afterward for a stale entry or a second copy. */
 async function stepCli(flags: UninstallFlags, ctx: UninstallCtx, manual: string[]): Promise<string[]> {
   if (!flags.all) return [line('skipped', 'cli', 'skipped (per-user; use --all to remove it)')];
   const record = readInstallRecord(ctx.env);
+  if (record?.mode === 'standalone') return stepCliStandalone(record.binPath ?? standaloneBinPath(ctx.homeDir, ctx.platform), record.pluginDir ?? standalonePluginDir(ctx.homeDir), flags, ctx, manual);
   const detected = record ? undefined : detectInstallMode(ctx);
   const loc = record ?? detected;
   if (!loc) {

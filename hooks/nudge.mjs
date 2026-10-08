@@ -60,7 +60,7 @@ const markerDir = () => {
   }
   const st = lstatSync(dir);
   const mine = typeof process.getuid !== 'function' || st.uid === process.getuid();
-  return st.isDirectory() && !st.isSymbolicLink() && mine && (st.mode & 0o077) === 0 ? dir : undefined;
+  return st.isDirectory() && !st.isSymbolicLink() && mine && (process.platform === 'win32' || (st.mode & 0o077) === 0) ? dir : undefined; // Windows has no POSIX mode bits to check
 };
 
 /** False when this agent already heard this moment in this session. A marker that cannot be written, or a folder that is not safe to write in, does not silence it. */

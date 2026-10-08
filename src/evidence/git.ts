@@ -36,7 +36,23 @@ export function hasGit(deps?: { spawn?: Spawn }): boolean {
 export function gitRootOf(dir: string, spawn: Spawn): string | undefined {
   const result = spawn('git', ['rev-parse', '--show-toplevel'], { cwd: dir, encoding: 'utf8' });
   const out = typeof result.stdout === 'string' ? result.stdout.trim() : '';
-  return result.status === 0 && out ? out : undefined;
+  if (result.status !== 0 || !out) return undefined;
+  return inCallersSpelling(dir, out);
+}
+
+/** git prints the toplevel with symlinks resolved (macOS: /private/var/… for a /var/… temp folder, Windows: 8.3 names);
+ *  every caller does `path.relative(<this root>, <path it built under dir>)`, which needs both in the same spelling. So the root is
+ *  handed back as `dir` itself, climbed up as many levels as `dir` sits below git's toplevel. */
+function inCallersSpelling(dir: string, top: string): string {
+  try {
+    const real = realpathSync.native(dir); // .native expands Windows 8.3 names (RUNNER~1) the way git prints them; the JS version does not
+    if (real === dir) return top;
+    const rel = path.relative(top, real);
+    if (isOutside(rel)) return top;
+    return rel ? path.resolve(dir, ...rel.split(path.sep).map(() => '..')) : dir;
+  } catch {
+    return top;
+  }
 }
 
 /** The directory to resolve a run's own containing repo from: the first `where` entry (stripped of any
