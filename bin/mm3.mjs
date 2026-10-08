@@ -7416,6 +7416,7 @@ var package_default = {
     ".claude-plugin",
     "hooks",
     "launcher",
+    "gemini-extension.json",
     "README.md",
     "LICENSE"
   ],

@@ -1,0 +1,11 @@
+{
+  "name": "mm3",
+  "version": "0.1.4",
+  "description": "MM3: calibrated pass/fail/unsure verdicts from short yes/no checklists, with a ledger that learns where agents go wrong.",
+  "mcpServers": {
+    "mm3": {
+      "command": "node",
+      "args": ["${extensionPath}${/}bin${/}mm3.mjs", "mcp"]
+    }
+  }
+}
