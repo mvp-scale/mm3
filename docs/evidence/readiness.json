@@ -1,0 +1,119 @@
+{
+  "run": "RDY-0001",
+  "ts": "2026-10-08T18:33:46.400Z",
+  "mm3": "0.1.4",
+  "os": "ubuntu-24.04",
+  "agents": [
+    {
+      "agent": "claude",
+      "version": "2.1.294",
+      "status": "install-ready",
+      "route": "plugin",
+      "failover": "covered",
+      "notes": [
+        "plugin route on no Node: Installed plugins:"
+      ]
+    },
+    {
+      "agent": "codex",
+      "version": "codex-cli 0.161.0",
+      "status": "install-ready",
+      "route": "plugin",
+      "failover": "covered where the agent starts",
+      "notes": [
+        "plugin route (agent does not start) on no Node: /usr/bin/env: 'node': No such file or directory"
+      ]
+    },
+    {
+      "agent": "copilot",
+      "version": "GitHub Copilot CLI 1.0.93.",
+      "status": "install-ready",
+      "route": "plugin",
+      "failover": "covered where the agent starts",
+      "notes": [
+        "plugin route (agent does not start) on no Node: /usr/bin/env: 'node': No such file or directory"
+      ]
+    },
+    {
+      "agent": "droid",
+      "version": "0.236.0",
+      "status": "install-ready",
+      "route": "plugin",
+      "failover": "covered",
+      "notes": []
+    },
+    {
+      "agent": "gemini",
+      "version": "0.63.0",
+      "status": "install-ready",
+      "route": "mcp",
+      "failover": "covered where the agent starts",
+      "notes": [
+        "plugin route (agent does not start) on no Node: /usr/bin/env: 'node': No such file or directory",
+        "mcp route (agent does not start) on no Node: /usr/bin/env: 'node': No such file or directory",
+        "plugin route (agent does not start) on Node stock: file:///usr/local/lib/node_modules/@google/gemini-cli/bundle/chunk-HFRGWL72.js:9656",
+        "mcp route (agent does not start) on Node stock: file:///usr/local/lib/node_modules/@google/gemini-cli/bundle/chunk-HFRGWL72.js:9656",
+        "plugin route on Node 20: Configuration file not found at /mkt/gemini-extension.json",
+        "plugin route on Node 20: Configuration file not found at /mktl/gemini-extension.json",
+        "plugin route on Node 22.12: Configuration file not found at /mkt/gemini-extension.json",
+        "plugin route on Node 22.12: Configuration file not found at /mktl/gemini-extension.json",
+        "plugin route on Node 22.13: Configuration file not found at /mktl/gemini-extension.json",
+        "plugin route on Node 22.13: Configuration file not found at /mkt/gemini-extension.json",
+        "plugin route on Node 24: Configuration file not found at /mktl/gemini-extension.json",
+        "plugin route on Node 24: Configuration file not found at /mkt/gemini-extension.json"
+      ]
+    },
+    {
+      "agent": "goose",
+      "version": "1.53.0",
+      "status": "install-only",
+      "route": "plugin",
+      "failover": "covered",
+      "notes": []
+    },
+    {
+      "agent": "opencode",
+      "version": "1.18.35",
+      "status": "install-ready",
+      "route": "mcp",
+      "failover": "covered",
+      "notes": [
+        "mcp route on no Node: the list command printed nothing",
+        "plugin route on no Node: └  Done",
+        "plugin route on Node stock: └  Done",
+        "plugin route on Node 20: └  Done",
+        "plugin route on Node 22.12: └  Done",
+        "plugin route on Node 22.13: └  Done",
+        "plugin route on Node 24: └  Done"
+      ]
+    },
+    {
+      "agent": "amp",
+      "version": "0.0.1791476260-g06c5ed",
+      "status": "install-ready",
+      "route": "mcp",
+      "failover": "covered",
+      "notes": []
+    },
+    {
+      "agent": "cursor-agent",
+      "version": "2026.10.01-e373342",
+      "status": "install-ready",
+      "route": "mcp",
+      "failover": "covered",
+      "notes": [
+        "mcp route on no Node: mm3: Error: Connection failed"
+      ]
+    },
+    {
+      "agent": "aider",
+      "version": "",
+      "status": "no-surface",
+      "route": "-",
+      "failover": "not shown",
+      "notes": [
+        "this agent has no plugin or MCP surface"
+      ]
+    }
+  ]
+}
