@@ -37,8 +37,6 @@ export TYPESAFE_BASE_URL=https://your-typesafe.example
 
 Using the plugin? Keep the key in its secure settings instead (Claude Code: `/plugin configure mm3@mvp-scale`). Then run your agent: it writes the request YAML in seconds. Needs Node 22.13+, or the [standalone build](docs/node-version.md). More: the [config guide](docs/config-guide.md).
 
-**Status: beta.** It works well and we use it ourselves; formal benchmarks are coming. The plugin and the npm package are both out.
-
 ## See it run
 
 **The challenge:** you host n8n yourself and want it to run faster. You ask your agent where to start. It narrows the question to one place, the node loader's cleanup in `directory-loader.ts`, and asks MM3 twelve questions about it in one call: nine yes/no, two decisions and the goal itself.
