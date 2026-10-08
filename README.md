@@ -10,68 +10,25 @@
 
 ## Install
 
-MM3 installs into your coding agent as a plugin or as an MCP server, whichever the agent supports. These commands were run as written on a clean Ubuntu; what passed, agent by agent, is in [what we tested](docs/evidence/readiness.md) and on [mm3lab.dev/agents](https://mm3lab.dev/agents).
+<p align="center"><img src="docs/assets/agents.svg" width="900" alt="Install it in your agent. Add the marketplace, install the plugin: plugin marketplace add mvp-scale/mm3, then plugin install mm3@mvp-scale. An agent without a plugin store registers mm3 mcp as a server. Tested, installed and registered through each agent's own commands: Claude Code, Codex, GitHub Copilot, Factory Droid, Gemini CLI, Goose, OpenCode, Amp and Cursor. Expected to work, following the same standards: Aider, Hermes, Cline, Kilo Code, Pi, OpenClaw, Kiro, Antigravity and any agent that reads AGENTS.md."></p>
 
-**Claude Code**, from your project:
+In your agent, add the marketplace and install the plugin:
 
 ```text
 /plugin marketplace add mvp-scale/mm3
 /plugin install mm3@mvp-scale
 ```
 
-**Other agents**, from your terminal:
-
-```bash
-# Codex
-codex plugin marketplace add mvp-scale/mm3
-codex plugin add mm3@mvp-scale
-# GitHub Copilot
-copilot plugin marketplace add mvp-scale/mm3
-copilot plugin install mm3@mvp-scale
-# Factory Droid
-droid plugin marketplace add https://github.com/mvp-scale/mm3
-droid plugin install mm3@mm3
-# Gemini CLI
-gemini extensions install https://github.com/mvp-scale/mm3
-```
-
-An agent that takes MCP servers instead (Cursor, OpenCode and Amp, and any of the above): install the command once with `npm install -g @mvpscale/mm3`, then register `mm3 mcp` as a local (stdio) server in that agent. Agents read `AGENTS.md`, and [mm3lab.dev/llms.txt](https://mm3lab.dev/llms.txt) is the machine-readable index.
-
-In Claude Code, pick **project** scope. Claude asks for a TypeSafe API key (masked, optional): press Enter on "TypeSafe API key", paste, Enter, then "Save configuration". Leave it empty to add one later with `mm3 init`.
-
-The Claude plugin carries its own copy of MM3 and gives Claude the `mm3` tool, so Claude can run every command (`mm3 config --load` included) without anything else installed. It is updated through Claude Code, like any plugin.
-
-On a machine without Node 22.13+ the plugin, as installed from npm or the marketplace, still needs Node to start, exactly as before. The self-contained MM3 build (one file per system, own Node inside, for Linux, Windows and macOS on Intel/AMD and ARM) runs every command without Node, and its `init` registers a plugin that starts the file itself. The plugin's own fall-back (it downloads that build once and checks it against a sha256 pinned inside the plugin) ships in this package and is tested on every platform, but the plugin does not start through it yet; that switch comes in the next release. Details: [Node version](docs/node-version.md#claude-code-without-node).
-
-In your own terminal (optional, needs Node 22.13+; [how to pin it for one project](docs/node-version.md)). Run it without installing anything:
-
-```bash
-npx @mvpscale/mm3 config
-```
-
-or install the command once, pinned to the version you ran:
+Or from a terminal:
 
 ```bash
 npm install -g @mvpscale/mm3
-mm3 init
+mm3 init --agents
 ```
 
-`mm3 doctor` says which `mm3` your terminal finds and warns when its version differs from the one running, with the fix (`mm3 init`). After you update the plugin, run `mm3 init` once to bring the terminal copy along. `mm3 init` never uses sudo and never edits your shell profile: it installs into your user folder (`~/.local`) and prints the one `export PATH=...` line if that folder is not on your PATH.
+Tested on nine agents so far, every tier-one agent among them; the rest follow the same standards and are expected to work. [Each agent's exact command, and what we tested](https://mm3lab.dev/agents), is one click away (the [checklist and ledger](docs/evidence/readiness.md) are on GitHub). Run it yourself, or let your agent do it: with an agent in the loop, the request YAML is written in seconds. First run (key and endpoint): the [config guide](docs/config-guide.md). Needs Node 22.13+, or the standalone build with its own Node: [Node version](docs/node-version.md).
 
 **Status: beta.** It works well and we use it ourselves; formal benchmarks are coming. The plugin and the npm package are both out.
-
-### Try it locally
-
-Bring a TypeSafe API key. MM3 wraps TypeSafe's API (Jev at `api.typesafe.ai`), and any TypeSafe endpoint works. Your key stays out of your project: Claude Code keeps it in its secure storage, `mm3 init` in your OS keychain (or a 0600 file). To switch endpoints:
-
-```bash
-mm3 config            # see the settings in effect, the endpoint included
-mm3 config --write    # create .mm3/config.yaml, then uncomment baseURL: and set it
-mm3 config --load     # check the file and record the load in the ledger
-TYPESAFE_BASE_URL=https://api.example.com mm3 class review.yaml   # or for one run only
-```
-
-Then just ask your agent. The [MM3 skill](skills/mm3/SKILL.md) tells it when to reach for MM3, which verb fits and how to write the request; you read the verdict.
 
 ## See it run
 

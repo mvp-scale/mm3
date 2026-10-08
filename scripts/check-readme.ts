@@ -51,7 +51,7 @@ export function checkReadme(md: string, story: Story, opts: Opts): string[] {
   if (firstCmd < 0 || firstCmd + 1 > 30) out.push(`✖ first command: line ${firstCmd + 1} → move install up to within 30 lines`);
   const phrases: [string, string][] = [
     ['story.tagline', story.tagline], ['story.identity', story.identity],
-    ['story.install.claude', story.install.claude], ['story.install.claudeInstall', story.install.claudeInstall], ['story.install.npm', story.install.npm], ['story.install.npmInit', story.install.npmInit], ['story.install.endpoint', story.install.endpoint],
+    ['story.install.claude', story.install.claude], ['story.install.claudeInstall', story.install.claudeInstall], ['story.install.npm', story.install.npm], ['story.install.npmInit', story.install.npmInit], // the endpoint line (story.install.endpoint) is the site's first-run detail; the README links the config guide instead
     ...story.numbers.map((n, i): [string, string] => [`story.numbers[${i}]`, n.text]),
     ...story.useCases.map((u, i): [string, string] => [`story.useCases[${i}]`, u.title]),
   ];

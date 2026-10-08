@@ -80,3 +80,17 @@ describe('readiness plugin and MCP states', () => {
     expect(summarize(['22.13', '24'].map((n) => mk('mcp', 'ok', 'ok', n)))[0]).toMatchObject({ plugin: 'absent', mcp: 'registered' });
   });
 });
+
+describe('readiness picture', () => {
+  it('draws the tested agents from the summary and the expected ones from the catalog, as well-formed XML', async () => {
+    const { agentsSvg } = await import('../../scripts/readiness.ts');
+    const sum = (agent: string, status: 'install-ready' | 'no-surface') => ({ agent, version: '1', status, proof: 'registered' as const, route: 'plugin', plugin: 'registered' as const, mcp: 'absent' as const, failover: 'covered' as const, notes: [] });
+    const catalog = [{ id: 'a', name: 'Agent <A>', version: '', routes: [] }, { id: 'b', name: 'Agent B', version: '', routes: [] }];
+    const svg = agentsSvg([sum('a', 'install-ready'), sum('b', 'no-surface')], catalog, ['Extra One']);
+    expect(svg).toContain('1 agents');
+    expect(svg).toContain('Agent &lt;A&gt;');
+    expect(svg).toContain('Extra One');
+    expect(svg).toContain('any agent that reads AGENTS.md');
+    expect(/<!--(?:(?!-->)[\s\S])*--(?!>)(?:(?!-->)[\s\S])*-->/u.test(svg)).toBe(false); // no `--` inside a comment, which breaks the XML
+  });
+});
