@@ -1,6 +1,6 @@
 {
-  "version": "0.1.4",
-  "title": "MM3 runs with no Node installed, and stays fast at 100,000 runs",
+  "version": "0.1.5",
+  "title": "MM3 installs in any coding agent, and shows what was tested",
   "accept": [],
   "include": [
     "README.md",
@@ -10,6 +10,7 @@
     "AGENTS.md",
     "package.json",
     "package-lock.json",
+    "gemini-extension.json",
     "tsconfig.json",
     "tsconfig.build.json",
     ".gitignore",

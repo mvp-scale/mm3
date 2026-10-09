@@ -7378,7 +7378,7 @@ import { parseArgs } from "node:util";
 // package.json
 var package_default = {
   name: "@mvpscale/mm3",
-  version: "0.1.4",
+  version: "0.1.5",
   description: "MM3, make and model for coding agents: MAK\xB3 uses what is proven, MDL\xB3 learns what is missing, with compact yes/no checklists, a calibrated consensus, and a log that learns where agents go wrong.",
   license: "Apache-2.0",
   type: "module",
