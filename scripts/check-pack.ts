@@ -10,7 +10,7 @@ import pkg from '../package.json' with { type: 'json' };
 export interface PackEntry { path: string; size: number; mode?: number }
 
 export const ALLOWED_PREFIXES = ['dist/', 'skills/', '.claude-plugin/', 'hooks/', 'launcher/'] as const;
-export const ALLOWED_FILES = ['README.md', 'LICENSE', 'package.json', 'bin/mm3.mjs'] as const; // the first three npm always includes regardless of "files"; bin/mm3.mjs is the plugin bundle .claude-plugin/plugin.json launches
+export const ALLOWED_FILES = ['README.md', 'LICENSE', 'package.json', 'bin/mm3.mjs', 'gemini-extension.json'] as const; // the first three npm always includes regardless of "files"; bin/mm3.mjs is the plugin bundle .claude-plugin/plugin.json launches
 
 function entryPointPaths(): string[] {
   const bin = typeof pkg.bin === 'string' ? [pkg.bin] : Object.values(pkg.bin as Record<string, string>);
@@ -25,6 +25,7 @@ export const REQUIRED: readonly string[] = [
   'skills/mm3/references/request.schema.json',
   '.claude-plugin/plugin.json',
   '.claude-plugin/marketplace.json',
+  'gemini-extension.json', // Gemini CLI's own manifest: `gemini extensions install` reads it at the root of the folder and registers the MCP server and the skills
   'hooks/hooks.json',
   'hooks/nudge.mjs',
   // the launcher ships but the plugin does not start through it yet (the shipped manifests still run node); the next release copies launcher/manifests/* over them

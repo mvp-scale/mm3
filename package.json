@@ -38,6 +38,7 @@
     ".claude-plugin",
     "hooks",
     "launcher",
+    "gemini-extension.json",
     "README.md",
     "LICENSE"
   ],
