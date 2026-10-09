@@ -1,0 +1,124 @@
+{
+  "run": "RDY-0001",
+  "ts": "2026-10-08T20:16:37.613Z",
+  "mm3": "0.1.4",
+  "os": "ubuntu-24.04",
+  "agents": [
+    {
+      "agent": "claude",
+      "version": "2.1.294",
+      "status": "install-ready",
+      "proof": "connected",
+      "route": "mcp",
+      "plugin": "connected",
+      "mcp": "connected",
+      "failover": "covered",
+      "notes": []
+    },
+    {
+      "agent": "codex",
+      "version": "0.161.0",
+      "status": "install-ready",
+      "proof": "registered",
+      "route": "plugin",
+      "plugin": "registered",
+      "mcp": "registered",
+      "failover": "covered where the agent starts",
+      "notes": []
+    },
+    {
+      "agent": "copilot",
+      "version": "1.0.93",
+      "status": "install-ready",
+      "proof": "registered",
+      "route": "plugin",
+      "plugin": "registered",
+      "mcp": "registered",
+      "failover": "covered where the agent starts",
+      "notes": []
+    },
+    {
+      "agent": "droid",
+      "version": "0.236.0",
+      "status": "install-ready",
+      "proof": "connected",
+      "route": "mcp",
+      "plugin": "registered",
+      "mcp": "connected",
+      "failover": "covered",
+      "notes": []
+    },
+    {
+      "agent": "gemini",
+      "version": "0.63.0",
+      "status": "install-ready",
+      "proof": "connected",
+      "route": "mcp",
+      "plugin": "failed",
+      "mcp": "connected",
+      "failover": "covered where the agent starts",
+      "notes": [
+        "plugin route: Configuration file not found at the plugin folder/gemini-extension.json"
+      ]
+    },
+    {
+      "agent": "goose",
+      "version": "1.53.0",
+      "status": "install-only",
+      "proof": "installed",
+      "route": "plugin",
+      "plugin": "installed",
+      "mcp": "absent",
+      "failover": "covered",
+      "notes": []
+    },
+    {
+      "agent": "opencode",
+      "version": "1.18.35",
+      "status": "install-ready",
+      "proof": "connected",
+      "route": "mcp",
+      "plugin": "failed",
+      "mcp": "connected",
+      "failover": "covered",
+      "notes": [
+        "plugin route: ●  Expected one of: exports[\"./tui\"], exports[\"./server\"], package.json main for server, or package.json[\"oc-themes\"] for tui themes."
+      ]
+    },
+    {
+      "agent": "amp",
+      "version": "0.0.1791476260-g06c5ed",
+      "status": "install-ready",
+      "proof": "registered",
+      "route": "mcp",
+      "plugin": "absent",
+      "mcp": "registered",
+      "failover": "covered",
+      "notes": []
+    },
+    {
+      "agent": "cursor-agent",
+      "version": "2026.10.01-e373342",
+      "status": "install-ready",
+      "proof": "connected",
+      "route": "mcp",
+      "plugin": "absent",
+      "mcp": "connected",
+      "failover": "covered",
+      "notes": []
+    },
+    {
+      "agent": "aider",
+      "version": "",
+      "status": "no-surface",
+      "proof": "none",
+      "plugin": "absent",
+      "mcp": "absent",
+      "route": "-",
+      "failover": "not shown",
+      "notes": [
+        "this agent has no plugin or MCP surface"
+      ]
+    }
+  ]
+}

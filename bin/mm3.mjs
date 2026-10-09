@@ -7429,6 +7429,7 @@ var package_default = {
     "build:binary": "tsx scripts/build-binary.ts",
     parity: "tsx scripts/parity.ts",
     "parity:install": "tsx scripts/parity-install.ts",
+    readiness: "tsx scripts/readiness.ts",
     "build:site": "tsx scripts/build-site.ts",
     typecheck: "tsc -p tsconfig.json --noEmit",
     test: "vitest run --project unit --project contract --project golden",
