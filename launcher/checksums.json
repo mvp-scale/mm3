@@ -1,12 +1,12 @@
 {
-  "version": "0.1.4",
-  "base": "https://github.com/mvp-scale/mm3/releases/download/v0.1.4",
+  "version": "0.1.5",
+  "base": "https://github.com/mvp-scale/mm3/releases/download/v0.1.5",
   "assets": {
-    "darwin-arm64": { "file": "mm3-0.1.4-darwin-arm64", "sha256": "d1782b9b30f9b02039412e2121ace4f9580d27fe690c14b37105c2144f14f714", "bytes": 122781232 },
-    "darwin-x64": { "file": "mm3-0.1.4-darwin-x64", "sha256": "e8e5282c8aafd8fd75519db3b40516929f93822a051dda4fb87f393405e591c1", "bytes": 125926720 },
-    "linux-arm64": { "file": "mm3-0.1.4-linux-arm64", "sha256": "7fd40e381a467fbb74cd196d9499e607eb793863856762477769a751b3bcac30", "bytes": 123866240 },
-    "linux-x64": { "file": "mm3-0.1.4-linux-x64", "sha256": "63d680b0e47626042ece6207b4840cd2630827273cfe4d11255629b7be082b10", "bytes": 127536320 },
-    "win-arm64": { "file": "mm3-0.1.4-win-arm64.exe", "sha256": "7dcbd07956d0eb8649b078fc09b3a54992e52a3400af4cf5170ae488496bc00e", "bytes": 82887680 },
-    "win-x64": { "file": "mm3-0.1.4-win-x64.exe", "sha256": "8f0373e57b0bcca9898a5d6de735f10a268a1dfdf2613069fa48294ac7cf90df", "bytes": 94586368 }
+    "darwin-arm64": { "file": "mm3-0.1.5-darwin-arm64", "sha256": "edb709d8febe34a792f314376b827e779b4d67ed0d9a525fee789f379e75bd4d", "bytes": 122781232 },
+    "darwin-x64": { "file": "mm3-0.1.5-darwin-x64", "sha256": "088581cc597594c8d29ab6b500a9c33e4e7e3c4af4eae5cd370100226b9e644c", "bytes": 125926720 },
+    "linux-arm64": { "file": "mm3-0.1.5-linux-arm64", "sha256": "f2a3cf55c2822137545bac512b90ebe964a7c34a44ff0781a1e9af96f5954b3b", "bytes": 123866240 },
+    "linux-x64": { "file": "mm3-0.1.5-linux-x64", "sha256": "d05711e97a2d599907d3c6f50c6d989465beae788f350b560f7ff6c15d879fb0", "bytes": 127536320 },
+    "win-arm64": { "file": "mm3-0.1.5-win-arm64.exe", "sha256": "3a87ae0661f6d0349ef3f48a9b69aa5674f3c2f6a350675ad75069d5f5d6a4a4", "bytes": 82887680 },
+    "win-x64": { "file": "mm3-0.1.5-win-x64.exe", "sha256": "f2d8320fb941bc7ca8ddd16f94349a3bd889f538c3905ed0173d476cef016016", "bytes": 94586368 }
   }
 }
