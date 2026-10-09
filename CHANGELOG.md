@@ -2,12 +2,12 @@
 
 Newest first. Each entry says what you can now do, and the number is the pull request that shipped it. Releases are tagged; the top section is what the `nightly` build on npm already has.
 
-## Unreleased
+## Unreleased: 0.1.5, on the nightly build
 
 - **Gemini CLI installs MM3 as an extension, and the README shows one short install for any agent.** `gemini extensions install` registers the server and the skills; the README leads with the two install blocks and a picture of the agents we tested. (#45)
 - **A readiness check for the agents MM3 supports.** `npm run readiness` installs MM3 through each agent's own commands on a clean Ubuntu, across six Node states (none to 24) with and without the standalone failover, and records one row per cell in `test/readiness/ledger.jsonl`; `-- --report` prints the table. First run: 10 agents, 144 cells, 97 installed and listed. (#44)
 
-## Unreleased: 0.1.4, on the nightly build
+## v0.1.4, 2026-10-08
 
 **MM3 now runs on a computer with no Node installed, and the ledger stays fast at 100,000 runs.**
 
