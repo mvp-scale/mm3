@@ -83,7 +83,7 @@ jobs:
           - { key: darwin-x64,   runner: macos-15-intel }    # Intel, native
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -162,7 +162,7 @@ jobs:
           ./scripts/smoke-standalone.ps1 -Bin "$env:MM3_FILE"
           if ($LASTEXITCODE -ne 0) { exit 1 }
       # DEEP, only after smoke is green: the repo's own harness against the file (MM3_BIN makes it launch the file instead of node dist/cli.js).
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -257,7 +257,7 @@ jobs:
       MM3_REQUIRE_LAUNCHER: '1'   # a skipped launcher test (claude or the file missing) fails here instead of passing silently
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0   # runs the test runner only; the launcher under test gets a PATH with no node
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.0.0   # runs the test runner only; the launcher under test gets a PATH with no node
         with:
           node-version: 24
           cache: npm
@@ -308,7 +308,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
