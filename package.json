@@ -94,13 +94,13 @@
   },
   "devDependencies": {
     "@types-floor/node": "npm:@types/node@22.19.18",
-    "@types/node": "26.6.3",
+    "@types/node": "26.6.5",
     "ajv": "8.20.0",
     "esbuild": "0.28.2",
     "js-tiktoken": "1.0.21",
     "tsx": "4.23.15",
     "typescript": "7.0.2",
-    "vitest": "5.0.3"
+    "vitest": "5.0.5"
   },
   "dependencies": {
     "yaml": "2.9.1"
